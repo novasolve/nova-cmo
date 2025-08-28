@@ -170,6 +170,8 @@ class GitHubScraper:
         self.csv_file = None
         self.csv_writer = None
         self.csv_initialized = False
+        # Counter for prospects that have an email (used for lead limits/progress)
+        self.leads_with_email_count = 0
         # Accumulators for Attio-style exports
         self.people_records: Dict[str, Dict] = {}
         self.repo_records: Dict[str, Dict] = {}
@@ -180,6 +182,9 @@ class GitHubScraper:
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
         self.org_cache: Dict[str, Dict] = {}
+        # Lead counter and dedup configuration
+        self.leads_with_email_count: int = 0
+        
         # Dedup configuration
         dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
         self.dedup_enabled: bool = bool(dedup_cfg.get('enabled', True))
@@ -1582,8 +1587,10 @@ def main():
             config['limits']['max_people'] = args.leads
             print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
             if not (args.max_repos or args.repos):
-                config['limits']['max_repos'] = max(config['limits'].get('max_repos', 0) or 0, 1000)
-                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} to satisfy leads target")
+                desired = min(200, max(50, config['limits']['max_people'] * 50))
+                current = config['limits'].get('max_repos', 0) or 0
+                config['limits']['max_repos'] = max(current, desired)
+                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} for leads target {config['limits']['max_people']}")
         
         # Don't save to CSV if print-only mode
         output_path = None if args.print_only else args.out
@@ -1624,8 +1631,10 @@ def main():
             config['limits']['max_people'] = args.leads
             print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
             if not (args.max_repos or args.repos):
-                config['limits']['max_repos'] = max(config['limits'].get('max_repos', 0) or 0, 1000)
-                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} to satisfy leads target")
+                desired = min(200, max(50, config['limits']['max_people'] * 50))
+                current = config['limits'].get('max_repos', 0) or 0
+                config['limits']['max_repos'] = max(current, desired)
+                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} for leads target {config['limits']['max_people']}")
         # Inject dedup configuration
         config.setdefault('dedup', {})
         config['dedup']['enabled'] = (not args.no_dedup)
