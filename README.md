@@ -221,15 +221,18 @@ python github_prospect_scraper.py --help
 - `--print-only` - Only print results, don't save to CSV
 - `--dedup-db` - Path to SQLite DB for dedup (default: data/dedup.db)
 - `--no-dedup` - Disable deduplication (process all logins)
+- `--timeout-secs` - HTTP request timeout seconds (default: 15)
 
 ### Environment
 
 - `DEDUP_DB` (optional): absolute path to the SQLite dedup DB. If set, it becomes the default for `--dedup-db`.
+- `HTTP_TIMEOUT_SECS` (optional): default timeout for HTTP requests, used if `--timeout-secs` is not passed.
 
 Example:
 
 ```bash
 export DEDUP_DB="$(pwd)/data/dedup.db"
+export HTTP_TIMEOUT_SECS=20
 python github_prospect_scraper.py --config configs/main.yaml --out data/prospects.csv
 ```
 
