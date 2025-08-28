@@ -13,6 +13,7 @@ import hashlib
 import re
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Set
+import copy
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -155,6 +156,9 @@ class GitHubScraper:
         self.repo_records: Dict[str, Dict] = {}
         self.membership_records: Dict[str, Dict] = {}
         self.signal_records: Dict[str, Dict] = {}
+        # Caches
+        self.user_cache: Dict[str, Dict] = {}
+        self.contrib_cache: Dict[str, Dict] = {}
         
     def _create_session(self):
         """Create session with retry logic"""
@@ -373,25 +377,62 @@ class GitHubScraper:
         return {}
     
     def get_user_contributions(self, username: str) -> Dict:
-        """Get user contribution statistics using GraphQL API"""
-        # This would require GraphQL API access
-        # For now, return empty dict - can be implemented later
-        # query = '''
-        # query($username: String!) {
-        #   user(login: $username) {
-        #     contributionsCollection {
-        #       contributionCalendar {
-        #         totalContributions
-        #       }
-        #       contributionYears
-        #       totalCommitContributions
-        #       totalPullRequestContributions
-        #       totalIssueContributions
-        #     }
-        #   }
-        # }
-        # '''
-        return {}
+        """Get user contribution statistics for the last year using GitHub GraphQL API.
+        Returns a dict including contributions_last_year and per-type totals. Cached per login.
+        """
+        if username in self.contrib_cache:
+            return self.contrib_cache[username]
+        if not (self.token and self.token.strip()):
+            return {}
+        to_dt = datetime.utcnow()
+        from_dt = to_dt - timedelta(days=365)
+        query = (
+            "query($user: String!, $from: DateTime!, $to: DateTime!) {\n"
+            "  user(login: $user) {\n"
+            "    contributionsCollection(from: $from, to: $to) {\n"
+            "      totalCommitContributions\n"
+            "      totalIssueContributions\n"
+            "      totalPullRequestContributions\n"
+            "      totalPullRequestReviewContributions\n"
+            "    }\n"
+            "  }\n"
+            "}"
+        )
+        variables = {
+            "user": username,
+            "from": from_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "to": to_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        headers = {
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json",
+            "User-Agent": "github-prospect-scraper/1.1"
+        }
+        try:
+            resp = requests.post("https://api.github.com/graphql", json={"query": query, "variables": variables}, headers=headers, timeout=20)
+            if resp.status_code != 200:
+                self.contrib_cache[username] = {}
+                return {}
+            data = resp.json().get("data", {})
+            coll = ((data.get("user") or {}).get("contributionsCollection") or {})
+            totals = {
+                "totalCommitContributions": coll.get("totalCommitContributions", 0),
+                "totalIssueContributions": coll.get("totalIssueContributions", 0),
+                "totalPullRequestContributions": coll.get("totalPullRequestContributions", 0),
+                "totalPullRequestReviewContributions": coll.get("totalPullRequestReviewContributions", 0),
+            }
+            contributions_last_year = sum(totals.values())
+            result = {
+                "contributions_last_year": contributions_last_year,
+                "total_contributions": contributions_last_year,
+                "longest_streak": None,
+                "current_streak": None,
+            }
+            self.contrib_cache[username] = result
+            return result
+        except Exception:
+            self.contrib_cache[username] = {}
+            return {}
     
     def parse_github_url(self, url: str) -> Dict:
         """Parse GitHub URL to extract user/repo information"""
@@ -582,9 +623,9 @@ class GitHubScraper:
         email_commit = author_data.get('email')
         email_profile = user_details.get('email')
         
-        # Note: In URL mode, we'll show prospects even without emails for demo purposes
-        # In regular scraping mode, we still skip users without emails
-        if not email_commit and not email_profile:
+        # Inclusion policy: include prospects even without emails unless explicitly configured to skip
+        skip_without_email = self.config.get('filters', {}).get('skip_without_email', False)
+        if skip_without_email and not (email_commit or email_profile):
             return None
         
         # Extract LinkedIn from blog URL if present
@@ -604,9 +645,10 @@ class GitHubScraper:
             elif 'they/them' in bio_lower:
                 pronouns = 'they/them'
         
-        # Get contribution stats (would require additional API call to GraphQL)
-        # For now, set to None - can be enhanced later
-        contributions_last_year = None
+        # Get contribution stats (GraphQL) with caching
+        contribs = self.get_user_contributions(user['login'])
+        contributions_last_year = contribs.get('contributions_last_year') if contribs else None
+        total_contributions = contribs.get('total_contributions') if contribs else None
         
         prospect = Prospect(
             # Core identification
@@ -671,7 +713,7 @@ class GitHubScraper:
             
             # Contribution data
             contributions_last_year=contributions_last_year,
-            total_contributions=None,
+            total_contributions=total_contributions,
             longest_streak=None,
             current_streak=None,
             
@@ -990,6 +1032,7 @@ def main():
     parser.add_argument('-n', '--max-repos', type=int, help='Maximum number of repos to process (overrides config)')
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
+    parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
     args = parser.parse_args()
     
     # Check for GitHub token
@@ -1077,15 +1120,45 @@ def main():
     # Create output directories
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
     os.makedirs(args.out_dir or 'data', exist_ok=True)
-    
-    # Run scraper
+
+    # Multi-segment mode
+    if args.run_all_segments and config.get('target_segments'):
+        combined = []
+        seen_ids: Set[str] = set()
+        base_config = copy.deepcopy(config)
+        for segment in config['target_segments']:
+            q = segment.get('query')
+            if not q:
+                continue
+            seg_config = copy.deepcopy(base_config)
+            seg_config.setdefault('search', {})['query'] = q
+            scraper = GitHubScraper(token, seg_config, None, args.out_dir)
+            scraper.scrape()
+            for p in scraper.all_prospects:
+                if p.lead_id in seen_ids:
+                    continue
+                seen_ids.add(p.lead_id)
+                combined.append(p)
+        # Write combined CSVs
+        if args.out:
+            fieldnames = list(combined[0].to_dict().keys()) if combined else []
+            with open(args.out, 'w', newline='', encoding='utf-8') as f:
+                if fieldnames:
+                    w = csv.DictWriter(f, fieldnames=fieldnames)
+                    w.writeheader()
+                    for p in combined:
+                        w.writerow(p.to_dict())
+        # Export Attio splits from merged accumulators is non-trivial; just from last segment export
+        # Alternatively we could merge accumulators across segments; for now we skip.
+        print(f"✅ Collected {len(seen_ids)} prospects across {len(config['target_segments'])} segments")
+        return
+
+    # Single-query mode
     scraper = GitHubScraper(token, config, args.out, args.out_dir)
     scraper.scrape()
-    
-    # Close CSV file if it was opened for incremental writing
+
     scraper._close_csv_file()
-    
-    # Also export using the traditional method (single CSV) if requested explicitly and not used incrementally
+
     if not scraper.csv_initialized and args.out:
         scraper.export_csv(args.out)
 
