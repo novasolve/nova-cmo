@@ -133,10 +133,11 @@ class Prospect:
 class GitHubScraper:
     """Scrapes GitHub for prospect data"""
     
-    def __init__(self, token: str, config: dict, output_path: str = None):
+    def __init__(self, token: str, config: dict, output_path: str = None, output_dir: Optional[str] = None):
         self.token = token
         self.config = config
         self.output_path = output_path
+        self.output_dir = output_dir
         self.session = self._create_session()
         self.headers = {
             'Accept': 'application/vnd.github.v3+json'
@@ -149,6 +150,11 @@ class GitHubScraper:
         self.csv_file = None
         self.csv_writer = None
         self.csv_initialized = False
+        # Accumulators for Attio-style exports
+        self.people_records: Dict[str, Dict] = {}
+        self.repo_records: Dict[str, Dict] = {}
+        self.membership_records: Dict[str, Dict] = {}
+        self.signal_records: Dict[str, Dict] = {}
         
     def _create_session(self):
         """Create session with retry logic"""
@@ -305,7 +311,8 @@ class GitHubScraper:
                             'user': pr['user'],
                             'signal': f"opened PR #{pr['number']}: {pr['title'][:50]}",
                             'signal_type': 'pr',
-                            'signal_at': pr['updated_at']
+                            'signal_at': pr['updated_at'],
+                            'url': pr.get('html_url')
                         })
                         
         return pr_authors
@@ -339,7 +346,8 @@ class GitHubScraper:
                         'user': commit['author'],
                         'signal': f"committed: {commit['commit']['message'][:50]}",
                         'signal_type': 'commit',
-                        'signal_at': commit['commit']['author']['date']
+                        'signal_at': commit['commit']['author']['date'],
+                        'url': commit.get('html_url') or f"https://github.com/{owner}/{repo_name}/commit/{commit.get('sha','')}"
                     }
                     
                     # Try to get email from commit
@@ -692,8 +700,136 @@ class GitHubScraper:
         # Write to CSV immediately if incremental writing is enabled
         if self.output_path:
             self._write_prospect_to_csv(prospect)
+        
+        # Build Attio object rows
+        self._upsert_person_record(user_details, user['login'], email_commit)
+        self._upsert_repo_record(repo)
+        self._add_membership_record(user['login'], repo['full_name'], author_data.get('signal_at'))
+        self._add_signal_record(user['login'], repo['full_name'], author_data)
             
         return prospect
+
+    def _upsert_person_record(self, user_details: Dict, login: str, email_public_commit: Optional[str] = None):
+        """Create or update a People row keyed by login."""
+        if login in self.people_records:
+            # Fill commit email if missing and a new one is provided
+            if email_public_commit and not self.people_records[login].get('email_public_commit'):
+                self.people_records[login]['email_public_commit'] = email_public_commit
+            return
+        # Infer pronouns from bio when available
+        pronouns = None
+        bio_lower = (user_details.get('bio') or '').lower()
+        if 'he/him' in bio_lower:
+            pronouns = 'he/him'
+        elif 'she/her' in bio_lower:
+            pronouns = 'she/her'
+        elif 'they/them' in bio_lower:
+            pronouns = 'they/them'
+        person_row = {
+            'login': login,
+            'id': user_details.get('id'),
+            'node_id': user_details.get('node_id'),
+            # Internal lead hash for person-level row (stable by login)
+            'lead_id': hashlib.md5(login.encode()).hexdigest()[:12],
+            'name': user_details.get('name'),
+            'company': user_details.get('company'),
+            'email_profile': user_details.get('email'),
+            'email_public_commit': email_public_commit,
+            'Predicted Email': '',
+            'location': user_details.get('location'),
+            'bio': user_details.get('bio'),
+            'pronouns': pronouns,
+            'public_repos': user_details.get('public_repos'),
+            'public_gists': user_details.get('public_gists'),
+            'followers': user_details.get('followers'),
+            'following': user_details.get('following'),
+            'created_at': user_details.get('created_at'),
+            'updated_at': user_details.get('updated_at'),
+            'html_url': user_details.get('html_url'),
+            'avatar_url': user_details.get('avatar_url'),
+            'github_user_url': f"https://github.com/{login}",
+            'api_url': user_details.get('url')
+        }
+        self.people_records[login] = person_row
+
+    def _upsert_repo_record(self, repo: Dict):
+        """Create or update a Repos row keyed by repo_full_name."""
+        full_name = repo['full_name']
+        if full_name in self.repo_records:
+            return
+        # recent push in last 30 days
+        pushed_at = repo.get('pushed_at')
+        recent_push_30d = False
+        try:
+            if pushed_at:
+                pushed_dt = datetime.fromisoformat(pushed_at.replace('Z', '+00:00'))
+                recent_push_30d = (datetime.now(pushed_dt.tzinfo) - pushed_dt) <= timedelta(days=30)
+        except Exception:
+            recent_push_30d = False
+        repo_row = {
+            'repo_full_name': full_name,
+            'repo_name': repo.get('name'),
+            'owner_login': repo.get('owner', {}).get('login'),
+            'host': 'GitHub',
+            'description': repo.get('description'),
+            'primary_language': repo.get('language') or '',
+            'license': (repo.get('license') or {}).get('spdx_id') if repo.get('license') else None,
+            'topics': ','.join(repo.get('topics', [])),
+            'stars': repo.get('stargazers_count', 0),
+            'forks': repo.get('forks_count'),
+            'watchers': repo.get('watchers_count'),
+            'open_issues': repo.get('open_issues_count'),
+            'is_fork': repo.get('fork', False),
+            'is_archived': repo.get('archived', False),
+            'created_at': repo.get('created_at'),
+            'updated_at': repo.get('updated_at'),
+            'pushed_at': repo.get('pushed_at'),
+            'html_url': repo.get('html_url'),
+            'api_url': repo.get('url'),
+            'recent_push_30d': recent_push_30d
+        }
+        self.repo_records[full_name] = repo_row
+
+    def _add_membership_record(self, login: str, repo_full_name: str, last_activity_at: Optional[str]):
+        """Add a Membership row keyed by membership_id."""
+        membership_id = hashlib.md5(f"{login}:{repo_full_name}".encode()).hexdigest()[:16]
+        if membership_id in self.membership_records:
+            # Update last_activity_at if newer
+            if last_activity_at and (
+                not self.membership_records[membership_id].get('last_activity_at') or
+                last_activity_at > self.membership_records[membership_id].get('last_activity_at')
+            ):
+                self.membership_records[membership_id]['last_activity_at'] = last_activity_at
+            return
+        self.membership_records[membership_id] = {
+            'membership_id': membership_id,
+            'login': login,
+            'repo_full_name': repo_full_name,
+            'role': '',  # can be AI classified later
+            'permission': '',
+            'contributions_past_year': None,
+            'last_activity_at': last_activity_at
+        }
+
+    def _add_signal_record(self, login: str, repo_full_name: str, author_data: Dict):
+        """Add a Signal row keyed by signal_id."""
+        signal_at = author_data.get('signal_at') or ''
+        signal_type = author_data.get('signal_type') or ''
+        signal_text = author_data.get('signal') or ''
+        raw_id = f"{login}:{repo_full_name}:{signal_at}:{signal_type}:{signal_text[:20]}"
+        signal_id = hashlib.md5(raw_id.encode()).hexdigest()[:16]
+        if signal_id in self.signal_records:
+            return
+        self.signal_records[signal_id] = {
+            'signal_id': signal_id,
+            'login': login,
+            'repo_full_name': repo_full_name,
+            'signal_type': signal_type,
+            'signal': signal_text,
+            'signal_at': signal_at,
+            'url': author_data.get('url'),
+            'source': 'GitHub'
+        }
         
     def scrape(self):
         """Main scraping logic"""
@@ -749,6 +885,10 @@ class GitHubScraper:
         # Print prospects summary at the end
         self.print_prospects_summary()
         
+        # Export split CSVs if directory is provided and we're not in URL print-only mode
+        if self.output_dir:
+            self.export_attio_csvs(self.output_dir)
+        
     def export_csv(self, output_path: str):
         """Export prospects to CSV"""
         if not self.all_prospects:
@@ -795,11 +935,58 @@ class GitHubScraper:
             for prospect in self.all_prospects:
                 writer.writerow(prospect.to_dict())
 
+    def export_attio_csvs(self, output_dir: str):
+        """Export People, Repos, Membership, and Signals CSVs matching Attio headers."""
+        os.makedirs(output_dir or '.', exist_ok=True)
+        # People.csv
+        people_headers = [
+            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
+            'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
+        ]
+        with open(os.path.join(output_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=people_headers)
+            w.writeheader()
+            for row in self.people_records.values():
+                # ensure all keys exist
+                w.writerow({k: row.get(k) for k in people_headers})
+        
+        # Repos.csv
+        repo_headers = [
+            'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
+            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at',
+            'html_url','api_url','recent_push_30d'
+        ]
+        with open(os.path.join(output_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=repo_headers)
+            w.writeheader()
+            for row in self.repo_records.values():
+                w.writerow({k: row.get(k) for k in repo_headers})
+        
+        # Membership.csv
+        membership_headers = [
+            'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
+        ]
+        with open(os.path.join(output_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=membership_headers)
+            w.writeheader()
+            for row in self.membership_records.values():
+                w.writerow({k: row.get(k) for k in membership_headers})
+        
+        # Signals.csv
+        signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
+        with open(os.path.join(output_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=signal_headers)
+            w.writeheader()
+            for row in self.signal_records.values():
+                w.writerow({k: row.get(k) for k in signal_headers})
+
 
 def main():
     parser = argparse.ArgumentParser(description='GitHub Prospect Scraper')
     parser.add_argument('--config', default='config.yaml', help='Config file path')
     parser.add_argument('--out', default='data/prospects.csv', help='Output CSV path')
+    parser.add_argument('--out-dir', default='data', help='Directory to write split Attio CSVs (people/repos/memberships/signals)')
     parser.add_argument('-n', '--max-repos', type=int, help='Maximum number of repos to process (overrides config)')
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
@@ -828,7 +1015,7 @@ def main():
         if output_path:
             os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
         
-        scraper = GitHubScraper(token, config, output_path)
+        scraper = GitHubScraper(token, config, output_path, None)
         
         # Initialize CSV if needed
         if output_path:
@@ -887,18 +1074,19 @@ def main():
         print("Edit it and run again!")
         sys.exit(0)
         
-    # Create output directory
+    # Create output directories
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
+    os.makedirs(args.out_dir or 'data', exist_ok=True)
     
     # Run scraper
-    scraper = GitHubScraper(token, config, args.out)
+    scraper = GitHubScraper(token, config, args.out, args.out_dir)
     scraper.scrape()
     
     # Close CSV file if it was opened for incremental writing
     scraper._close_csv_file()
     
-    # Also export using the traditional method (in case incremental writing wasn't used)
-    if not scraper.csv_initialized:
+    # Also export using the traditional method (single CSV) if requested explicitly and not used incrementally
+    if not scraper.csv_initialized and args.out:
         scraper.export_csv(args.out)
 
 
