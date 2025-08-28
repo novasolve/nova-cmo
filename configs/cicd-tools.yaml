@@ -1,0 +1,22 @@
+# NovaSolve Config: CI/CD Tool Maintainers
+# Target: Pytest plugins, tox plugins, test runners
+# Pain point: They live in CI/test infra, NovaSolve resonates instantly
+
+search:
+  # Find pytest plugins and testing tools
+  query: "language:python stars:50..500 pushed:>2024-06-01 pytest-plugin in:description,topics"
+  
+  sort: "updated"
+  order: "desc"
+  per_page: 50
+
+filters:
+  activity_days: 60
+
+limits:
+  max_repos: 20
+  per_repo_prs: 20  # More PRs - these maintainers are very active
+  per_repo_commits: 15
+  max_people: 100
+
+delay: 1
