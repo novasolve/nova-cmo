@@ -12,7 +12,7 @@ filters:
   activity_days: 90
 
 limits:
-  max_repos: 10  # Just get 10 repos for testing
+  max_repos: 10 # Just get 10 repos for testing
 
 # API delay in seconds
 delay: 0.5

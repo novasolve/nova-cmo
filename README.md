@@ -299,6 +299,7 @@ export GITHUB_TOKEN=ghp_yourtoken
 ```
 
 Outputs in `data/export_<account>_<timestamp>/`:
+
 - raw/: JSONL per entity
 - csv/: normalized CSVs (repositories, issues, pulls, releases, contributors, stargazers, topics, languages, ...)
 - attio/: `People.csv`, `Companies.csv`, and `README_ATTIO.md` (when `--attio`)
