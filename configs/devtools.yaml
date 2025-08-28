@@ -1,0 +1,31 @@
+# Developer Tools & DevOps Configuration
+
+search:
+  # Target developer tools and DevOps projects
+  query: "(topic:devtools OR topic:developer-tools OR topic:devops OR topic:ci-cd OR topic:automation) stars:>100 pushed:>2024-01-01"
+  sort: "updated"
+  order: "desc"
+  per_page: 50
+
+filters:
+  activity_days: 90
+
+limits:
+  max_repos: 75
+  per_repo_prs: 20
+  per_repo_commits: 15
+  max_people: 1500
+
+delay: 1
+
+# High-value topics
+priority_topics:
+  - "kubernetes"
+  - "docker"
+  - "ci-cd"
+  - "monitoring"
+  - "observability"
+  - "infrastructure-as-code"
+  - "gitops"
+  - "testing"
+  - "automation"
