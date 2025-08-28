@@ -198,6 +198,29 @@ class GitHubScraper:
                 print(f"⚠️  Dedup DB init failed at {self.dedup_db_path}: {e}. Continuing without dedup.")
                 self.dedup_enabled = False
                 self._dedup_conn = None
+
+    def _dedup_seen(self, login: Optional[str]) -> bool:
+        if not (self.dedup_enabled and self._dedup_conn and login):
+            return False
+        try:
+            cur = self._dedup_conn.cursor()
+            cur.execute("SELECT 1 FROM seen_people WHERE login = ?", (login,))
+            return cur.fetchone() is not None
+        except Exception:
+            return False
+
+    def _dedup_mark(self, login: Optional[str]):
+        if not (self.dedup_enabled and self._dedup_conn and login):
+            return
+        try:
+            cur = self._dedup_conn.cursor()
+            cur.execute(
+                "INSERT OR IGNORE INTO seen_people(login, first_seen) VALUES(?, ?)",
+                (login, datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+            )
+            self._dedup_conn.commit()
+        except Exception:
+            pass
         
     def _create_session(self, timeout_secs: int):
         """Create session with retry logic and default timeout"""
@@ -377,6 +400,7 @@ class GitHubScraper:
         max_repos = self.config['limits']['max_repos']
         
         page = 1
+        pages_pbar = tqdm(desc="Searching repos", unit="page", leave=False)
         while len(repos) < max_repos:
             url = f"https://api.github.com/search/repositories"
             params = {
@@ -387,7 +411,8 @@ class GitHubScraper:
                 'page': page
             }
             
-            response = self.session.get(url, headers=self.headers, params=params, timeout=10)
+            timeout_secs = int(os.environ.get('HTTP_TIMEOUT_SECS', '10') or '10')
+            response = self.session.get(url, headers=self.headers, params=params, timeout=timeout_secs)
             
             if self._rate_limit_wait(response):
                 continue
@@ -398,7 +423,7 @@ class GitHubScraper:
                 except Exception:
                     err = {}
                 message = (err.get('message') or '')
-                print(f"Error searching repos: {response.status_code} {message}")
+                tqdm.write(f"❌ Error searching repos: {response.status_code} {message}")
                 # Fallback: if 422 (Validation Failed), try to simplify query by splitting on OR and running first part
                 if response.status_code == 422 and 'q' in params and ' OR ' in params['q']:
                     simple_q = params['q'].split(' OR ')[0]
@@ -406,7 +431,9 @@ class GitHubScraper:
                     response = self.session.get(url, headers=self.headers, params=params, timeout=10)
                     if response.status_code == 200:
                         data = response.json()
-                        repos.extend(data.get('items', []))
+                        items = data.get('items', []) or []
+                        repos.extend(items)
+                        pages_pbar.update(1)
                         if len(data.get('items', [])) < per_page:
                             break
                         page += 1
@@ -414,15 +441,19 @@ class GitHubScraper:
                         continue
                 break
                 
-            data = response.json()
-            repos.extend(data.get('items', []))
+            data = response.json() or {}
+            items = data.get('items', []) or []
+            repos.extend(items)
+            pages_pbar.update(1)
+            pages_pbar.set_postfix_str(f"fetched={len(repos)}")
             
             if len(data.get('items', [])) < per_page:
                 break
                 
             page += 1
             time.sleep(self.config.get('delay', 1))  # Be nice to GitHub
-            
+        
+        pages_pbar.close()
         return repos[:max_repos]
         
     def get_pr_authors(self, repo: Dict) -> List[Dict]:
