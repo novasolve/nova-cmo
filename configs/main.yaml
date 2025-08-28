@@ -1,0 +1,40 @@
+version: 1
+
+# NovaSolve "main" config — optimized to quickly get first 3 prospects
+# Focus: mid-size Python repos with pytest/test signals and recent activity
+
+search:
+  type: repositories
+  query: >
+    language:python stars:100..3000 is:public archived:false
+    (topic:pypi OR topic:pytest OR topic:pytest-plugin OR in:readme pytest OR in:description pytest OR in:readme "tests")
+    pushed:>2025-05-01
+  sort: updated
+  order: desc
+  per_page: 50
+
+filters:
+  # Use activity window for PRs/commits; keeps results fresh without over-restricting repo search
+  activity_days: 90
+  # Allow prospects without public emails (you can enrich later)
+  skip_without_email: false
+
+limits:
+  # Keep repo scan modest but broad enough to find good candidates
+  max_repos: 60
+  per_repo_prs: 15
+  per_repo_commits: 15
+  # Hard cap: stop after first 3 prospects
+  max_people: 3
+
+# Be nice to GitHub
+delay: 1.0
+
+enrichment:
+  # Pull a few helpful signals for context/scoring
+  pull:
+    repo_topics: true
+    releases: true
+    files_presence: true
+    pypi_metadata: true
+  recent_window_days: 90
