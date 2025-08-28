@@ -13,6 +13,31 @@ if [ -z "$GITHUB_TOKEN" ]; then
     exit 1
 fi
 
+# Test if the GitHub token is valid
+echo "🔑 Testing GitHub token..."
+TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/user)
+
+if echo "$TOKEN_TEST" | grep -q '"message": "Bad credentials"'; then
+    echo "❌ Error: GitHub token is invalid (401 Bad credentials)"
+    echo ""
+    echo "🔧 To fix this:"
+    echo "1. Go to: https://github.com/settings/tokens"
+    echo "2. Click 'Generate new token (classic)'"
+    echo "3. Select scopes: 'repo' and 'user:email'"
+    echo "4. Copy the new token"
+    echo "5. Run: export GITHUB_TOKEN=your_new_token"
+    echo ""
+    echo "Or use the setup script: ./setup_token.sh"
+    exit 1
+elif echo "$TOKEN_TEST" | grep -q '"login"'; then
+    TOKEN_USER=$(echo "$TOKEN_TEST" | grep -o '"login": "[^"]*"' | cut -d'"' -f4)
+    echo "✅ Token valid for user: $TOKEN_USER"
+else
+    echo "❌ Error: Unable to validate GitHub token"
+    echo "Response: $TOKEN_TEST"
+    exit 1
+fi
+
 # Create data directory if it doesn't exist
 mkdir -p data
 
