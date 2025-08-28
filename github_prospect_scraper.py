@@ -1165,49 +1165,7 @@ class GitHubScraper:
             for row in self.signal_records.values():
                 w.writerow({k: row.get(k) for k in signal_headers})
 
-        # Also emit a simplified Attio People file with outreach-friendly columns
-        simple_headers = [
-            'Name','Username','Email','Company','Location','Twitter','Website','Bio','Followers','Top Project','Top Project Stars'
-        ]
-        # Build index of repos by person from memberships
-        login_to_repos: Dict[str, List[str]] = {}
-        for m in self.membership_records.values():
-            login_to_repos.setdefault(m.get('login'), []).append(m.get('repo_full_name'))
-        def top_project_for(login: str):
-            best_name = ''
-            best_stars = -1
-            for rf in login_to_repos.get(login, []):
-                repo = self.repo_records.get(rf)
-                if not repo:
-                    continue
-                stars = repo.get('stars') or 0
-                if stars > best_stars:
-                    best_stars = stars
-                    best_name = rf.split('/')[-1]
-            return best_name, (best_stars if best_stars >= 0 else '')
-        with open(os.path.join(people_dir, 'People_Simple.csv'), 'w', newline='', encoding='utf-8') as f:
-            w = csv.DictWriter(f, fieldnames=simple_headers)
-            w.writeheader()
-            for login, row in self.people_records.items():
-                # Skip people without any email
-                email_profile = (row.get('email_profile') or '').strip()
-                email_commit = (row.get('email_public_commit') or '').strip()
-                if not (email_profile or email_commit):
-                    continue
-                top_name, top_stars = top_project_for(login)
-                w.writerow({
-                    'Name': row.get('name') or login,
-                    'Username': login,
-                    'Email': row.get('email_profile') or row.get('email_public_commit') or '',
-                    'Company': row.get('company') or '',
-                    'Location': row.get('location') or '',
-                    'Twitter': row.get('twitter_username') or '',
-                    'Website': row.get('github_user_url') or '',
-                    'Bio': row.get('bio') or '',
-                    'Followers': row.get('followers') or 0,
-                    'Top Project': top_name,
-                    'Top Project Stars': top_stars,
-                })
+        # Removed People_Simple.csv generation as requested
 
 
     def export_attio_csvs_flat(self, attio_dir: str):
