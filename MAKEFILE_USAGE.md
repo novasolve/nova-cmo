@@ -1,6 +1,6 @@
 # Makefile Usage Guide
 
-This project includes a comprehensive Makefile to simplify common operations.
+Simple Makefile with essential commands for the GitHub prospect scraper.
 
 ## Quick Start
 
@@ -17,51 +17,24 @@ make url URL=@username
 
 ## Available Commands
 
-Run `make help` to see all available commands:
+Run `make help` to see all commands:
 
-### Setup & Installation
+### Setup
+- `make install` - Install dependencies
+- `make setup` - Setup project (install + check token)
 
-- `make install` - Install Python dependencies
-- `make setup` - Full setup (install + check token)
-- `make check-token` - Verify GitHub token is configured
-
-### Main Scraping Commands
-
+### Main Commands
 - `make scrape` - Run default scraper
-- `make attio` - Generate Attio-ready CSVs (People, Repos, Memberships, Signals)
-- `make segments` - Run all configured segments
-- `make production` - Full production run with backup
+- `make attio` - Generate Attio-ready CSVs ⭐
+- `make url URL=@username` - Quick URL analysis
 
-### URL Scraping
-
-- `make url URL=@username` - Quick user analysis
-- `make url URL=https://github.com/user/repo` - Repository analysis
-- `make url-save URL=@username` - Save results to CSV
-
-### Specific Segments
-
-- `make ai-startups` - Scrape AI/ML segment
-- `make devtools` - Scrape developer tools segment
-- `make web3` - Scrape blockchain/Web3 segment
-
-### Development & Testing
-
+### Development
 - `make test` - Small test scrape (2 repos)
-- `make quick` - Quick scrape (5 repos)
-- `make lint` - Run code linting
-- `make clean` - Clean up generated files
-
-### Data Management
-
-- `make show-data` - List current data files
-- `make show-exports` - List export files
-- `make backup` - Create backup archive
-- `make rate-limit` - Check GitHub API limits
+- `make clean` - Clean up files
 
 ## Examples
 
 ### Basic Usage
-
 ```bash
 # Setup and run Attio export
 make setup
@@ -70,65 +43,28 @@ make attio
 # Quick user analysis
 make url URL=@octocat
 
-# Run specific segment
-make ai-startups
-```
-
-### Production Workflow
-
-```bash
-# Full production run
-make production
-
-# This runs:
-# 1. Token check
-# 2. Clean exports
-# 3. All segments
-# 4. Attio export
-# 5. Backup creation
-```
-
-### Development Workflow
-
-```bash
-# Test changes
+# Test your setup
 make test
-make lint
-
-# Clean up
-make clean
 ```
-
-## Configuration
-
-The Makefile uses these default configurations:
-
-- Main config: `config.yaml`
-- Output directory: `data/`
-- Export directory: `exports/`
-- Attio exports: `exports/attio/`
 
 ## GitHub Actions
 
-The project includes automated workflows:
+The project includes one automated workflow:
 
-### Attio Export Pipeline (`.github/workflows/attio-export.yml`)
+### Attio Export (`.github/workflows/attio-export.yml`)
+- Runs weekly on Mondays at 8 AM UTC
+- Generates Attio-ready exports automatically
+- Manual trigger available in Actions tab
+- 30-day artifact retention
 
-- Runs daily at 6 AM UTC
-- Generates Attio-ready exports
-- Uploads artifacts for 30-90 days
-- Manual trigger available
+## Configuration
 
-### Weekly Scrape (`.github/workflows/weekly-scrape.yml`)
-
-- Runs every Monday at 8 AM UTC
-- Full production scrape
-- 60-day artifact retention
+- Main config: `config.yaml`
+- Output directory: `data/`
+- Export directory: `exports/attio/`
 
 ## Tips
 
-1. **Always check your token**: `make check-token`
+1. **Always check your token**: `make setup`
 2. **Start small**: `make test` before full runs
-3. **Monitor rate limits**: `make rate-limit`
-4. **Clean regularly**: `make clean` to free space
-5. **Use segments**: Target specific audiences with segment configs
+3. **Clean regularly**: `make clean` to free space
