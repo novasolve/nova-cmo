@@ -980,13 +980,14 @@ class GitHubScraper:
     def export_attio_csvs(self, output_dir: str):
         """Export People, Repos, Membership, and Signals CSVs matching Attio headers."""
         os.makedirs(output_dir or '.', exist_ok=True)
+        attio_dir = output_dir
         # People.csv
         people_headers = [
             'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
-        with open(os.path.join(output_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
@@ -999,7 +1000,7 @@ class GitHubScraper:
             'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at',
             'html_url','api_url','recent_push_30d'
         ]
-        with open(os.path.join(output_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(attio_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=repo_headers)
             w.writeheader()
             for row in self.repo_records.values():
@@ -1009,7 +1010,7 @@ class GitHubScraper:
         membership_headers = [
             'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
         ]
-        with open(os.path.join(output_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(attio_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=membership_headers)
             w.writeheader()
             for row in self.membership_records.values():
@@ -1017,11 +1018,50 @@ class GitHubScraper:
         
         # Signals.csv
         signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
-        with open(os.path.join(output_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(attio_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=signal_headers)
             w.writeheader()
             for row in self.signal_records.values():
                 w.writerow({k: row.get(k) for k in signal_headers})
+
+        # Also emit a simplified Attio People file with outreach-friendly columns
+        simple_headers = [
+            'Name','Username','Email','Company','Location','Twitter','Website','Bio','Followers','Top Project','Top Project Stars'
+        ]
+        # Build index of repos by person from memberships
+        login_to_repos: Dict[str, List[str]] = {}
+        for m in self.membership_records.values():
+            login_to_repos.setdefault(m.get('login'), []).append(m.get('repo_full_name'))
+        def top_project_for(login: str):
+            best_name = ''
+            best_stars = -1
+            for rf in login_to_repos.get(login, []):
+                repo = self.repo_records.get(rf)
+                if not repo:
+                    continue
+                stars = repo.get('stars') or 0
+                if stars > best_stars:
+                    best_stars = stars
+                    best_name = rf.split('/')[-1]
+            return best_name, (best_stars if best_stars >= 0 else '')
+        with open(os.path.join(attio_dir, 'People_Simple.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=simple_headers)
+            w.writeheader()
+            for login, row in self.people_records.items():
+                top_name, top_stars = top_project_for(login)
+                w.writerow({
+                    'Name': row.get('name') or login,
+                    'Username': login,
+                    'Email': row.get('email_profile') or row.get('email_public_commit') or '',
+                    'Company': row.get('company') or '',
+                    'Location': row.get('location') or '',
+                    'Twitter': row.get('twitter_username') or '',
+                    'Website': row.get('github_user_url') or '',
+                    'Bio': row.get('bio') or '',
+                    'Followers': row.get('followers') or 0,
+                    'Top Project': top_name,
+                    'Top Project Stars': top_stars,
+                })
 
 
 def main():
