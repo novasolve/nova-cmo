@@ -40,13 +40,14 @@ fi
 echo "🔑 Testing GitHub token..."
 # Try Bearer first (fine-grained + classic), then fallback to token if needed
 TOKEN_TEST=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
-# If Bearer returned Bad credentials, retry with classic header
-if echo "$TOKEN_TEST" | jq -e -r '.message // empty' 2>/dev/null | grep -qi 'bad credentials'; then
-    TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
-fi
-
 BAD_MSG=$(echo "$TOKEN_TEST" | jq -r '.message // empty' 2>/dev/null)
 TOKEN_USER=$(echo "$TOKEN_TEST" | jq -r '.login // empty' 2>/dev/null)
+# If Bearer failed (no login) or explicitly said Bad credentials, retry with classic header
+if [ -z "$TOKEN_USER" ] || echo "$BAD_MSG" | grep -qi 'bad credentials'; then
+    TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
+    BAD_MSG=$(echo "$TOKEN_TEST" | jq -r '.message // empty' 2>/dev/null)
+    TOKEN_USER=$(echo "$TOKEN_TEST" | jq -r '.login // empty' 2>/dev/null)
+fi
 if echo "$BAD_MSG" | grep -qi 'bad credentials'; then
     echo "❌ Error: GitHub token is invalid (401 Bad credentials)"
     echo ""

@@ -1342,7 +1342,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_raw','company_domain','email_main','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1350,11 +1350,7 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                best_email = (
-                    row.get('email_main')
-                    or self._choose_main_email(row.get('email_profile'), row.get('email_public_commit'))
-                    or row.get('Predicted Email')
-                )
+                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1363,8 +1359,7 @@ class GitHubScraper:
                     'name': row.get('name'),
                     'company_raw': row.get('company'),
                     'company_domain': row.get('company_domain'),
-                    'email_main': best_email,
-                    'email_profile': row.get('email_profile'),
+                    'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
@@ -1429,7 +1424,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_raw','email_main','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1437,11 +1432,7 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                best_email = (
-                    row.get('email_main')
-                    or self._choose_main_email(row.get('email_profile'), row.get('email_public_commit'))
-                    or row.get('Predicted Email')
-                )
+                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1449,8 +1440,7 @@ class GitHubScraper:
                     'lead_id': row.get('lead_id'),
                     'name': row.get('name'),
                     'company_raw': row.get('company'),
-                    'email_main': best_email,
-                    'email_profile': row.get('email_profile'),
+                    'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
@@ -1657,23 +1647,6 @@ def main():
                 combined.append(p)
             # Close dedup DB between segments
             scraper._close_csv_file()
-        # Select up to the requested number of leads if provided
-        max_people = config.get('limits', {}).get('max_people') or None
-        if max_people:
-            def score_prospect(pr: Prospect) -> float:
-                has_email = 1 if (pr.email_profile or pr.email_public_commit) else 0
-                followers = (pr.followers or 0)
-                stars = (pr.stars or 0)
-                try:
-                    recency = 0
-                    if pr.signal_at:
-                        dt = datetime.fromisoformat(pr.signal_at.replace('Z', '+00:00'))
-                        recency = dt.timestamp()
-                except Exception:
-                    recency = 0
-                return has_email * 1e12 + followers * 1e6 + stars * 1e3 + recency
-            combined.sort(key=score_prospect, reverse=True)
-            combined = combined[:max_people]
         # Write combined CSVs
         if args.out:
             fieldnames = list(combined[0].to_dict().keys()) if combined else []
