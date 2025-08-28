@@ -647,9 +647,12 @@ class GitHubScraper:
                 pronouns = 'they/them'
         
         # Get contribution stats (GraphQL) with caching
-        contribs = self.get_user_contributions(user['login'])
-        contributions_last_year = contribs.get('contributions_last_year') if contribs else None
-        total_contributions = contribs.get('total_contributions') if contribs else None
+        try:
+            contribs = self.get_user_contributions(user['login'])
+        except Exception:
+            contribs = None
+        contributions_last_year = (contribs or {}).get('contributions_last_year')
+        total_contributions = (contribs or {}).get('total_contributions')
         
         prospect = Prospect(
             # Core identification
