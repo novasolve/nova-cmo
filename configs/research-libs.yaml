@@ -5,13 +5,13 @@
 search:
   # Find ML/data science libraries that likely have complex test suites
   query: "language:python stars:50..1000 pushed:>2024-06-01 machine-learning in:topics,description"
-  
+
   sort: "updated"
   order: "desc"
   per_page: 50
 
 filters:
-  activity_days: 45  # More recent - these break frequently
+  activity_days: 45 # More recent - these break frequently
 
 limits:
   max_repos: 25
