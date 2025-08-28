@@ -42,7 +42,7 @@ fi
 mkdir -p data
 
 # Default values
-CONFIG_FILE="config.yaml"
+CONFIG_FILE="configs/main.yaml"
 OUTPUT_FILE="data/prospects_$(date +%Y%m%d_%H%M%S).csv"
 MAX_REPOS=""
 
@@ -64,7 +64,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [options]"
             echo "Options:"
-            echo "  -c, --config FILE    Config file (default: config.yaml)"
+            echo "  -c, --config FILE    Config file (default: configs/main.yaml)"
             echo "  -o, --output FILE    Output CSV file (default: data/prospects_TIMESTAMP.csv)"
             echo "  -n, --max-repos N    Maximum number of repos to process (limit scope for testing)"
             echo "  -h, --help           Show this help message"
