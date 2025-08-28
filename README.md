@@ -286,3 +286,19 @@ by_repo = prospects.groupby('repo_full_name').agg({
     'signal': lambda x: x.iloc[0]  # Most recent signal
 }).sort_values('login', ascending=False)
 ```
+
+## Full GitHub Export (Attio-ready)
+
+Use the one-file runner to export everything for a user or org and generate Attio CSVs (optional):
+
+```bash
+export GITHUB_TOKEN=ghp_yourtoken
+./github_full_export.sh --account vercel --attio
+# or include commits (heavy) and cap per repo
+./github_full_export.sh --account username --include-commits --max-commits-per-repo 1000
+```
+
+Outputs in `data/export_<account>_<timestamp>/`:
+- raw/: JSONL per entity
+- csv/: normalized CSVs (repositories, issues, pulls, releases, contributors, stargazers, topics, languages, ...)
+- attio/: `People.csv`, `Companies.csv`, and `README_ATTIO.md` (when `--attio`)
