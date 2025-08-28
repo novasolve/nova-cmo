@@ -6,9 +6,9 @@ version: 1
 search:
   type: repositories
   query: >
-    language:python stars:100..3000 is:public archived:false
-    (topic:pypi OR topic:pytest OR topic:pytest-plugin OR in:readme pytest OR in:description pytest OR in:readme "tests")
-    pushed:>2025-05-01
+    language:python stars:80..6000 is:public archived:false
+    in:name,description,readme pytest
+    pushed:>2025-06-01
   sort: updated
   order: desc
   per_page: 50
@@ -17,7 +17,7 @@ filters:
   # Use activity window for PRs/commits; keeps results fresh without over-restricting repo search
   activity_days: 90
   # Allow prospects without public emails (you can enrich later)
-  skip_without_email: false
+  skip_without_email: true
 
 limits:
   # Keep repo scan modest but broad enough to find good candidates

@@ -275,27 +275,19 @@ class GitHubScraper:
                     err = {}
                 message = (err.get('message') or '')
                 print(f"Error searching repos: {response.status_code} {message}")
-                # Improve diagnostics for validation errors
-                if isinstance(err, dict):
-                    errors = err.get('errors')
-                    if errors:
-                        print(f"Details: {json.dumps(errors, ensure_ascii=False)}")
                 # Fallback: if 422 (Validation Failed), try to simplify query by splitting on OR and running first part
                 if response.status_code == 422 and 'q' in params and ' OR ' in params['q']:
-                    # Try each segment independently and merge results until max_repos
-                    segments = [seg.strip() for seg in params['q'].split(' OR ') if seg.strip()]
-                    for seg in segments:
-                        seg_params = dict(params)
-                        seg_params['q'] = seg
-                        seg_resp = self.session.get(url, headers=self.headers, params=seg_params, timeout=10)
-                        if seg_resp.status_code == 200:
-                            seg_data = seg_resp.json()
-                            items = seg_data.get('items', [])
-                            repos.extend(items)
-                            if len(repos) >= max_repos:
-                                break
+                    simple_q = params['q'].split(' OR ')[0]
+                    params['q'] = simple_q
+                    response = self.session.get(url, headers=self.headers, params=params, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        repos.extend(data.get('items', []))
+                        if len(data.get('items', [])) < per_page:
+                            break
+                        page += 1
                         time.sleep(self.config.get('delay', 1))
-                    break
+                        continue
                 break
                 
             data = response.json()
@@ -1134,6 +1126,11 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
+                # Skip people without any email
+                email_profile = (row.get('email_profile') or '').strip()
+                email_commit = (row.get('email_public_commit') or '').strip()
+                if not (email_profile or email_commit):
+                    continue
                 # ensure all keys exist
                 w.writerow({k: row.get(k) for k in people_headers})
         
@@ -1192,6 +1189,11 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=simple_headers)
             w.writeheader()
             for login, row in self.people_records.items():
+                # Skip people without any email
+                email_profile = (row.get('email_profile') or '').strip()
+                email_commit = (row.get('email_public_commit') or '').strip()
+                if not (email_profile or email_commit):
+                    continue
                 top_name, top_stars = top_project_for(login)
                 w.writerow({
                     'Name': row.get('name') or login,
@@ -1222,6 +1224,11 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
+                # Skip people without any email
+                email_profile = (row.get('email_profile') or '').strip()
+                email_commit = (row.get('email_public_commit') or '').strip()
+                if not (email_profile or email_commit):
+                    continue
                 w.writerow({k: row.get(k) for k in people_headers})
         # Repos.csv
         repo_headers = [

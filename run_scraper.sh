@@ -15,15 +15,19 @@ fi
 
 # Test if the GitHub token is valid
 echo "🔑 Testing GitHub token..."
-TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" https://api.github.com/user)
+# Try Bearer first (fine-grained + classic), then fallback to token if needed
+TOKEN_TEST=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
+if echo "$TOKEN_TEST" | grep -q 'Bad credentials'; then
+    TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
+fi
 
 if echo "$TOKEN_TEST" | grep -q '"message": "Bad credentials"'; then
     echo "❌ Error: GitHub token is invalid (401 Bad credentials)"
     echo ""
     echo "🔧 To fix this:"
     echo "1. Go to: https://github.com/settings/tokens"
-    echo "2. Click 'Generate new token (classic)'"
-    echo "3. Select scopes: 'repo' and 'user:email'"
+    echo "2. For classic token: 'Generate new token (classic)' with scopes 'repo' and 'user:email'"
+    echo "   Or use a fine-grained token with 'Read-only access to public repositories' and 'Read user profile'"
     echo "4. Copy the new token"
     echo "5. Run: export GITHUB_TOKEN=your_new_token"
     echo ""
