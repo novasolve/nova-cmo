@@ -15,8 +15,9 @@ def test_github_token():
     print(f"📏 Token length: {len(token)}")
     
     headers = {
-        'Authorization': f'token {token}',
-        'Accept': 'application/vnd.github.v3+json'
+        'Authorization': f'Bearer {token}',
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'leads-scraper/1.0'
     }
     
     # Test 1: Basic auth check
@@ -70,7 +71,9 @@ def test_github_token():
         print(f"   - Email: {user.get('email', 'Not public')}")
         print(f"   - Company: {user.get('company', 'None')}")
         print(f"   - Location: {user.get('location', 'None')}")
-        print(f"   - Bio: {user.get('bio', 'None')[:50]}...")
+        bio = user.get('bio')
+        bio_preview = (bio[:50] + '...') if isinstance(bio, str) and bio else 'None'
+        print(f"   - Bio: {bio_preview}")
         print(f"   - Blog: {user.get('blog', 'None')}")
         print(f"   - Twitter: {user.get('twitter_username', 'None')}")
         print(f"   - Followers: {user.get('followers', 0)}")

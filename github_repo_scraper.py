@@ -71,11 +71,13 @@ class GitHubRepoScraper:
         self.output_path = output_path
         self.session = self._create_session()
         self.headers = {
-            'Accept': 'application/vnd.github.v3+json'
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'leads-scraper/1.0'
         }
         # Only add auth header if token is provided and valid
         if token and token.strip():
-            self.headers['Authorization'] = f'token {token}'
+            # Prefer Bearer for fine-grained and classic tokens; GitHub supports both
+            self.headers['Authorization'] = f'Bearer {token}'
         self.repos: Set[str] = set()  # Track unique repo full names
         self.all_repos: List[Repo] = []
         self.csv_file = None
@@ -170,7 +172,32 @@ class GitHubRepoScraper:
                 continue
                 
             if response.status_code != 200:
-                print(f"Error searching repos: {response.status_code}")
+                try:
+                    err = response.json()
+                except Exception:
+                    err = {}
+                message = (err.get('message') or '')
+                print(f"Error searching repos: {response.status_code} {message}")
+                if isinstance(err, dict):
+                    errors = err.get('errors')
+                    if errors:
+                        print(f"Details: {json.dumps(errors, ensure_ascii=False)}")
+                # Fallback: if 422 (Validation Failed), try to run each OR segment separately and merge
+                if response.status_code == 422 and 'q' in params and ' OR ' in params['q']:
+                    segments = [seg.strip() for seg in params['q'].split(' OR ') if seg.strip()]
+                    for seg in segments:
+                        seg_params = dict(params)
+                        seg_params['q'] = seg
+                        seg_resp = self.session.get(url, headers=self.headers, params=seg_params, timeout=10)
+                        if self._rate_limit_wait(seg_resp):
+                            seg_resp = self.session.get(url, headers=self.headers, params=seg_params, timeout=10)
+                        if seg_resp.status_code == 200:
+                            seg_data = seg_resp.json()
+                            repos.extend(seg_data.get('items', []))
+                            if len(repos) >= max_repos:
+                                break
+                        time.sleep(self.config.get('delay', 1))
+                    break
                 break
                 
             data = response.json()

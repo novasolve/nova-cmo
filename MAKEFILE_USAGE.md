@@ -20,33 +20,39 @@ make url URL=@username
 Run `make help` to see all available commands:
 
 ### Setup & Installation
+
 - `make install` - Install Python dependencies
 - `make setup` - Full setup (install + check token)
 - `make check-token` - Verify GitHub token is configured
 
 ### Main Scraping Commands
+
 - `make scrape` - Run default scraper
 - `make attio` - Generate Attio-ready CSVs (People, Repos, Memberships, Signals)
 - `make segments` - Run all configured segments
 - `make production` - Full production run with backup
 
 ### URL Scraping
+
 - `make url URL=@username` - Quick user analysis
 - `make url URL=https://github.com/user/repo` - Repository analysis
 - `make url-save URL=@username` - Save results to CSV
 
 ### Specific Segments
+
 - `make ai-startups` - Scrape AI/ML segment
 - `make devtools` - Scrape developer tools segment
 - `make web3` - Scrape blockchain/Web3 segment
 
 ### Development & Testing
+
 - `make test` - Small test scrape (2 repos)
 - `make quick` - Quick scrape (5 repos)
 - `make lint` - Run code linting
 - `make clean` - Clean up generated files
 
 ### Data Management
+
 - `make show-data` - List current data files
 - `make show-exports` - List export files
 - `make backup` - Create backup archive
@@ -55,6 +61,7 @@ Run `make help` to see all available commands:
 ## Examples
 
 ### Basic Usage
+
 ```bash
 # Setup and run Attio export
 make setup
@@ -68,6 +75,7 @@ make ai-startups
 ```
 
 ### Production Workflow
+
 ```bash
 # Full production run
 make production
@@ -81,6 +89,7 @@ make production
 ```
 
 ### Development Workflow
+
 ```bash
 # Test changes
 make test
@@ -93,6 +102,7 @@ make clean
 ## Configuration
 
 The Makefile uses these default configurations:
+
 - Main config: `config.yaml`
 - Output directory: `data/`
 - Export directory: `exports/`
@@ -103,12 +113,14 @@ The Makefile uses these default configurations:
 The project includes automated workflows:
 
 ### Attio Export Pipeline (`.github/workflows/attio-export.yml`)
+
 - Runs daily at 6 AM UTC
 - Generates Attio-ready exports
 - Uploads artifacts for 30-90 days
 - Manual trigger available
 
 ### Weekly Scrape (`.github/workflows/weekly-scrape.yml`)
+
 - Runs every Monday at 8 AM UTC
 - Full production scrape
 - 60-day artifact retention
