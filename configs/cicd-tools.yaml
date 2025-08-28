@@ -5,7 +5,7 @@
 search:
   # Find pytest plugins and testing tools
   query: "language:python stars:50..500 pushed:>2024-06-01 pytest-plugin in:description,topics"
-  
+
   sort: "updated"
   order: "desc"
   per_page: 50
@@ -15,7 +15,7 @@ filters:
 
 limits:
   max_repos: 20
-  per_repo_prs: 20  # More PRs - these maintainers are very active
+  per_repo_prs: 20 # More PRs - these maintainers are very active
   per_repo_commits: 15
   max_people: 100
 
