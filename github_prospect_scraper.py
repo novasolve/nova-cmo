@@ -156,6 +156,7 @@ class GitHubScraper:
         self.repo_records: Dict[str, Dict] = {}
         self.membership_records: Dict[str, Dict] = {}
         self.signal_records: Dict[str, Dict] = {}
+        self.repo_details_cache: Dict[str, Dict] = {}
         # Caches
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
@@ -746,8 +747,8 @@ class GitHubScraper:
         # Build Attio object rows
         self._upsert_person_record(user_details, user['login'], email_commit)
         self._upsert_repo_record(repo)
-        self._add_membership_record(user['login'], repo['full_name'], author_data.get('signal_at'))
-        self._add_signal_record(user['login'], repo['full_name'], author_data)
+        self._add_membership_record(user['login'], repo, author_data.get('signal_at'))
+        self._add_signal_record(user['login'], repo, author_data)
             
         return prospect
 
@@ -794,6 +795,79 @@ class GitHubScraper:
         }
         self.people_records[login] = person_row
 
+    def _fetch_repo_details(self, full_name: str) -> Dict:
+        """Fetch full repo details (subscribers_count, default_branch, homepage, flags). Cached."""
+        if full_name in self.repo_details_cache:
+            return self.repo_details_cache[full_name]
+        url = f"https://api.github.com/repos/{full_name}"
+        resp = self.session.get(url, headers=self.headers, timeout=10)
+        if self._rate_limit_wait(resp):
+            resp = self.session.get(url, headers=self.headers, timeout=10)
+        details = resp.json() if resp.status_code == 200 else {}
+        self.repo_details_cache[full_name] = details
+        return details
+
+    def _count_open_prs(self, full_name: str) -> Optional[int]:
+        """Use search API to count open PRs without paging full lists."""
+        try:
+            q = f"repo:{full_name} is:pr is:open"
+            resp = self.session.get("https://api.github.com/search/issues",
+                                    headers=self.headers,
+                                    params={"q": q, "per_page": 1}, timeout=10)
+            if self._rate_limit_wait(resp):
+                resp = self.session.get("https://api.github.com/search/issues",
+                                        headers=self.headers,
+                                        params={"q": q, "per_page": 1}, timeout=10)
+            if resp.status_code == 200:
+                return resp.json().get("total_count", 0)
+        except Exception:
+            return None
+        return None
+
+    def _get_releases_info(self, full_name: str) -> (Optional[int], Optional[str]):
+        """Return (releases_count, last_release_at)."""
+        try:
+            url = f"https://api.github.com/repos/{full_name}/releases"
+            resp = self.session.get(url, headers=self.headers, params={"per_page": 1}, timeout=10)
+            if self._rate_limit_wait(resp):
+                resp = self.session.get(url, headers=self.headers, params={"per_page": 1}, timeout=10)
+            if resp.status_code != 200:
+                return None, None
+            releases = resp.json()
+            last_release_at = releases[0].get('published_at') if releases else None
+            # Parse Link header for count if present
+            link = resp.headers.get('Link')
+            if link and 'rel="last"' in link:
+                try:
+                    last_part = [p for p in link.split(',') if 'rel="last"' in p][0]
+                    page_val = re.search(r"[?&]page=(\d+)", last_part)
+                    if page_val:
+                        return int(page_val.group(1)), last_release_at
+                except Exception:
+                    pass
+            return (len(releases) if releases is not None else None), last_release_at
+        except Exception:
+            return None, None
+
+    def _count_contributors(self, full_name: str) -> Optional[int]:
+        """Estimate contributors by paging header."""
+        try:
+            url = f"https://api.github.com/repos/{full_name}/contributors"
+            resp = self.session.get(url, headers=self.headers, params={"per_page": 1, "anon": True}, timeout=10)
+            if self._rate_limit_wait(resp):
+                resp = self.session.get(url, headers=self.headers, params={"per_page": 1, "anon": True}, timeout=10)
+            if resp.status_code != 200:
+                return None
+            link = resp.headers.get('Link')
+            if link and 'rel="last"' in link:
+                last_part = [p for p in link.split(',') if 'rel="last"' in p][0]
+                page_val = re.search(r"[?&]page=(\d+)", last_part)
+                if page_val:
+                    return int(page_val.group(1))
+            return len(resp.json())
+        except Exception:
+            return None
+
     def _upsert_repo_record(self, repo: Dict):
         """Create or update a Repos row keyed by repo_full_name."""
         full_name = repo['full_name']
@@ -808,33 +882,56 @@ class GitHubScraper:
                 recent_push_30d = (datetime.now(pushed_dt.tzinfo) - pushed_dt) <= timedelta(days=30)
         except Exception:
             recent_push_30d = False
+        # Optional enrichment
+        pull_cfg = self.config.get('enrichment', {}).get('pull', {}) if isinstance(self.config, dict) else {}
+        details = {}
+        if pull_cfg:
+            # fetch details once to populate subscribers_count and flags
+            details = self._fetch_repo_details(full_name)
+        open_prs = self._count_open_prs(full_name) if pull_cfg else None
+        releases_count, last_release_at = self._get_releases_info(full_name) if pull_cfg else (None, None)
+        contributors_count = self._count_contributors(full_name) if pull_cfg else None
+
         repo_row = {
+            'repo_id': repo.get('id'),
             'repo_full_name': full_name,
             'repo_name': repo.get('name'),
             'owner_login': repo.get('owner', {}).get('login'),
+            'owner_type': (repo.get('owner', {}) or {}).get('type'),
             'host': 'GitHub',
             'description': repo.get('description'),
             'primary_language': repo.get('language') or '',
-            'license': (repo.get('license') or {}).get('spdx_id') if repo.get('license') else None,
+            'license': (repo.get('license') or {}).get('name') if repo.get('license') else None,
+            'license_spdx': (repo.get('license') or {}).get('spdx_id') if repo.get('license') else None,
             'topics': ','.join(repo.get('topics', [])),
+            'default_branch': details.get('default_branch') or repo.get('default_branch'),
+            'homepage': details.get('homepage') or repo.get('homepage'),
+            'has_issues': details.get('has_issues', repo.get('has_issues')),
+            'has_discussions': details.get('has_discussions'),
             'stars': repo.get('stargazers_count', 0),
+            'subscribers': details.get('subscribers_count'),
             'forks': repo.get('forks_count'),
-            'watchers': repo.get('watchers_count'),
             'open_issues': repo.get('open_issues_count'),
+            'open_prs': open_prs,
+            'releases_count': releases_count,
+            'last_release_at': last_release_at,
+            'num_contributors': contributors_count,
             'is_fork': repo.get('fork', False),
             'is_archived': repo.get('archived', False),
+            'recent_push_30d': recent_push_30d,
             'created_at': repo.get('created_at'),
             'updated_at': repo.get('updated_at'),
             'pushed_at': repo.get('pushed_at'),
             'html_url': repo.get('html_url'),
-            'api_url': repo.get('url'),
-            'recent_push_30d': recent_push_30d
+            'api_url': repo.get('url')
         }
         self.repo_records[full_name] = repo_row
 
-    def _add_membership_record(self, login: str, repo_full_name: str, last_activity_at: Optional[str]):
+    def _add_membership_record(self, login: str, repo: Dict, last_activity_at: Optional[str]):
         """Add a Membership row keyed by membership_id."""
-        membership_id = hashlib.md5(f"{login}:{repo_full_name}".encode()).hexdigest()[:16]
+        repo_full_name = repo['full_name']
+        repo_id = repo.get('id')
+        membership_id = hashlib.md5(f"{repo_id}:{login}".encode()).hexdigest()[:16]
         if membership_id in self.membership_records:
             # Update last_activity_at if newer
             if last_activity_at and (
@@ -846,18 +943,23 @@ class GitHubScraper:
         self.membership_records[membership_id] = {
             'membership_id': membership_id,
             'login': login,
+            'repo_id': repo_id,
             'repo_full_name': repo_full_name,
             'role': '',  # can be AI classified later
             'permission': '',
+            'affiliation': '',
+            'is_org_member': None,
             'contributions_past_year': None,
             'last_activity_at': last_activity_at
         }
 
-    def _add_signal_record(self, login: str, repo_full_name: str, author_data: Dict):
+    def _add_signal_record(self, login: str, repo: Dict, author_data: Dict):
         """Add a Signal row keyed by signal_id."""
         signal_at = author_data.get('signal_at') or ''
         signal_type = author_data.get('signal_type') or ''
         signal_text = author_data.get('signal') or ''
+        repo_full_name = repo['full_name']
+        repo_id = repo.get('id')
         raw_id = f"{login}:{repo_full_name}:{signal_at}:{signal_type}:{signal_text[:20]}"
         signal_id = hashlib.md5(raw_id.encode()).hexdigest()[:16]
         if signal_id in self.signal_records:
@@ -865,6 +967,7 @@ class GitHubScraper:
         self.signal_records[signal_id] = {
             'signal_id': signal_id,
             'login': login,
+            'repo_id': repo_id,
             'repo_full_name': repo_full_name,
             'signal_type': signal_type,
             'signal': signal_text,
@@ -980,14 +1083,23 @@ class GitHubScraper:
     def export_attio_csvs(self, output_dir: str):
         """Export People, Repos, Membership, and Signals CSVs matching Attio headers."""
         os.makedirs(output_dir or '.', exist_ok=True)
-        attio_dir = output_dir
+        # Each object into its own folder under the provided output_dir
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        attio_dir = os.path.join(output_dir, f"export_{timestamp}")
+        os.makedirs(attio_dir, exist_ok=True)
+        people_dir = os.path.join(attio_dir, 'People')
+        repos_dir = os.path.join(attio_dir, 'Repos')
+        memberships_dir = os.path.join(attio_dir, 'Memberships')
+        signals_dir = os.path.join(attio_dir, 'Signals')
+        for d in [people_dir, repos_dir, memberships_dir, signals_dir]:
+            os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
             'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
-        with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(people_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
@@ -996,11 +1108,12 @@ class GitHubScraper:
         
         # Repos.csv
         repo_headers = [
-            'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
-            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at',
-            'html_url','api_url','recent_push_30d'
+            'repo_id','repo_full_name','repo_name','owner_login','owner_type','host','description','topics','primary_language',
+            'license','license_spdx','default_branch','homepage','has_issues','has_discussions',
+            'stars','subscribers','forks','open_issues','open_prs','releases_count','last_release_at','num_contributors','is_fork','is_archived','recent_push_30d',
+            'created_at','updated_at','pushed_at','html_url','api_url'
         ]
-        with open(os.path.join(attio_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(repos_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=repo_headers)
             w.writeheader()
             for row in self.repo_records.values():
@@ -1008,17 +1121,17 @@ class GitHubScraper:
         
         # Membership.csv
         membership_headers = [
-            'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
+            'membership_id','repo_id','login','repo_full_name','role','permission','affiliation','is_org_member','contributions_past_year','last_activity_at'
         ]
-        with open(os.path.join(attio_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(memberships_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=membership_headers)
             w.writeheader()
             for row in self.membership_records.values():
                 w.writerow({k: row.get(k) for k in membership_headers})
         
         # Signals.csv
-        signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
-        with open(os.path.join(attio_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
+        signal_headers = ['signal_id','login','repo_id','repo_full_name','signal_type','signal','signal_at','url','source']
+        with open(os.path.join(signals_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=signal_headers)
             w.writeheader()
             for row in self.signal_records.values():
@@ -1044,7 +1157,7 @@ class GitHubScraper:
                     best_stars = stars
                     best_name = rf.split('/')[-1]
             return best_name, (best_stars if best_stars >= 0 else '')
-        with open(os.path.join(attio_dir, 'People_Simple.csv'), 'w', newline='', encoding='utf-8') as f:
+        with open(os.path.join(people_dir, 'People_Simple.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=simple_headers)
             w.writeheader()
             for login, row in self.people_records.items():
