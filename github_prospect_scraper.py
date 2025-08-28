@@ -817,6 +817,24 @@ class GitHubScraper:
             # Fill commit email if missing and a new one is provided
             if email_public_commit and not self.people_records[login].get('email_public_commit'):
                 self.people_records[login]['email_public_commit'] = email_public_commit
+            # Backfill company_domain if missing
+            if not self.people_records[login].get('company_domain'):
+                company_domain_existing = None
+                email_profile = user_details.get('email')
+                if email_profile:
+                    company_domain_existing = self._normalize_domain(email_profile)
+                if not company_domain_existing and email_public_commit:
+                    company_domain_existing = self._normalize_domain(email_public_commit)
+                if not company_domain_existing and repo:
+                    owner_login = (repo.get('owner') or {}).get('login')
+                    owner_type = (repo.get('owner') or {}).get('type')
+                    if owner_login and owner_type == 'Organization':
+                        org = self._get_org_details(owner_login)
+                        company_domain_existing = self._normalize_domain(org.get('blog')) or company_domain_existing
+                    if not company_domain_existing:
+                        company_domain_existing = self._normalize_domain(repo.get('homepage'))
+                if company_domain_existing:
+                    self.people_records[login]['company_domain'] = company_domain_existing
             return
         # Infer pronouns from bio when available
         pronouns = None
@@ -967,6 +985,19 @@ class GitHubScraper:
         open_prs = self._count_open_prs(full_name) if pull_cfg else None
         releases_count, last_release_at = self._get_releases_info(full_name) if pull_cfg else (None, None)
         contributors_count = self._count_contributors(full_name) if pull_cfg else None
+
+        # Derive company_domain from org blog or repo homepage
+        company_domain = None
+        owner_login = (repo.get('owner') or {}).get('login')
+        owner_type = (repo.get('owner') or {}).get('type')
+        if owner_login and owner_type == 'Organization':
+            try:
+                org = self._get_org_details(owner_login)
+                company_domain = self._normalize_domain((org or {}).get('blog')) or company_domain
+            except Exception:
+                company_domain = None
+        if not company_domain:
+            company_domain = self._normalize_domain((details or {}).get('homepage') or repo.get('homepage'))
 
         repo_row = {
             'repo_id': repo.get('id'),
@@ -1172,7 +1203,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1228,7 +1259,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1282,7 +1313,22 @@ def main():
     args = parser.parse_args()
     
     # Check for GitHub token
-    token = os.environ.get('GITHUB_TOKEN')
+    # Prefer token from config.github.token_env, then GITHUB_TOKEN, then GH_TOKEN
+    token_env_name = None
+    try:
+        with open(args.config, 'r') as _cf:
+            _cfg_for_token = yaml.safe_load(_cf) or {}
+            token_env_name = (((_cfg_for_token.get('github') or {}).get('token_env')) or None)
+    except Exception:
+        token_env_name = None
+    token = None
+    if token_env_name:
+        token = os.environ.get(token_env_name)
+    if not token:
+        token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    # Sanitize
+    if token:
+        token = token.strip().strip('"').strip("'")
     if not token:
         print("⚠️  Warning: GITHUB_TOKEN environment variable not set")
         print("   Running without authentication (limited to public data)")
