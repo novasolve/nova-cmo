@@ -41,6 +41,51 @@ search:
 python github_prospect_scraper.py --config config.yaml --out prospects.csv
 ```
 
+## 🆕 URL Mode - Quick Prospect Analysis
+
+Analyze any GitHub user or repository instantly:
+
+### Analyze a GitHub user profile
+
+```bash
+# Using the wrapper script (easiest)
+./scrape_url.sh @aml5600
+./scrape_url.sh https://github.com/username
+
+# Using the main script directly
+python github_prospect_scraper.py --url "https://github.com/username" --print-only
+```
+
+### Analyze contributors to a specific repository
+
+```bash
+./scrape_url.sh https://github.com/owner/repo
+python github_prospect_scraper.py --url "https://github.com/owner/repo" --print-only
+```
+
+### Save results to CSV
+
+```bash
+./scrape_url.sh @username --save
+python github_prospect_scraper.py --url "https://github.com/username" --out prospects.csv
+```
+
+**Example Output:**
+```
+📊 PROSPECT SUMMARY (1 total)
+================================================================================
+
+ 1. aml5600 (Andrew Leonard)
+    📧 Email: No email found
+    🏢 Company: Not specified
+    📍 Location: Atlanta
+    🔗 LinkedIn: Not found
+    ⭐ GitHub Stats: 4 followers, 14 repos
+    📦 Repository: aml5600/ModelingToolkit.jl (0 stars)
+    🎯 Signal: owns repository: ModelingToolkit.jl
+    📅 Activity: 2025-05-11T09:32:53Z
+```
+
 ## Output Format
 
 The scraper generates a CSV with these columns:
@@ -136,6 +181,31 @@ Most GitHub users hide emails. After scraping:
 - `per_repo_prs` - PR authors per repo
 - `per_repo_commits` - Commit authors per repo
 - `max_people` - Total prospect limit
+
+## CLI Options
+
+The scraper supports multiple modes and options:
+
+```bash
+# Regular config-based scraping
+python github_prospect_scraper.py --config config.yaml --out prospects.csv
+
+# URL mode for quick analysis
+python github_prospect_scraper.py --url "https://github.com/username" --print-only
+
+# Override config limits
+python github_prospect_scraper.py --config config.yaml -n 5 --out prospects.csv
+
+# All options
+python github_prospect_scraper.py --help
+```
+
+**Available Options:**
+- `--config CONFIG` - Config file path (default: config.yaml)
+- `--out OUT` - Output CSV path (default: data/prospects.csv)
+- `-n, --max-repos MAX_REPOS` - Maximum repos to process (overrides config)
+- `--url URL` - GitHub URL to scrape (user profile or repository)
+- `--print-only` - Only print results, don't save to CSV
 
 ## Good Citizen Guidelines
 
