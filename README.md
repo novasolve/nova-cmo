@@ -222,6 +222,17 @@ python github_prospect_scraper.py --help
 - `--dedup-db` - Path to SQLite DB for dedup (default: data/dedup.db)
 - `--no-dedup` - Disable deduplication (process all logins)
 
+### Environment
+
+- `DEDUP_DB` (optional): absolute path to the SQLite dedup DB. If set, it becomes the default for `--dedup-db`.
+
+Example:
+
+```bash
+export DEDUP_DB="$(pwd)/data/dedup.db"
+python github_prospect_scraper.py --config configs/main.yaml --out data/prospects.csv
+```
+
 ## Good Citizen Guidelines
 
 ✅ **DO:**
