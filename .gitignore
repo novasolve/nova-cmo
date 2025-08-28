@@ -1,0 +1,32 @@
+# Data files
+data/
+exports/
+*.csv
+
+# Config overrides
+config.local.yaml
+*_local.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+env/
+
+# Environment files
+.env
+.env.local
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
