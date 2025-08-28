@@ -405,7 +405,7 @@ class GitHubScraper:
             return self.contrib_cache[username]
         if not (self.token and self.token.strip()):
             return {}
-        to_dt = datetime.utcnow()
+        to_dt = datetime.now(datetime.UTC)
         from_dt = to_dt - timedelta(days=365)
         query = (
             "query($user: String!, $from: DateTime!, $to: DateTime!) {\n"
