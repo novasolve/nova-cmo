@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # GitHub Prospect Scraper Runner
-# This script makes it easy to run the scraper with common configurations
+# This script runs the GitHub prospect scraper with common configurations
 
-set -e
+set -e  # Exit immediately on error
 
 # Check if GITHUB_TOKEN is set
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "❌ Error: GITHUB_TOKEN not set"
-    echo "Please run: export GITHUB_TOKEN=ghp_yourtoken"
+    echo "Please run: export GITHUB_TOKEN=<your_github_token>"
     echo "Get a token at: https://github.com/settings/tokens"
     exit 1
 fi
@@ -41,19 +41,27 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  -c, --config FILE    Config file (default: config.yaml)"
             echo "  -o, --output FILE    Output CSV file (default: data/prospects_TIMESTAMP.csv)"
-            echo "  -n, --max-repos N    Maximum number of repos to process"
-            echo "  -h, --help          Show this help message"
+            echo "  -n, --max-repos N    Maximum number of repos to process (limit scope for testing)"
+            echo "  -h, --help           Show this help message"
+            echo ""
+            echo "Example: $0 -n 3   # Process only first 3 repos and get a small sample of prospects"
             exit 0
             ;;
         *)
-            echo "Unknown option: $1"
-            echo "Run $0 --help for usage"
+            echo "❌ Unknown option: $1"
+            echo "Run '$0 --help' for usage."
             exit 1
             ;;
     esac
 done
 
-# Show configuration
+# Check that the config file exists
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo "❌ Error: Config file '$CONFIG_FILE' not found"
+    exit 1
+fi
+
+# Show configuration being used
 echo "🚀 GitHub Prospect Scraper"
 echo "========================="
 echo "📋 Config: $CONFIG_FILE"
@@ -63,24 +71,44 @@ if [ -n "$MAX_REPOS" ]; then
 fi
 echo ""
 
-# Build command with optional -n argument
-CMD="python github_prospect_scraper.py --config \"$CONFIG_FILE\" --out \"$OUTPUT_FILE\""
+# Run the scraper (build arguments without using eval for safety)
 if [ -n "$MAX_REPOS" ]; then
-    CMD="$CMD -n $MAX_REPOS"
+    python github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE" -n "$MAX_REPOS"
+else
+    python github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE"
 fi
 
-# Run the scraper
-eval $CMD
-
-# Show results
+# Show results summary and preview
 if [ -f "$OUTPUT_FILE" ]; then
-    PROSPECT_COUNT=$(tail -n +2 "$OUTPUT_FILE" | wc -l)
+    PROSPECT_COUNT=$(tail -n +2 "$OUTPUT_FILE" | wc -l)  # count lines excluding header
     echo ""
     echo "📊 Summary:"
     echo "- Total prospects: $PROSPECT_COUNT"
     echo "- Output file: $OUTPUT_FILE"
-    
-    # Create a latest symlink for easy access
+    # Create/update a symlink for easy access to the latest results
     ln -sf "$(basename "$OUTPUT_FILE")" data/prospects_latest.csv
     echo "- Latest symlink: data/prospects_latest.csv"
+
+    # If prospects were found, display the first 3 for quick preview
+    if [ "$PROSPECT_COUNT" -gt 0 ]; then
+        echo ""
+        echo "👀 First 3 prospects (preview):"
+        echo "────────────────────────────────────────────────────────────────────────────────"
+        
+        # Extract and display key fields in a readable format
+        tail -n +2 "$OUTPUT_FILE" | head -n 3 | while IFS=',' read -r lead_id login id node_id name company email_public_commit email_profile location bio pronouns repo_full_name repo_description signal signal_type signal_at topics language stars forks watchers github_user_url github_repo_url avatar_url html_url api_url followers_url following_url gists_url starred_url subscriptions_url organizations_url repos_url events_url received_events_url twitter_username blog linkedin_username hireable public_repos public_gists followers following total_private_repos owned_private_repos private_gists disk_usage collaborators contributions_last_year total_contributions longest_streak current_streak created_at updated_at type site_admin gravatar_id suspended_at plan_name plan_space plan_collaborators plan_private_repos two_factor_authentication has_organization_projects has_repository_projects; do
+            echo "🧑 Name: ${name:-$login}"
+            echo "🔗 Profile: $github_user_url"
+            echo "🏢 Company: ${company:-"Not specified"}"
+            echo "📧 Email: ${email_profile:-${email_public_commit:-"Not found"}}"
+            echo "📍 Location: ${location:-"Not specified"}"
+            echo "🔗 LinkedIn: ${linkedin_username:-"Not found"}"
+            echo "⭐ GitHub Stats: $followers followers, $public_repos repos"
+            echo "📦 Repository: $repo_full_name ($stars stars)"
+            echo "🎯 Signal: $signal"
+            echo "📅 Activity: $signal_at"
+            echo ""
+        done
+        echo "────────────────────────────────────────────────────────────────────────────────"
+    fi
 fi
