@@ -4,7 +4,7 @@ on:
   # Run weekly on Mondays at 8 AM UTC
   schedule:
     - cron: "0 8 * * 1"
-  
+
   # Manual trigger
   workflow_dispatch:
 
@@ -20,12 +20,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: "pip"
-      
+
       - name: Setup and run
         run: |
           make setup
           make attio
-      
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         with:

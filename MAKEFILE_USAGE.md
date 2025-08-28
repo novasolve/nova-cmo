@@ -20,21 +20,25 @@ make url URL=@username
 Run `make help` to see all commands:
 
 ### Setup
+
 - `make install` - Install dependencies
 - `make setup` - Setup project (install + check token)
 
 ### Main Commands
+
 - `make scrape` - Run default scraper
 - `make attio` - Generate Attio-ready CSVs ⭐
 - `make url URL=@username` - Quick URL analysis
 
 ### Development
+
 - `make test` - Small test scrape (2 repos)
 - `make clean` - Clean up files
 
 ## Examples
 
 ### Basic Usage
+
 ```bash
 # Setup and run Attio export
 make setup
@@ -52,6 +56,7 @@ make test
 The project includes one automated workflow:
 
 ### Attio Export (`.github/workflows/attio-export.yml`)
+
 - Runs weekly on Mondays at 8 AM UTC
 - Generates Attio-ready exports automatically
 - Manual trigger available in Actions tab
