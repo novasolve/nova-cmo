@@ -182,9 +182,6 @@ class GitHubScraper:
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
         self.org_cache: Dict[str, Dict] = {}
-        # Lead counter and dedup configuration
-        self.leads_with_email_count: int = 0
-        
         # Dedup configuration
         dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
         self.dedup_enabled: bool = bool(dedup_cfg.get('enabled', True))
@@ -1021,6 +1018,9 @@ class GitHubScraper:
             'location': user_details.get('location'),
             'bio': user_details.get('bio'),
             'pronouns': pronouns,
+            # Helpful context copied from latest repo processed for this user
+            'recent_repo_full_name': (repo or {}).get('full_name') if repo else None,
+            'recent_repo_stars': (repo or {}).get('stargazers_count') if repo else None,
             'public_repos': user_details.get('public_repos'),
             'public_gists': user_details.get('public_gists'),
             'followers': user_details.get('followers'),
@@ -1386,6 +1386,7 @@ class GitHubScraper:
         people_headers = [
             'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
+            'recent_repo_full_name','recent_repo_stars',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(people_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
@@ -1411,6 +1412,8 @@ class GitHubScraper:
                     'public_gists': row.get('public_gists'),
                     'followers': row.get('followers'),
                     'following': row.get('following'),
+                    'recent_repo_full_name': row.get('recent_repo_full_name'),
+                    'recent_repo_stars': row.get('recent_repo_stars'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
@@ -1468,6 +1471,7 @@ class GitHubScraper:
         people_headers = [
             'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
+            'recent_repo_full_name','recent_repo_stars',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
@@ -1492,6 +1496,8 @@ class GitHubScraper:
                     'public_gists': row.get('public_gists'),
                     'followers': row.get('followers'),
                     'following': row.get('following'),
+                    'recent_repo_full_name': row.get('recent_repo_full_name'),
+                    'recent_repo_stars': row.get('recent_repo_stars'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
