@@ -921,6 +921,28 @@ class GitHubScraper:
         }
         self.people_records[login] = person_row
 
+    def _sanitize_signal_type(self, raw: Optional[str]) -> str:
+        """Normalize signal_type to allowed set: pr|issue|commit|release|star|fork|other"""
+        allowed = {"pr", "issue", "commit", "release", "star", "fork", "other"}
+        if not raw:
+            return "other"
+        r = str(raw).lower().strip()
+        if r in allowed:
+            return r
+        alias_map = {
+            "pull_request": "pr",
+            "pull": "pr",
+            "merge_request": "pr",
+            "stargazer": "star",
+            "starred": "star",
+            "forked": "fork",
+            "forks": "fork",
+            "repo_owner": "other",
+            "owner": "other",
+            "created_repo": "other",
+        }
+        return alias_map.get(r, "other")
+
     def _fetch_repo_details(self, full_name: str) -> Dict:
         """Fetch full repo details (subscribers_count, default_branch, homepage, flags). Cached."""
         if full_name in self.repo_details_cache:
@@ -1101,7 +1123,7 @@ class GitHubScraper:
     def _add_signal_record(self, login: str, repo: Dict, author_data: Dict):
         """Add a Signal row keyed by signal_id."""
         signal_at = author_data.get('signal_at') or ''
-        signal_type = author_data.get('signal_type') or ''
+        signal_type = self._sanitize_signal_type(author_data.get('signal_type'))
         signal_text = author_data.get('signal') or ''
         repo_full_name = repo['full_name']
         repo_id = repo.get('id')
@@ -1248,46 +1270,20 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                # Skip people without any email
-                email_profile = (row.get('email_profile') or '').strip()
-                email_commit = (row.get('email_public_commit') or '').strip()
-                if not (email_profile or email_commit):
-                    continue
                 # ensure all keys exist
                 w.writerow({k: row.get(k) for k in people_headers})
         
         # Repos.csv
         repo_headers = [
             'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
-            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at','html_url','api_url','recent_push_30d'
+            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at',
+            'html_url','api_url','recent_push_30d'
         ]
         with open(os.path.join(repos_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=repo_headers)
             w.writeheader()
             for row in self.repo_records.values():
-                out = {
-                    'repo_full_name': row.get('repo_full_name'),
-                    'repo_name': row.get('repo_name'),
-                    'owner_login': row.get('owner_login'),
-                    'host': row.get('host'),
-                    'description': row.get('description'),
-                    'primary_language': row.get('primary_language'),
-                    'license': row.get('license') or row.get('license_spdx'),
-                    'topics': row.get('topics'),
-                    'stars': row.get('stars'),
-                    'forks': row.get('forks'),
-                    'watchers': row.get('watchers'),
-                    'open_issues': row.get('open_issues'),
-                    'is_fork': row.get('is_fork'),
-                    'is_archived': row.get('is_archived'),
-                    'created_at': row.get('created_at'),
-                    'updated_at': row.get('updated_at'),
-                    'pushed_at': row.get('pushed_at'),
-                    'html_url': row.get('html_url'),
-                    'api_url': row.get('api_url'),
-                    'recent_push_30d': row.get('recent_push_30d'),
-                }
-                w.writerow(out)
+                w.writerow({k: row.get(k) for k in repo_headers})
         
         # Membership.csv
         membership_headers = [
@@ -1297,7 +1293,16 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=membership_headers)
             w.writeheader()
             for row in self.membership_records.values():
-                w.writerow({k: row.get(k) for k in membership_headers})
+                out_row = {
+                    'membership_id': row.get('membership_id'),
+                    'login': row.get('login'),
+                    'repo_full_name': row.get('repo_full_name'),
+                    'role': row.get('role'),
+                    'permission': row.get('permission'),
+                    'contributions_past_year': row.get('contributions_past_year'),
+                    'last_activity_at': row.get('last_activity_at'),
+                }
+                w.writerow(out_row)
         
         # Signals.csv
         signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
@@ -1305,10 +1310,8 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=signal_headers)
             w.writeheader()
             for row in self.signal_records.values():
-                w.writerow({k: row.get(k) for k in signal_headers})
-
-        # Removed People_Simple.csv generation as requested
-
+                out_row = {k: row.get(k) for k in signal_headers}
+                w.writerow(out_row)
 
     def export_attio_csvs_flat(self, attio_dir: str):
         """Export Attio CSVs directly into the provided directory (no subfolders)."""
@@ -1316,7 +1319,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1324,11 +1327,6 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                # Skip people without any email
-                email_profile = (row.get('email_profile') or '').strip()
-                email_commit = (row.get('email_public_commit') or '').strip()
-                if not (email_profile or email_commit):
-                    continue
                 w.writerow({k: row.get(k) for k in people_headers})
         # Repos.csv
         repo_headers = [
@@ -1364,6 +1362,8 @@ def main():
     parser.add_argument('--out', default='data/prospects.csv', help='Output CSV path')
     parser.add_argument('--out-dir', default='data', help='Directory to write split Attio CSVs (people/repos/memberships/signals)')
     parser.add_argument('-n', '--max-repos', type=int, help='Maximum number of repos to process (overrides config)')
+    parser.add_argument('--repos', type=int, help='Alias for --max-repos (overrides config.limits.max_repos)')
+    parser.add_argument('--leads', type=int, help='Maximum number of people/leads to collect (overrides config.limits.max_people)')
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
     parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
@@ -1401,6 +1401,13 @@ def main():
             'limits': {'per_repo_prs': 10, 'per_repo_commits': 10, 'max_people': 50},
             'delay': 1
         }
+        # Apply overrides in URL mode as well
+        if args.max_repos or args.repos:
+            config['limits']['max_repos'] = args.repos or args.max_repos
+            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
+        if args.leads:
+            config['limits']['max_people'] = args.leads
+            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
         
         # Don't save to CSV if print-only mode
         output_path = None if args.print_only else args.out
@@ -1430,10 +1437,13 @@ def main():
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f)
             
-        # Override max_repos if -n argument is provided
-        if args.max_repos:
-            config['limits']['max_repos'] = args.max_repos
-            print(f"🔧 Overriding max_repos to {args.max_repos}")
+        # Overrides from CLI
+        if args.max_repos or args.repos:
+            config['limits']['max_repos'] = args.repos or args.max_repos
+            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
+        if args.leads:
+            config['limits']['max_people'] = args.leads
+            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
     except FileNotFoundError:
         print(f"❌ Error: Config file '{args.config}' not found")
         print("Creating default config...")
