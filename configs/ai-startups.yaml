@@ -1,0 +1,32 @@
+# AI/ML Startups Configuration
+
+search:
+  # Target AI/ML projects with decent traction
+  query: "(topic:ai OR topic:artificial-intelligence OR topic:machine-learning OR topic:llm OR topic:deep-learning) stars:>50 pushed:>2024-01-01"
+  sort: "updated"
+  order: "desc"
+  per_page: 50
+
+filters:
+  # Recent activity only
+  activity_days: 60
+
+limits:
+  max_repos: 100
+  per_repo_prs: 15
+  per_repo_commits: 10
+  max_people: 1000
+
+delay: 1
+
+# Specific keywords to look for in repos
+target_keywords:
+  - "transformer"
+  - "embeddings"
+  - "fine-tuning"
+  - "inference"
+  - "model training"
+  - "vector database"
+  - "RAG"
+  - "agent"
+  - "prompt engineering"
