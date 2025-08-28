@@ -1240,7 +1240,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1258,20 +1258,40 @@ class GitHubScraper:
         
         # Repos.csv
         repo_headers = [
-            'repo_id','repo_full_name','repo_name','owner_login','owner_type','host','description','topics','primary_language',
-            'license','license_spdx','default_branch','homepage','has_issues','has_discussions','company_domain',
-            'stars','watchers','subscribers','forks','open_issues','open_prs','releases_count','last_release_at','num_contributors','is_fork','is_archived','recent_push_30d',
-            'created_at','updated_at','pushed_at','html_url','api_url'
+            'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
+            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at','html_url','api_url','recent_push_30d'
         ]
         with open(os.path.join(repos_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=repo_headers)
             w.writeheader()
             for row in self.repo_records.values():
-                w.writerow({k: row.get(k) for k in repo_headers})
+                out = {
+                    'repo_full_name': row.get('repo_full_name'),
+                    'repo_name': row.get('repo_name'),
+                    'owner_login': row.get('owner_login'),
+                    'host': row.get('host'),
+                    'description': row.get('description'),
+                    'primary_language': row.get('primary_language'),
+                    'license': row.get('license') or row.get('license_spdx'),
+                    'topics': row.get('topics'),
+                    'stars': row.get('stars'),
+                    'forks': row.get('forks'),
+                    'watchers': row.get('watchers'),
+                    'open_issues': row.get('open_issues'),
+                    'is_fork': row.get('is_fork'),
+                    'is_archived': row.get('is_archived'),
+                    'created_at': row.get('created_at'),
+                    'updated_at': row.get('updated_at'),
+                    'pushed_at': row.get('pushed_at'),
+                    'html_url': row.get('html_url'),
+                    'api_url': row.get('api_url'),
+                    'recent_push_30d': row.get('recent_push_30d'),
+                }
+                w.writerow(out)
         
         # Membership.csv
         membership_headers = [
-            'membership_id','repo_id','login','repo_full_name','role','permission','affiliation','is_org_member','contributions_past_year','last_activity_at'
+            'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
         ]
         with open(os.path.join(memberships_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=membership_headers)
@@ -1280,7 +1300,7 @@ class GitHubScraper:
                 w.writerow({k: row.get(k) for k in membership_headers})
         
         # Signals.csv
-        signal_headers = ['signal_id','login','repo_id','repo_full_name','signal_type','signal','signal_at','url','source']
+        signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
         with open(os.path.join(signals_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=signal_headers)
             w.writeheader()
