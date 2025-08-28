@@ -1260,7 +1260,7 @@ class GitHubScraper:
         repo_headers = [
             'repo_id','repo_full_name','repo_name','owner_login','owner_type','host','description','topics','primary_language',
             'license','license_spdx','default_branch','homepage','has_issues','has_discussions','company_domain',
-            'stars','subscribers','forks','open_issues','open_prs','releases_count','last_release_at','num_contributors','is_fork','is_archived','recent_push_30d',
+            'stars','watchers','subscribers','forks','open_issues','open_prs','releases_count','last_release_at','num_contributors','is_fork','is_archived','recent_push_30d',
             'created_at','updated_at','pushed_at','html_url','api_url'
         ]
         with open(os.path.join(repos_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
