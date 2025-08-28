@@ -1414,30 +1414,16 @@ class GitHubScraper:
         people_headers = [
             'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
-            'recent_repo_full_name','recent_repo_stars',
-            'repo_membership_membership_id','repo_membership_repo_full_name','repo_membership_repo_id','repo_membership_html_url',
-            'repo_membership_role','repo_membership_permission','repo_membership_affiliation','repo_membership_is_org_member',
-            'repo_membership_contributions_past_year','repo_membership_last_activity_at',
-            'signals_signal_id','signals_signal_type','signals_signal','signals_signal_at','signals_html_url','signals_source','signals_repo_full_name','signals_repo_id',
+            'repo_full_name','repo_name','repo_owner_login','repo_description','repo_topics','repo_primary_language',
+            'repo_stars','repo_forks','repo_watchers','repo_open_issues','repo_is_fork','repo_is_archived',
+            'repo_created_at','repo_updated_at','repo_pushed_at','repo_html_url',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(people_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
-            # Choose best membership per login (latest activity)
-            best_m_by_login: Dict[str, Dict] = {}
-            for m in self.membership_records.values():
-                lg = m.get('login')
-                if not lg:
-                    continue
-                cur = best_m_by_login.get(lg)
-                if (cur is None) or ((m.get('last_activity_at') or '') > (cur.get('last_activity_at') or '')):
-                    best_m_by_login[lg] = m
             for row in self.people_records.values():
                 best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
-                m = best_m_by_login.get(row.get('login')) or {}
-                repo_fn = m.get('repo_full_name')
-                repo_html = self.repo_records.get(repo_fn, {}).get('html_url') if repo_fn else None
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1456,26 +1442,22 @@ class GitHubScraper:
                     'public_gists': row.get('public_gists'),
                     'followers': row.get('followers'),
                     'following': row.get('following'),
-                    'recent_repo_full_name': row.get('recent_repo_full_name'),
-                    'recent_repo_stars': row.get('recent_repo_stars'),
-                    'repo_membership_membership_id': m.get('membership_id'),
-                    'repo_membership_repo_full_name': repo_fn,
-                    'repo_membership_repo_id': m.get('repo_id'),
-                    'repo_membership_html_url': repo_html,
-                    'repo_membership_role': m.get('role'),
-                    'repo_membership_permission': m.get('permission'),
-                    'repo_membership_affiliation': m.get('affiliation'),
-                    'repo_membership_is_org_member': m.get('is_org_member'),
-                    'repo_membership_contributions_past_year': m.get('contributions_past_year'),
-                    'repo_membership_last_activity_at': m.get('last_activity_at'),
-                    'signals_signal_id': row.get('signals_signal_id'),
-                    'signals_signal_type': row.get('signals_signal_type'),
-                    'signals_signal': row.get('signals_signal'),
-                    'signals_signal_at': row.get('signals_signal_at'),
-                    'signals_html_url': row.get('signals_html_url'),
-                    'signals_source': row.get('signals_source'),
-                    'signals_repo_full_name': row.get('signals_repo_full_name'),
-                    'signals_repo_id': row.get('signals_repo_id'),
+                    'repo_full_name': row.get('repo_full_name'),
+                    'repo_name': row.get('repo_name'),
+                    'repo_owner_login': row.get('repo_owner_login'),
+                    'repo_description': row.get('repo_description'),
+                    'repo_topics': row.get('repo_topics'),
+                    'repo_primary_language': row.get('repo_primary_language'),
+                    'repo_stars': row.get('repo_stars'),
+                    'repo_forks': row.get('repo_forks'),
+                    'repo_watchers': row.get('repo_watchers'),
+                    'repo_open_issues': row.get('repo_open_issues'),
+                    'repo_is_fork': row.get('repo_is_fork'),
+                    'repo_is_archived': row.get('repo_is_archived'),
+                    'repo_created_at': row.get('repo_created_at'),
+                    'repo_updated_at': row.get('repo_updated_at'),
+                    'repo_pushed_at': row.get('repo_pushed_at'),
+                    'repo_html_url': row.get('repo_html_url'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
@@ -1529,34 +1511,20 @@ class GitHubScraper:
         """Export Attio CSVs directly into the provided directory (no subfolders)."""
         os.makedirs(attio_dir or '.', exist_ok=True)
         # Use the same accumulators as export_attio_csvs
-        # People.csv (flat)
+        # People.csv
         people_headers = [
             'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
-            'recent_repo_full_name','recent_repo_stars',
-            'repo_membership_membership_id','repo_membership_repo_full_name','repo_membership_repo_id','repo_membership_html_url',
-            'repo_membership_role','repo_membership_permission','repo_membership_affiliation','repo_membership_is_org_member',
-            'repo_membership_contributions_past_year','repo_membership_last_activity_at',
-            'signals_signal_id','signals_signal_type','signals_signal','signals_signal_at','signals_html_url','signals_source','signals_repo_full_name','signals_repo_id',
+            'repo_full_name','repo_name','repo_owner_login','repo_description','repo_topics','repo_primary_language',
+            'repo_stars','repo_forks','repo_watchers','repo_open_issues','repo_is_fork','repo_is_archived',
+            'repo_created_at','repo_updated_at','repo_pushed_at','repo_html_url',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
-            # Build map for latest membership per login (flat mode)
-            flat_best_m: Dict[str, Dict] = {}
-            for m in self.membership_records.values():
-                lg = m.get('login')
-                if not lg:
-                    continue
-                cur = flat_best_m.get(lg)
-                if (cur is None) or ((m.get('last_activity_at') or '') > (cur.get('last_activity_at') or '')):
-                    flat_best_m[lg] = m
             for row in self.people_records.values():
                 best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
-                m = flat_best_m.get(row.get('login')) or {}
-                repo_fn = m.get('repo_full_name')
-                repo_html = self.repo_records.get(repo_fn, {}).get('html_url') if repo_fn else None
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1574,26 +1542,22 @@ class GitHubScraper:
                     'public_gists': row.get('public_gists'),
                     'followers': row.get('followers'),
                     'following': row.get('following'),
-                    'recent_repo_full_name': row.get('recent_repo_full_name'),
-                    'recent_repo_stars': row.get('recent_repo_stars'),
-                    'repo_membership_membership_id': m.get('membership_id'),
-                    'repo_membership_repo_full_name': repo_fn,
-                    'repo_membership_repo_id': m.get('repo_id'),
-                    'repo_membership_html_url': repo_html,
-                    'repo_membership_role': m.get('role'),
-                    'repo_membership_permission': m.get('permission'),
-                    'repo_membership_affiliation': m.get('affiliation'),
-                    'repo_membership_is_org_member': m.get('is_org_member'),
-                    'repo_membership_contributions_past_year': m.get('contributions_past_year'),
-                    'repo_membership_last_activity_at': m.get('last_activity_at'),
-                    'signals_signal_id': row.get('signals_signal_id'),
-                    'signals_signal_type': row.get('signals_signal_type'),
-                    'signals_signal': row.get('signals_signal'),
-                    'signals_signal_at': row.get('signals_signal_at'),
-                    'signals_html_url': row.get('signals_html_url'),
-                    'signals_source': row.get('signals_source'),
-                    'signals_repo_full_name': row.get('signals_repo_full_name'),
-                    'signals_repo_id': row.get('signals_repo_id'),
+                    'repo_full_name': row.get('repo_full_name'),
+                    'repo_name': row.get('repo_name'),
+                    'repo_owner_login': row.get('repo_owner_login'),
+                    'repo_description': row.get('repo_description'),
+                    'repo_topics': row.get('repo_topics'),
+                    'repo_primary_language': row.get('repo_primary_language'),
+                    'repo_stars': row.get('repo_stars'),
+                    'repo_forks': row.get('repo_forks'),
+                    'repo_watchers': row.get('repo_watchers'),
+                    'repo_open_issues': row.get('repo_open_issues'),
+                    'repo_is_fork': row.get('repo_is_fork'),
+                    'repo_is_archived': row.get('repo_is_archived'),
+                    'repo_created_at': row.get('repo_created_at'),
+                    'repo_updated_at': row.get('repo_updated_at'),
+                    'repo_pushed_at': row.get('repo_pushed_at'),
+                    'repo_html_url': row.get('repo_html_url'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
