@@ -1342,7 +1342,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','company_domain','email_main','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1350,7 +1350,11 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
+                best_email = (
+                    row.get('email_main')
+                    or self._choose_main_email(row.get('email_profile'), row.get('email_public_commit'))
+                    or row.get('Predicted Email')
+                )
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1359,7 +1363,8 @@ class GitHubScraper:
                     'name': row.get('name'),
                     'company_raw': row.get('company'),
                     'company_domain': row.get('company_domain'),
-                    'email_addresses': best_email,
+                    'email_main': best_email,
+                    'email_profile': row.get('email_profile'),
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
@@ -1424,7 +1429,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','email_main','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1432,7 +1437,11 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
+                best_email = (
+                    row.get('email_main')
+                    or self._choose_main_email(row.get('email_profile'), row.get('email_public_commit'))
+                    or row.get('Predicted Email')
+                )
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1440,7 +1449,8 @@ class GitHubScraper:
                     'lead_id': row.get('lead_id'),
                     'name': row.get('name'),
                     'company_raw': row.get('company'),
-                    'email_addresses': best_email,
+                    'email_main': best_email,
+                    'email_profile': row.get('email_profile'),
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
@@ -1492,6 +1502,8 @@ def main():
     parser.add_argument('--out', default='data/prospects.csv', help='Output CSV path')
     parser.add_argument('--out-dir', default='data', help='Directory to write split Attio CSVs (people/repos/memberships/signals)')
     parser.add_argument('-n', '--max-repos', type=int, help='Maximum number of repos to process (overrides config)')
+    parser.add_argument('--repos', type=int, help='Alias for --max-repos (overrides config.limits.max_repos)')
+    parser.add_argument('--leads', type=int, help='Maximum number of people/leads (with email) to collect (overrides config.limits.max_people)')
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
     parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
@@ -1532,6 +1544,16 @@ def main():
             'delay': 1,
             'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db}
         }
+        # Apply overrides in URL mode
+        if args.max_repos or args.repos:
+            config['limits']['max_repos'] = args.repos or args.max_repos
+            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
+        if args.leads:
+            config['limits']['max_people'] = args.leads
+            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
+            if not (args.max_repos or args.repos):
+                config['limits']['max_repos'] = max(config['limits'].get('max_repos', 0) or 0, 1000)
+                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} to satisfy leads target")
         
         # Don't save to CSV if print-only mode
         output_path = None if args.print_only else args.out
@@ -1564,10 +1586,16 @@ def main():
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f)
             
-        # Override max_repos if -n argument is provided
-        if args.max_repos:
-            config['limits']['max_repos'] = args.max_repos
-            print(f"🔧 Overriding max_repos to {args.max_repos}")
+        # Overrides from CLI
+        if args.max_repos or args.repos:
+            config['limits']['max_repos'] = args.repos or args.max_repos
+            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
+        if args.leads:
+            config['limits']['max_people'] = args.leads
+            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
+            if not (args.max_repos or args.repos):
+                config['limits']['max_repos'] = max(config['limits'].get('max_repos', 0) or 0, 1000)
+                print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} to satisfy leads target")
         # Inject dedup configuration
         config.setdefault('dedup', {})
         config['dedup']['enabled'] = (not args.no_dedup)
@@ -1629,6 +1657,23 @@ def main():
                 combined.append(p)
             # Close dedup DB between segments
             scraper._close_csv_file()
+        # Select up to the requested number of leads if provided
+        max_people = config.get('limits', {}).get('max_people') or None
+        if max_people:
+            def score_prospect(pr: Prospect) -> float:
+                has_email = 1 if (pr.email_profile or pr.email_public_commit) else 0
+                followers = (pr.followers or 0)
+                stars = (pr.stars or 0)
+                try:
+                    recency = 0
+                    if pr.signal_at:
+                        dt = datetime.fromisoformat(pr.signal_at.replace('Z', '+00:00'))
+                        recency = dt.timestamp()
+                except Exception:
+                    recency = 0
+                return has_email * 1e12 + followers * 1e6 + stars * 1e3 + recency
+            combined.sort(key=score_prospect, reverse=True)
+            combined = combined[:max_people]
         # Write combined CSVs
         if args.out:
             fieldnames = list(combined[0].to_dict().keys()) if combined else []
