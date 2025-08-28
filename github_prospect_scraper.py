@@ -400,7 +400,8 @@ class GitHubScraper:
         max_repos = self.config['limits']['max_repos']
         
         page = 1
-        pages_pbar = tqdm(desc="Searching repos", unit="page", leave=False)
+        est_pages = max(1, (max_repos + per_page - 1) // per_page)
+        pages_pbar = tqdm(total=est_pages, desc="Searching repos", unit="page", leave=False)
         while len(repos) < max_repos:
             url = f"https://api.github.com/search/repositories"
             params = {
