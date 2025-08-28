@@ -1319,7 +1319,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_name','company_domain','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_name','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1327,6 +1327,7 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
+                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1335,7 +1336,7 @@ class GitHubScraper:
                     'name': row.get('name'),
                     'company_name': row.get('company'),
                     'company_domain': row.get('company_domain'),
-                    'email_profile': row.get('email_profile'),
+                    'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
@@ -1400,7 +1401,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_name','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_name','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1408,6 +1409,7 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
+                best_email = row.get('email_profile') or row.get('email_public_commit') or row.get('Predicted Email')
                 out = {
                     'login': row.get('login'),
                     'id': row.get('id'),
@@ -1415,7 +1417,7 @@ class GitHubScraper:
                     'lead_id': row.get('lead_id'),
                     'name': row.get('name'),
                     'company_name': row.get('company'),
-                    'email_profile': row.get('email_profile'),
+                    'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
                     'location': row.get('location'),
