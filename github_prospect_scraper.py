@@ -576,7 +576,7 @@ class GitHubScraper:
         
         # Note: In URL mode, we'll show prospects even without emails for demo purposes
         # In regular scraping mode, we still skip users without emails
-        if not email_commit and not email_profile and hasattr(self, '_url_mode') and not self._url_mode:
+        if not email_commit and not email_profile:
             return None
         
         # Extract LinkedIn from blog URL if present
