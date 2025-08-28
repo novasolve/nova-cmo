@@ -1,0 +1,120 @@
+name: Attio Export Pipeline
+
+on:
+  # Run daily at 6 AM UTC
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      max_repos:
+        description: 'Maximum repositories to process'
+        required: false
+        default: '100'
+        type: string
+      segments:
+        description: 'Run all segments (true/false)'
+        required: false
+        default: 'true'
+        type: boolean
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  generate-attio-exports:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+    
+    - name: Create output directories
+      run: |
+        mkdir -p data exports/attio exports/segments
+    
+    - name: Generate timestamp
+      id: timestamp
+      run: echo "timestamp=$(date +%Y%m%d_%H%M%S)" >> $GITHUB_OUTPUT
+    
+    - name: Run Attio export (single query)
+      if: ${{ !inputs.segments }}
+      run: |
+        python github_prospect_scraper.py \
+          --config config.yaml \
+          --out data/prospects_${{ steps.timestamp.outputs.timestamp }}.csv \
+          --out-dir exports/attio \
+          -n ${{ inputs.max_repos || '100' }}
+    
+    - name: Run Attio export (all segments)
+      if: ${{ inputs.segments }}
+      run: |
+        python github_prospect_scraper.py \
+          --config config.yaml \
+          --out data/prospects_all_segments_${{ steps.timestamp.outputs.timestamp }}.csv \
+          --out-dir exports/segments \
+          --run-all-segments
+    
+    - name: List generated files
+      run: |
+        echo "📁 Generated files:"
+        find exports/ -name "*.csv" -type f | head -20
+        echo ""
+        echo "📊 File sizes:"
+        find exports/ -name "*.csv" -type f -exec ls -lh {} \;
+    
+    - name: Create archive
+      run: |
+        cd exports
+        tar -czf ../attio_export_${{ steps.timestamp.outputs.timestamp }}.tar.gz .
+        cd ..
+    
+    - name: Upload Attio exports as artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: attio-exports-${{ steps.timestamp.outputs.timestamp }}
+        path: |
+          exports/
+          data/*.csv
+        retention-days: 30
+    
+    - name: Upload compressed archive
+      uses: actions/upload-artifact@v4
+      with:
+        name: attio-exports-archive-${{ steps.timestamp.outputs.timestamp }}
+        path: attio_export_${{ steps.timestamp.outputs.timestamp }}.tar.gz
+        retention-days: 90
+
+  # Optional: Upload to cloud storage (uncomment and configure as needed)
+  # upload-to-s3:
+  #   needs: generate-attio-exports
+  #   runs-on: ubuntu-latest
+  #   if: success()
+  #   
+  #   steps:
+  #   - name: Download artifacts
+  #     uses: actions/download-artifact@v4
+  #     with:
+  #       pattern: attio-exports-archive-*
+  #   
+  #   - name: Configure AWS credentials
+  #     uses: aws-actions/configure-aws-credentials@v4
+  #     with:
+  #       aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #       aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #       aws-region: us-east-1
+  #   
+  #   - name: Upload to S3
+  #     run: |
+  #       aws s3 cp attio_export_*.tar.gz s3://your-bucket/attio-exports/
