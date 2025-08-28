@@ -1262,7 +1262,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
