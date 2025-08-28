@@ -141,11 +141,13 @@ class GitHubScraper:
         self.output_dir = output_dir
         self.session = self._create_session()
         self.headers = {
-            'Accept': 'application/vnd.github.v3+json'
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'leads-scraper/1.0'
         }
         # Only add auth header if token is provided and valid
         if token and token.strip():
-            self.headers['Authorization'] = f'token {token}'
+            # Prefer Bearer for fine-grained and classic tokens; GitHub supports both
+            self.headers['Authorization'] = f'Bearer {token}'
         self.prospects: Set[str] = set()  # Track unique lead_ids
         self.all_prospects: List[Prospect] = []
         self.csv_file = None
@@ -267,7 +269,33 @@ class GitHubScraper:
                 continue
                 
             if response.status_code != 200:
-                print(f"Error searching repos: {response.status_code}")
+                try:
+                    err = response.json()
+                except Exception:
+                    err = {}
+                message = (err.get('message') or '')
+                print(f"Error searching repos: {response.status_code} {message}")
+                # Improve diagnostics for validation errors
+                if isinstance(err, dict):
+                    errors = err.get('errors')
+                    if errors:
+                        print(f"Details: {json.dumps(errors, ensure_ascii=False)}")
+                # Fallback: if 422 (Validation Failed), try to simplify query by splitting on OR and running first part
+                if response.status_code == 422 and 'q' in params and ' OR ' in params['q']:
+                    # Try each segment independently and merge results until max_repos
+                    segments = [seg.strip() for seg in params['q'].split(' OR ') if seg.strip()]
+                    for seg in segments:
+                        seg_params = dict(params)
+                        seg_params['q'] = seg
+                        seg_resp = self.session.get(url, headers=self.headers, params=seg_params, timeout=10)
+                        if seg_resp.status_code == 200:
+                            seg_data = seg_resp.json()
+                            items = seg_data.get('items', [])
+                            repos.extend(items)
+                            if len(repos) >= max_repos:
+                                break
+                        time.sleep(self.config.get('delay', 1))
+                    break
                 break
                 
             data = response.json()
@@ -1179,6 +1207,49 @@ class GitHubScraper:
                     'Top Project Stars': top_stars,
                 })
 
+
+    def export_attio_csvs_flat(self, attio_dir: str):
+        """Export Attio CSVs directly into the provided directory (no subfolders)."""
+        os.makedirs(attio_dir or '.', exist_ok=True)
+        # Use the same accumulators as export_attio_csvs
+        # People.csv
+        people_headers = [
+            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
+            'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
+        ]
+        with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=people_headers)
+            w.writeheader()
+            for row in self.people_records.values():
+                w.writerow({k: row.get(k) for k in people_headers})
+        # Repos.csv
+        repo_headers = [
+            'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
+            'stars','forks','watchers','open_issues','is_fork','is_archived','created_at','updated_at','pushed_at',
+            'html_url','api_url','recent_push_30d'
+        ]
+        with open(os.path.join(attio_dir, 'Repos.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=repo_headers)
+            w.writeheader()
+            for row in self.repo_records.values():
+                w.writerow({k: row.get(k) for k in repo_headers})
+        # Membership.csv
+        membership_headers = [
+            'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
+        ]
+        with open(os.path.join(attio_dir, 'Membership.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=membership_headers)
+            w.writeheader()
+            for row in self.membership_records.values():
+                w.writerow({k: row.get(k) for k in membership_headers})
+        # Signals.csv
+        signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
+        with open(os.path.join(attio_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
+            w = csv.DictWriter(f, fieldnames=signal_headers)
+            w.writeheader()
+            for row in self.signal_records.values():
+                w.writerow({k: row.get(k) for k in signal_headers})
 
 def main():
     parser = argparse.ArgumentParser(description='GitHub Prospect Scraper')
