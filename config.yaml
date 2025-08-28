@@ -2,9 +2,9 @@
 # Target: Python maintainers who would benefit from auto-fixing broken tests
 
 search:
-  # Combined query to find mid-size Python packages with active maintainers
-  # Targets PyPI packages, CI/CD tools, and research libraries
-  query: "language:python stars:100..1000 pushed:>2024-06-01 (topic:pypi OR topic:pytest OR topic:testing OR topic:ci OR topic:machine-learning OR topic:data-science OR topic:numpy OR topic:pandas)"
+  # Query for mid-size Python packages with testing focus
+  # Note: GitHub search doesn't handle complex OR/parentheses well, so we use a focused query
+  query: "language:python stars:100..1000 pushed:>2024-06-01 pytest in:name,description,readme"
 
   # Sort by: 'stars', 'forks', 'updated', 'help-wanted-issues'
   sort: "updated"
@@ -17,18 +17,18 @@ search:
 
 filters:
   # Only include activity from last N days
-  activity_days: 60  # More recent activity = more likely to have test issues
+  activity_days: 60 # More recent activity = more likely to have test issues
 
 limits:
   # Maximum number of repos to analyze
-  max_repos: 30  # Focus on quality over quantity
+  max_repos: 30 # Focus on quality over quantity
 
   # Per repo limits
-  per_repo_prs: 15  # More PRs to find active maintainers
-  per_repo_commits: 10  # Recent commit authors per repo
+  per_repo_prs: 15 # More PRs to find active maintainers
+  per_repo_commits: 10 # Recent commit authors per repo
 
   # Total people limit across all repos
-  max_people: 200  # Keep it focused
+  max_people: 200 # Keep it focused
 
 # Delay between API calls in seconds (be nice to GitHub)
 delay: 1

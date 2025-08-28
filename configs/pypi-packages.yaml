@@ -1,0 +1,22 @@
+# NovaSolve Config: PyPI Package Owners (mid-size)
+# Target: Active Python packages that ship regular releases
+# Pain point: Broken tests = broken PyPI wheel = angry users
+
+search:
+  # Find packages likely distributed on PyPI with setup.py or pyproject.toml
+  query: "language:python stars:100..1000 pushed:>2024-06-01 setup.py in:name,path"
+  
+  sort: "updated"
+  order: "desc"
+  per_page: 50
+
+filters:
+  activity_days: 60  # Recent activity = active releases
+
+limits:
+  max_repos: 25
+  per_repo_prs: 15
+  per_repo_commits: 10
+  max_people: 150
+
+delay: 1
