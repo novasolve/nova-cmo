@@ -5,12 +5,21 @@
 
 set -e  # Exit immediately on error
 
-# Auto-load .env if present (export all vars)
+# Auto-load .env if present (export all vars), but do NOT override already-set env
 if [ -f ./.env ]; then
+    PREV_GITHUB_TOKEN="$GITHUB_TOKEN"
+    PREV_GH_TOKEN="$GH_TOKEN"
     set -a
     # shellcheck disable=SC1091
     . ./.env
     set +a
+    # Restore previously set envs to avoid overriding a valid token in shell
+    if [ -n "$PREV_GITHUB_TOKEN" ]; then
+        GITHUB_TOKEN="$PREV_GITHUB_TOKEN"
+    fi
+    if [ -n "$PREV_GH_TOKEN" ]; then
+        GH_TOKEN="$PREV_GH_TOKEN"
+    fi
 fi
 
 # Fallback to GH_TOKEN if GITHUB_TOKEN not set
@@ -38,6 +47,10 @@ fi
 
 # Test if the GitHub token is valid
 echo "🔑 Testing GitHub token..."
+# Safe preview
+TOKEN_LEN=${#GITHUB_TOKEN}
+TOKEN_PREVIEW="${GITHUB_TOKEN:0:6}...${GITHUB_TOKEN: -4}"
+echo "   Token preview: $TOKEN_PREVIEW (len=$TOKEN_LEN)"
 # Try Bearer first (fine-grained + classic), then fallback to token if needed
 TOKEN_TEST=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
 BAD_MSG=$(echo "$TOKEN_TEST" | jq -r '.message // empty' 2>/dev/null)
@@ -50,7 +63,8 @@ if [ -z "$TOKEN_USER" ] || echo "$BAD_MSG" | grep -qi 'bad credentials'; then
 fi
 if echo "$BAD_MSG" | grep -qi 'bad credentials'; then
     echo "❌ Error: GitHub token is invalid (401 Bad credentials)"
-    echo ""
+    echo "   Preview: $TOKEN_PREVIEW (len=$TOKEN_LEN)"
+    echo "   Raw response: $TOKEN_TEST"
     echo "🔧 To fix this:"
     echo "1. Go to: https://github.com/settings/tokens"
     echo "2. For classic token: 'Generate new token (classic)' with scopes 'repo' and 'user:email'"
@@ -64,7 +78,8 @@ elif [ -n "$TOKEN_USER" ]; then
     echo "✅ Token valid for user: $TOKEN_USER"
 else
     echo "❌ Error: Unable to validate GitHub token"
-    echo "Response: $TOKEN_TEST"
+    echo "   Preview: $TOKEN_PREVIEW (len=$TOKEN_LEN)"
+    echo "   Response: $TOKEN_TEST"
     exit 1
 fi
 
@@ -77,6 +92,7 @@ OUTPUT_FILE="data/prospects_$(date +%Y%m%d_%H%M%S).csv"
 MAX_REPOS=""
 REPOS_OVERRIDE=""
 LEADS_OVERRIDE=""
+NO_DEDUP=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -100,6 +116,10 @@ while [[ $# -gt 0 ]]; do
         --leads)
             LEADS_OVERRIDE="$2"
             shift 2
+            ;;
+        --no-dedup)
+            NO_DEDUP="1"
+            shift 1
             ;;
         -h|--help)
             echo "Usage: $0 [options]"
@@ -137,11 +157,14 @@ echo "💾 Output: $OUTPUT_FILE"
 if [ -n "$MAX_REPOS" ]; then
     echo "🔢 Max repos (-n): $MAX_REPOS"
 fi
-if [ -n "$REOS_OVERRIDE" ]; then
+if [ -n "$REPOS_OVERRIDE" ]; then
     echo "🔢 Max repos (--repos): $REPOS_OVERRIDE"
 fi
 if [ -n "$LEADS_OVERRIDE" ]; then
     echo "👥 Max leads (--leads): $LEADS_OVERRIDE"
+fi
+if [ -n "$NO_DEDUP" ]; then
+    echo "🚫 Dedup disabled (--no-dedup)"
 fi
 echo "🗃️  Dedup DB: $DEDUP_DB"
 echo ""
@@ -156,6 +179,9 @@ if [ -n "$REPOS_OVERRIDE" ]; then
 fi
 if [ -n "$LEADS_OVERRIDE" ]; then
   ARGS+=( --leads "$LEADS_OVERRIDE" )
+fi
+if [ -n "$NO_DEDUP" ]; then
+  ARGS+=( --no-dedup )
 fi
 python "${ARGS[@]}"
 
