@@ -1,0 +1,50 @@
+# GitHub Prospect Scraper Configuration
+
+search:
+  # GitHub search query - customize this for your target market
+  # Examples:
+  # - 'language:python topic:machine-learning stars:>50'
+  # - 'language:javascript framework react stars:>100 pushed:>2024-01-01'
+  # - 'topic:ai topic:llm stars:>500'
+  query: "language:python stars:>100 pushed:>2024-01-01 (topic:ai OR topic:ml OR topic:llm)"
+
+  # Sort by: 'stars', 'forks', 'updated', 'help-wanted-issues'
+  sort: "updated"
+
+  # Order: 'desc' or 'asc'
+  order: "desc"
+
+  # Results per page (max 100)
+  per_page: 30
+
+filters:
+  # Only include activity from last N days
+  activity_days: 90
+
+limits:
+  # Maximum number of repos to analyze
+  max_repos: 50
+
+  # Per repo limits
+  per_repo_prs: 10 # Recent PR authors per repo
+  per_repo_commits: 10 # Recent commit authors per repo
+
+  # Total people limit across all repos
+  max_people: 500
+
+# Delay between API calls in seconds (be nice to GitHub)
+delay: 1
+
+# Target segments (for reference - not used by scraper)
+target_segments:
+  - name: "AI/ML Startups"
+    query: "topic:ai topic:ml stars:>50 pushed:>2024-01-01"
+
+  - name: "DevTools Companies"
+    query: "topic:developer-tools topic:devops stars:>100"
+
+  - name: "Web3/Crypto Projects"
+    query: "topic:blockchain topic:web3 topic:defi stars:>200"
+
+  - name: "SaaS Platforms"
+    query: "topic:saas topic:api language:python stars:>100"
