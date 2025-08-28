@@ -219,6 +219,8 @@ python github_prospect_scraper.py --help
 - `-n, --max-repos MAX_REPOS` - Maximum repos to process (overrides config)
 - `--url URL` - GitHub URL to scrape (user profile or repository)
 - `--print-only` - Only print results, don't save to CSV
+- `--dedup-db` - Path to SQLite DB for dedup (default: data/dedup.db)
+- `--no-dedup` - Disable deduplication (process all logins)
 
 ## Good Citizen Guidelines
 
