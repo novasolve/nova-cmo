@@ -1415,6 +1415,7 @@ class GitHubScraper:
             'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'recent_repo_full_name','recent_repo_stars',
+            'signals_signal_id','signals_signal_type','signals_signal','signals_signal_at','signals_html_url','signals_source','signals_repo_full_name','signals_repo_id',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(people_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
@@ -1442,6 +1443,14 @@ class GitHubScraper:
                     'following': row.get('following'),
                     'recent_repo_full_name': row.get('recent_repo_full_name'),
                     'recent_repo_stars': row.get('recent_repo_stars'),
+                    'signals_signal_id': row.get('signals_signal_id'),
+                    'signals_signal_type': row.get('signals_signal_type'),
+                    'signals_signal': row.get('signals_signal'),
+                    'signals_signal_at': row.get('signals_signal_at'),
+                    'signals_html_url': row.get('signals_html_url'),
+                    'signals_source': row.get('signals_source'),
+                    'signals_repo_full_name': row.get('signals_repo_full_name'),
+                    'signals_repo_id': row.get('signals_repo_id'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
@@ -1500,6 +1509,7 @@ class GitHubScraper:
             'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'recent_repo_full_name','recent_repo_stars',
+            'signals_signal_id','signals_signal_type','signals_signal','signals_signal_at','signals_html_url','signals_source','signals_repo_full_name','signals_repo_id',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
         with open(os.path.join(attio_dir, 'People.csv'), 'w', newline='', encoding='utf-8') as f:
@@ -1526,6 +1536,14 @@ class GitHubScraper:
                     'following': row.get('following'),
                     'recent_repo_full_name': row.get('recent_repo_full_name'),
                     'recent_repo_stars': row.get('recent_repo_stars'),
+                    'signals_signal_id': row.get('signals_signal_id'),
+                    'signals_signal_type': row.get('signals_signal_type'),
+                    'signals_signal': row.get('signals_signal'),
+                    'signals_signal_at': row.get('signals_signal_at'),
+                    'signals_html_url': row.get('signals_html_url'),
+                    'signals_source': row.get('signals_source'),
+                    'signals_repo_full_name': row.get('signals_repo_full_name'),
+                    'signals_repo_id': row.get('signals_repo_id'),
                     'created_at': row.get('created_at'),
                     'updated_at': row.get('updated_at'),
                     'html_url': row.get('html_url'),
