@@ -43,7 +43,7 @@ python github_prospect_scraper.py --config config.yaml --out prospects.csv
 
 ## Attio CRM — OSS Maintainers Data Model
 
-The repo includes a finalized Attio object model for OSS maintainers covering People, Repos, Signals, Repo Membership, Companies, and Deals. See `docs/attio_oss_model.md` for the full specification and CSV headers.
+The repo includes a finalized Attio object model for OSS maintainers covering People, Repos, Signals, Repo Membership, Companies, and Deals. See [docs/attio-crm-oss-maintainers-model.md](docs/attio-crm-oss-maintainers-model.md) for the full specification and CSV headers.
 
 Key import headers for quick reference:
 
