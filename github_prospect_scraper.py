@@ -162,6 +162,7 @@ class GitHubScraper:
         # Caches
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
+        self.org_cache: Dict[str, Dict] = {}
         
     def _create_session(self):
         """Create session with retry logic"""
@@ -187,6 +188,41 @@ class GitHubScraper:
                     time.sleep(wait_time)
                     return True
         return False
+
+    def _normalize_domain(self, value: Optional[str]) -> Optional[str]:
+        """Extract and normalize a domain from an email or URL string."""
+        if not value:
+            return None
+        s = (value or '').strip().lower()
+        if '@' in s and ' ' not in s:
+            domain = s.split('@', 1)[-1]
+        else:
+            if not s.startswith('http'):
+                s = f"https://{s}"
+            try:
+                parsed = urlparse(s)
+                domain = parsed.netloc or (parsed.path.split('/')[0] if parsed.path else '')
+            except Exception:
+                domain = s
+        domain = domain.split(':')[0]
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        if '.' not in domain:
+            return None
+        return domain
+
+    def _get_org_details(self, org_login: str) -> Dict:
+        if not org_login:
+            return {}
+        if org_login in self.org_cache:
+            return self.org_cache[org_login]
+        url = f"https://api.github.com/orgs/{org_login}"
+        resp = self.session.get(url, headers=self.headers, timeout=10)
+        if self._rate_limit_wait(resp):
+            resp = self.session.get(url, headers=self.headers, timeout=10)
+        details = resp.json() if resp.status_code == 200 else {}
+        self.org_cache[org_login] = details
+        return details
     
     def _init_csv_file(self):
         """Initialize CSV file for incremental writing"""
@@ -768,14 +804,14 @@ class GitHubScraper:
             self._write_prospect_to_csv(prospect)
         
         # Build Attio object rows
-        self._upsert_person_record(user_details, user['login'], email_commit)
+        self._upsert_person_record(user_details, user['login'], email_commit, repo)
         self._upsert_repo_record(repo)
         self._add_membership_record(user['login'], repo, author_data.get('signal_at'))
         self._add_signal_record(user['login'], repo, author_data)
             
         return prospect
 
-    def _upsert_person_record(self, user_details: Dict, login: str, email_public_commit: Optional[str] = None):
+    def _upsert_person_record(self, user_details: Dict, login: str, email_public_commit: Optional[str] = None, repo: Optional[Dict] = None):
         """Create or update a People row keyed by login."""
         if login in self.people_records:
             # Fill commit email if missing and a new one is provided
@@ -791,6 +827,22 @@ class GitHubScraper:
             pronouns = 'she/her'
         elif 'they/them' in bio_lower:
             pronouns = 'they/them'
+        # Derive company_domain
+        company_domain = None
+        email_profile = user_details.get('email')
+        if email_profile:
+            company_domain = self._normalize_domain(email_profile)
+        if not company_domain and email_public_commit:
+            company_domain = self._normalize_domain(email_public_commit)
+        if not company_domain and repo:
+            owner_login = (repo.get('owner') or {}).get('login')
+            owner_type = (repo.get('owner') or {}).get('type')
+            if owner_login and owner_type == 'Organization':
+                org = self._get_org_details(owner_login)
+                company_domain = self._normalize_domain(org.get('blog')) or company_domain
+            if not company_domain:
+                company_domain = self._normalize_domain(repo.get('homepage'))
+
         person_row = {
             'login': login,
             'id': user_details.get('id'),
@@ -801,6 +853,7 @@ class GitHubScraper:
             'company': user_details.get('company'),
             'email_profile': user_details.get('email'),
             'email_public_commit': email_public_commit,
+            'company_domain': company_domain,
             'Predicted Email': '',
             'location': user_details.get('location'),
             'bio': user_details.get('bio'),
@@ -931,6 +984,7 @@ class GitHubScraper:
             'homepage': details.get('homepage') or repo.get('homepage'),
             'has_issues': details.get('has_issues', repo.get('has_issues')),
             'has_discussions': details.get('has_discussions'),
+            'company_domain': company_domain,
             'stars': repo.get('stargazers_count', 0),
             'subscribers': details.get('subscribers_count'),
             'forks': repo.get('forks_count'),
@@ -1137,7 +1191,7 @@ class GitHubScraper:
         # Repos.csv
         repo_headers = [
             'repo_id','repo_full_name','repo_name','owner_login','owner_type','host','description','topics','primary_language',
-            'license','license_spdx','default_branch','homepage','has_issues','has_discussions',
+            'license','license_spdx','default_branch','homepage','has_issues','has_discussions','company_domain',
             'stars','subscribers','forks','open_issues','open_prs','releases_count','last_release_at','num_contributors','is_fork','is_archived','recent_push_30d',
             'created_at','updated_at','pushed_at','html_url','api_url'
         ]
