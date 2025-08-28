@@ -5,6 +5,24 @@
 
 set -e  # Exit immediately on error
 
+# Auto-load .env if present (export all vars)
+if [ -f ./.env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+fi
+
+# Fallback to GH_TOKEN if GITHUB_TOKEN not set
+if [ -z "$GITHUB_TOKEN" ] && [ -n "$GH_TOKEN" ]; then
+    GITHUB_TOKEN="$GH_TOKEN"
+fi
+
+# Sanitize token: strip quotes, spaces, CRLF
+if [ -n "$GITHUB_TOKEN" ]; then
+    GITHUB_TOKEN="$(printf '%s' "$GITHUB_TOKEN" | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' | xargs)"
+fi
+
 # Check if GITHUB_TOKEN is set
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "❌ Error: GITHUB_TOKEN not set"
@@ -17,11 +35,14 @@ fi
 echo "🔑 Testing GitHub token..."
 # Try Bearer first (fine-grained + classic), then fallback to token if needed
 TOKEN_TEST=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
-if echo "$TOKEN_TEST" | grep -q 'Bad credentials'; then
+# If Bearer returned Bad credentials, retry with classic header
+if echo "$TOKEN_TEST" | jq -e -r '.message // empty' 2>/dev/null | grep -qi 'bad credentials'; then
     TOKEN_TEST=$(curl -s -H "Authorization: token $GITHUB_TOKEN" -H "Accept: application/vnd.github.v3+json" -H "User-Agent: leads-scraper/1.0" https://api.github.com/user)
 fi
 
-if echo "$TOKEN_TEST" | grep -q '"message": "Bad credentials"'; then
+BAD_MSG=$(echo "$TOKEN_TEST" | jq -r '.message // empty' 2>/dev/null)
+TOKEN_USER=$(echo "$TOKEN_TEST" | jq -r '.login // empty' 2>/dev/null)
+if echo "$BAD_MSG" | grep -qi 'bad credentials'; then
     echo "❌ Error: GitHub token is invalid (401 Bad credentials)"
     echo ""
     echo "🔧 To fix this:"
@@ -33,8 +54,7 @@ if echo "$TOKEN_TEST" | grep -q '"message": "Bad credentials"'; then
     echo ""
     echo "Or use the setup script: ./setup_token.sh"
     exit 1
-elif echo "$TOKEN_TEST" | grep -q '"login"'; then
-    TOKEN_USER=$(echo "$TOKEN_TEST" | grep -o '"login": "[^"]*"' | cut -d'"' -f4)
+elif [ -n "$TOKEN_USER" ]; then
     echo "✅ Token valid for user: $TOKEN_USER"
 else
     echo "❌ Error: Unable to validate GitHub token"
