@@ -1,0 +1,129 @@
+version: 1
+defaults:
+  gh:
+    pushed_within_days: 60
+    stars_min: 50
+    stars_max: 2000
+    language: ["Python"]
+    exclude:
+      - "archived:true"
+      - "is:fork"
+  scoring:
+    weights:
+      has_ci: 0.20
+      pushed_recently: 0.20
+      stars_band: 0.10
+      has_tests_dir: 0.20
+      contactable: 0.20
+      ds_dependency_risk: 0.10
+    min_score: 0.65
+  enrichment:
+    email_sources:
+      - pypi.author_email
+      - pypi.project_urls
+      - repo.commit_authors
+      - repo.readme_contacts
+      - maintainer.github_email
+    attio_field_map:
+      icp_name: "ICP Name"
+      icp_score: "ICP Score"
+      trigger_notes: "ICP Triggers"
+      persona: "Persona"
+      source_repo: "Source Repo"
+    instantly:
+      owner: "growth"
+      sequence_prefix: "IC"
+
+icp_options:
+  - id: icp01_pypi_maintainers
+    name: "PyPI Maintainers – Fast‑Moving Python Libraries"
+    personas:
+      - title_contains: ["Maintainer", "Core Developer", "Author"]
+      - roles: ["Senior Software Engineer", "Tech Lead"]
+    firmographics:
+      size: "OSS teams or 5–50 eng orgs"
+      geo: ["Global", "US", "EU"]
+    technographics:
+      language: ["Python"]
+      frameworks: ["pytest", "tox"]
+      ci: ["GitHub Actions", "CircleCI", "Jenkins"]
+    triggers:
+      - "Recent PyPI release in last 60 days"
+      - "Repo pushed within last 60 days"
+      - "Has tests/ or test/ dir; CI badge in README"
+    disqualifiers:
+      - "archived:true"
+      - "mono-language not Python"
+    github:
+      repo_queries:
+        - "language:Python stars:50..2000 pushed:>={today_minus_days:60} in:readme pytest -archived:true -is:fork"
+        - "language:Python topic:pytest stars:50..2000 pushed:>={today_minus_days:60} -archived:true -is:fork"
+      content_clues:
+        - "path:tests/ in:path"
+        - "badge:ci OR workflow file in .github/workflows"
+    outreach:
+      sequence_tag: "IC01_PyPI"
+
+  - id: icp02_ml_ds_maintainers
+    name: "ML/Data‑Science Ecosystem Maintainers"
+    technographics:
+      language: ["Python"]
+      libs_hint: ["numpy", "pandas", "scipy", "pytorch", "tensorflow", "jax"]
+    github:
+      repo_queries:
+        - "language:Python stars:100..5000 pushed:>={today_minus_days:60} (numpy OR pandas OR pytorch) in:file path:requirements.* -archived:true -is:fork"
+        - "language:Python stars:100..5000 topic:machine-learning pushed:>={today_minus_days:60} -archived:true -is:fork"
+
+  - id: icp03_seed_series_a_python_saas
+    name: "Seed/Series A Python SaaS (Actions‑first)"
+    github:
+      repo_queries:
+        - "language:Python stars:30..1200 pushed:>={today_minus_days:45} topic:github-actions -archived:true -is:fork"
+        - "language:Python stars:30..1200 in:readme 'pytest' pushed:>={today_minus_days:45} -archived:true -is:fork"
+
+  - id: icp04_api_sdk_tooling
+    name: "API/SDK DevTools Teams"
+    github:
+      repo_queries:
+        - "language:Python stars:50..3000 pushed:>={today_minus_days:60} (sdk OR client) in:name -archived:true -is:fork"
+        - "language:Python in:readme 'semantic version' OR 'backward compatibility' pushed:>={today_minus_days:60}"
+
+  - id: icp05_academic_labs
+    name: "University/Research Labs Maintaining Python Packages"
+    github:
+      repo_queries:
+        - "language:Python stars:20..1500 pushed:>={today_minus_days:90} (lab OR university OR research) in:readme -archived:true -is:fork"
+
+  - id: icp06_django_flask_products
+    name: "Django/Flask Product Teams (E‑com/B2C)"
+    github:
+      repo_queries:
+        - "language:Python stars:50..3000 in:readme (Django OR Flask OR FastAPI) pushed:>={today_minus_days:45} -archived:true -is:fork"
+
+  - id: icp07_regulated_startups
+    name: "Fintech/Healthtech (Regulated) – Python Backends"
+    github:
+      repo_queries:
+        - "language:Python in:readme (SOC2 OR HIPAA OR PCI) stars:20..2000 pushed:>={today_minus_days:60} -archived:true -is:fork"
+
+  - id: icp08_agencies_consultancies
+    name: "Agencies/Consultancies with Many Client Repos"
+    github:
+      repo_queries:
+        - "language:Python org:{candidate_org} pushed:>={today_minus_days:45} -archived:true -is:fork"
+
+  - id: icp09_pytest_ci_plugin_authors
+    name: "PyTest/CI Plugin Authors & Tooling Maintainers"
+    github:
+      repo_queries:
+        - "language:Python stars:25..3000 in:name pytest- pushed:>={today_minus_days:120} -archived:true -is:fork"
+        - "language:Python topic:pytest-plugin pushed:>={today_minus_days:120}"
+
+  - id: icp10_explicit_flaky_signals
+    name: "Repos with Explicit Flaky/Failing Test Signals"
+    github:
+      issue_queries:
+        - "is:issue is:open label:flaky language:Python updated:>={today_minus_days:30}"
+        - "is:issue is:open in:title,body ('flaky test' OR 'test failing') language:Python updated:>={today_minus_days:30}"
+      repo_queries:
+        - "language:Python stars:20..5000 pushed:>={today_minus_days:30} -archived:true -is:fork"
