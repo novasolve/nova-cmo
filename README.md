@@ -71,6 +71,7 @@ python github_prospect_scraper.py --url "https://github.com/username" --out pros
 ```
 
 **Example Output:**
+
 ```
 📊 PROSPECT SUMMARY (1 total)
 ================================================================================
@@ -201,6 +202,7 @@ python github_prospect_scraper.py --help
 ```
 
 **Available Options:**
+
 - `--config CONFIG` - Config file path (default: config.yaml)
 - `--out OUT` - Output CSV path (default: data/prospects.csv)
 - `-n, --max-repos MAX_REPOS` - Maximum repos to process (overrides config)
