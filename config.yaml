@@ -1,51 +1,230 @@
-# NovaSolve GitHub Prospect Scraper Configuration
-# Target: Python maintainers who would benefit from auto-fixing broken tests
+version: 1
+
+github:
+  token_env: GITHUB_TOKEN              # set this in your env
+  endpoint: https://api.github.com
+  respect_rate_limits: true
+  concurrency: 2                       # stay polite, raise carefully if you have high limits
+  retry:
+    max_attempts: 3
+    backoff_seconds: 2
 
 search:
-  # Query for mid-size Python packages with testing focus
-  # Note: GitHub search doesn't handle complex OR/parentheses well, so we use a focused query
-  query: "language:python stars:100..1000 pushed:>2024-06-01 pytest in:name,description,readme"
-
-  # Sort by: 'stars', 'forks', 'updated', 'help-wanted-issues'
-  sort: "updated"
-
-  # Order: 'desc' or 'asc'
-  order: "desc"
-
-  # Results per page (max 100)
+  # Base repository query (segments add to / refine this).
+  # Notes:
+  # - Excludes common non-targets (awesome lists, templates, docs-only, starters).
+  # - We do NOT put pushed:> in the query; we filter by activity_days below to keep it dynamic.
+  type: repositories
+  query: >
+    language:python stars:80..1200 is:public archived:false
+    -topic:awesome -in:name awesome -in:description awesome -in:readme awesome
+    -in:name template -in:description template -in:name starter -in:description starter
+    -in:name docs -in:description docs -in:readme tutorial
+    (help-wanted-issues:>0 OR good-first-issues:>0)
+  sort: updated                        # 'stars', 'forks', 'updated', 'help-wanted-issues'
+  order: desc
   per_page: 50
 
 filters:
-  # Only include activity from last N days
-  activity_days: 60 # More recent activity = more likely to have test issues
+  # Temporal/activity + quality thresholds
+  activity_days: 60                    # only repos with pushes in the last N days
+  include_forks: false                 # default search excludes forks, keep explicit
+  exclude_archived: true
+  exclude_mirrors: true
+  require_ci: true                     # must have CI workflows detected
+  require_tests_signal: true           # must have pytest/tox/nox/tests folder detected (see enrichment)
+  licenses:
+    include: [mit, apache-2.0, bsd-3-clause, bsd-2-clause, mpl-2.0]  # avoid sticky licensing
+  min_open_issues: 5
+  min_recent_commits: 5                # last 60–90d, enforced in enrichment
+  min_recent_prs: 3
+  min_contributors_last_90d: 2
+  exclude_orgs:
+    - apache
+    - google
+    - microsoft
+    - facebook
+    - pytorch
+    - tensorflow
+    - aws
+    - oracle
+  exclude_repo_name_keywords:          # reduce false positives
+    - docs
+    - documentation
+    - examples
+    - tutorial
+    - sample
+    - book
+    - course
+    - template
+    - starter
+    - playground
+    - dotfiles
+    - sandbox
 
 limits:
-  # Maximum number of repos to analyze
-  max_repos: 30 # Focus on quality over quantity
+  max_repos: 40                        # a bit more headroom; still focused
+  per_repo_prs: 20
+  per_repo_commits: 20
+  per_repo_workflow_runs: 30
+  per_repo_issues: 40
+  max_people: 200
+  max_contacts_per_repo: 6
 
-  # Per repo limits
-  per_repo_prs: 15 # More PRs to find active maintainers
-  per_repo_commits: 10 # Recent commit authors per repo
+# Be nice to GitHub
+delay: 1.0
 
-  # Total people limit across all repos
-  max_people: 200 # Keep it focused
+enrichment:
+  # Pull extra signals that correlate with “tests are painful” and “we can reach someone”
+  pull:
+    repo_topics: true
+    default_branch: true
+    languages: true
+    releases: true
+    issues_recent_only: true
+    prs_recent_only: true
+    check_suites: true                 # CI status (requires checks permission)
+    workflow_runs: true                # GitHub Actions runs
+    codeowners: true
+    files_presence: true
+    pypi_metadata: true                # author/maintainer emails, project URLs
+  recent_window_days: 90
+  files_presence_rules:
+    any_of:                            # any of these counts as a test signal
+      - "pytest.ini"
+      - "tox.ini"
+      - "noxfile.py"
+      - "tests/**"
+      - ".github/workflows/*pytest*.yml"
+      - ".github/workflows/*test*.yml"
+      - "pyproject.toml"
+      - "setup.cfg"
+    pyproject_checks:
+      require_tools_any_of: ["pytest", "tox", "nox", "hypothesis", "pytest-cov"]
+  ci_workflow_name_patterns: ["test", "tests", "pytest", "ci", "build", "python-package"]
+  python_version_matrix_patterns: ["3.10", "3.11", "3.12", "3.13"]  # signals for breadth of matrix
 
-# Delay between API calls in seconds (be nice to GitHub)
-delay: 1
+scoring:
+  # Weighted signals → single repo_score (higher = better NovaSolve prospect)
+  weights:
+    stars_midrange: 2.0            # 100–1000 gets a boost
+    recent_activity: 2.0           # commits/PRs in last 60–90d
+    failing_ci_recent: 3.5         # failed runs in last 14d
+    flaky_keywords: 2.5            # “flaky|flake|nondeterministic|race”
+    test_fix_commits: 2.5          # commit/PR titles with "fix test(s)" / "deflake"
+    pytest_presence: 1.5           # pytest in pyproject/setup.cfg/tox.ini
+    matrix_breadth: 1.0            # ≥3 Python versions in CI matrix
+    open_help_wanted: 0.5          # help-wanted/gfi counts
+    maintainer_reachability: 1.5   # email discovered via repo/PyPI/CODEOWNERS
+  thresholds:
+    min_repo_score: 6.0
+    min_contact_score: 1.0
+  signals:
+    failing_ci_recent:
+      lookback_days: 14
+      statuses: ["failure", "timed_out", "cancelled"]
+    flaky_keywords:
+      sources: ["issues", "pull_requests"]
+      patterns: ["flaky", "flake", "non-deterministic", "nondeterministic", "intermittent", "race condition"]
+    test_fix_commits:
+      sources: ["commits", "pull_requests"]
+      patterns: ["fix test", "fix tests", "unflake", "deflake", "stabilize test", "ci: fix"]
+    pytest_presence:
+      files:
+        - path: "pyproject.toml"
+          contains_any: ["[tool.pytest.ini_options]", "pytest"]
+        - path: "setup.cfg"
+          contains_any: ["[tool:pytest]", "[pytest]"]
+        - path: "tox.ini"
+          contains_any: ["[testenv]", "pytest"]
+    matrix_breadth:
+      from_workflows: true
+      min_versions: 3
+      version_patterns: ['"3.10"', '"3.11"', '"3.12"', '"3.13"']
 
-# Target segments for NovaSolve (auto-fix broken Python tests)
+people:
+  roles_priority: ["CODEOWNER", "Maintainer", "Author", "Core", "RecentCommitter", "RecentPRAuthor"]
+  extract:
+    codeowners: true
+    maintainers_files: ["MAINTAINERS", "MAINTAINERS.md", "CONTRIBUTORS", "CONTRIBUTORS.md", "AUTHORS", "AUTHORS.md"]
+    git_blame_recent_days: 90
+    prs_recent_days: 90
+    commits_recent_days: 90
+    pypi:
+      enable: true
+      fields: ["author_email", "maintainer_email", "home_page", "project_urls"]
+  contact_enrichment:
+    resolve_emails_from:
+      - "git log"
+      - "CODEOWNERS"
+      - "PyPI metadata"
+      - "CITATION.cff"
+      - "setup.cfg / pyproject.toml"
+      - "commit signatures"
+    accept_domains: [".org", ".edu", ".io", ".dev", ".com"]
+    dedupe_on: ["email", "github_login"]
+    max_emails_per_person: 2
+
 target_segments:
   - name: "PyPI Package Owners (mid-size)"
     description: "Active Python packages that ship regular releases"
-    query: "language:python stars:100..1000 pushed:>2024-06-01 (topic:pypi OR in:description pypi OR in:readme setup.py)"
-    why: "Constantly shipping releases, broken tests = broken PyPI wheel = angry users"
+    query: >
+      language:python stars:100..1000 is:public archived:false
+      (topic:pypi OR in:description pypi OR in:readme pypi)
+      -topic:awesome -in:name awesome -in:description awesome
+    extra_filters:
+      require_releases_last_120d: true
+      min_recent_prs: 4
+    score_multiplier: 1.2
+    why: "Constantly shipping releases; broken tests block wheels & users"
 
   - name: "CI/CD Tool Maintainers"
-    description: "Pytest plugins, tox plugins, test runners"
-    query: "language:python stars:50..500 pushed:>2024-06-01 (topic:pytest OR topic:testing OR topic:ci OR topic:tox OR in:name pytest- OR in:name tox-)"
-    why: "They live in CI/test infra, NovaSolve resonates instantly"
+    description: "Pytest plugins, tox plugins, test runners, GH Actions for Python"
+    query: >
+      language:python stars:50..600 is:public archived:false
+      (topic:pytest OR topic:testing OR topic:ci OR topic:tox OR in:name pytest- OR in:name tox- OR in:readme "GitHub Actions")
+      -topic:awesome -in:name awesome -in:description awesome
+    extra_filters:
+      require_ci: true
+      min_recent_prs: 3
+    score_multiplier: 1.15
+    why: "They live in CI/test infra; fast resonance & referrals"
 
   - name: "Academic/Research Lib Maintainers"
     description: "ML/data wrangling libraries with fragile dependencies"
-    query: "language:python stars:50..1000 pushed:>2024-06-01 (topic:machine-learning OR topic:data-science OR topic:scientific-computing OR topic:numpy OR topic:pandas OR topic:pytorch)"
-    why: "Constant churn from NumPy/Pandas/Torch breaking changes"
+    query: >
+      language:python stars:80..1200 is:public archived:false
+      (topic:machine-learning OR topic:data-science OR topic:scientific-computing OR topic:numpy OR topic:pandas OR topic:pytorch OR in:readme numpy OR in:readme pandas OR in:readme torch)
+      -in:name awesome -in:description awesome
+    extra_filters:
+      min_open_issues: 10
+      require_tests_signal: true
+    score_multiplier: 1.1
+    why: "Churn from NumPy/Pandas/Torch causes frequent test breakage"
+
+dedupe:
+  on: ["repo_full_name", "owner_login"]
+  keep: "highest_score"
+
+export:
+  format: csv
+  path: "./out/prospects.csv"
+  fields:
+    - repo_full_name
+    - repo_html_url
+    - stars
+    - forks
+    - open_issues
+    - last_push
+    - default_branch
+    - has_ci
+    - last_failed_ci
+    - python_versions_in_matrix
+    - top_topics
+    - repo_score
+    - segment
+    - contact_name
+    - contact_role
+    - contact_email
+    - contact_source
+    - contact_score
