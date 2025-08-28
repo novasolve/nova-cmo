@@ -267,6 +267,32 @@ python github_prospect_scraper.py --help
 
 - See the Attio CRM data model for OSS maintainers: [docs/attio-crm-oss-maintainers-model.md](docs/attio-crm-oss-maintainers-model.md)
 
+## Attio exports
+
+This repository can emit both a flat CSV and split CSVs for Attio.
+
+Flat (unchanged):
+
+```bash
+GITHUB_TOKEN=... python github_prospect_scraper.py --config config.yaml --out data/prospects.csv
+```
+
+Split for Attio (People/Repos/Memberships/Signals):
+
+```bash
+GITHUB_TOKEN=... python github_prospect_scraper.py --config config.yaml \
+  --out data/prospects.csv \
+  --out-dir data
+```
+
+URL mode (single user/repo):
+
+```bash
+python github_prospect_scraper.py --url https://github.com/pytorch/benchmark --out-dir data
+```
+
+See `docs/attio-crm-oss-maintainers-model.md` for object definitions, upsert keys, and headers.
+
 ## Example Integration
 
 ```python
