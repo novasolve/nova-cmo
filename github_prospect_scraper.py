@@ -132,6 +132,17 @@ class Prospect:
         return asdict(self)
 
 
+class TimeoutSession(requests.Session):
+    """requests.Session that applies a default timeout to all requests unless provided."""
+    def __init__(self, default_timeout_seconds: int):
+        super().__init__()
+        self._default_timeout_seconds = default_timeout_seconds
+
+    def request(self, *args, **kwargs):  # type: ignore[override]
+        kwargs.setdefault('timeout', self._default_timeout_seconds)
+        return super().request(*args, **kwargs)
+
+
 class GitHubScraper:
     """Scrapes GitHub for prospect data"""
     
@@ -140,7 +151,12 @@ class GitHubScraper:
         self.config = config
         self.output_path = output_path
         self.output_dir = output_dir
-        self.session = self._create_session()
+        # HTTP timeout (secs)
+        try:
+            self.timeout_secs = int(((self.config.get('http') or {}).get('timeout_secs')) or 15)
+        except Exception:
+            self.timeout_secs = 15
+        self.session = self._create_session(self.timeout_secs)
         self.headers = {
             'Accept': 'application/vnd.github.v3+json',
             'User-Agent': 'leads-scraper/1.0'
@@ -183,32 +199,9 @@ class GitHubScraper:
                 self.dedup_enabled = False
                 self._dedup_conn = None
         
-    def _dedup_seen(self, login: str) -> bool:
-        if not (self.dedup_enabled and self._dedup_conn and login):
-            return False
-        try:
-            cur = self._dedup_conn.cursor()
-            cur.execute("SELECT 1 FROM seen_people WHERE login = ?", (login,))
-            return cur.fetchone() is not None
-        except Exception:
-            return False
-        
-    def _dedup_mark(self, login: str):
-        if not (self.dedup_enabled and self._dedup_conn and login):
-            return
-        try:
-            cur = self._dedup_conn.cursor()
-            cur.execute(
-                "INSERT OR IGNORE INTO seen_people(login, first_seen) VALUES(?, ?)",
-                (login, datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
-            )
-            self._dedup_conn.commit()
-        except Exception:
-            pass
-
-    def _create_session(self):
-        """Create session with retry logic"""
-        session = requests.Session()
+    def _create_session(self, timeout_secs: int):
+        """Create session with retry logic and default timeout"""
+        session = TimeoutSession(timeout_secs)
         retry = Retry(
             total=3,
             backoff_factor=0.3,
@@ -561,7 +554,7 @@ class GitHubScraper:
             "User-Agent": "github-prospect-scraper/1.1"
         }
         try:
-            resp = requests.post("https://api.github.com/graphql", json={"query": query, "variables": variables}, headers=headers, timeout=20)
+            resp = requests.post("https://api.github.com/graphql", json={"query": query, "variables": variables}, headers=headers, timeout=self.timeout_secs)
             if resp.status_code != 200:
                 self.contrib_cache[username] = {}
                 return {}
@@ -898,6 +891,9 @@ class GitHubScraper:
         )
         
         self.prospects.add(lead_id)
+        # Count as a lead only if we have an email
+        if prospect.email_profile or prospect.email_public_commit or prospect.get_best_email():
+            self.leads_with_email_count += 1
         
         # Write to CSV immediately if incremental writing is enabled
         if self.output_path:
@@ -1499,6 +1495,7 @@ def main():
     parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
     parser.add_argument('--dedup-db', default=os.environ.get('DEDUP_DB', 'data/dedup.db'), help='Path to SQLite DB for dedup (default: $DEDUP_DB or data/dedup.db)')
     parser.add_argument('--no-dedup', action='store_true', help='Disable deduplication (process all logins)')
+    parser.add_argument('--timeout-secs', type=int, default=int(os.environ.get('HTTP_TIMEOUT_SECS', '15')), help='HTTP request timeout seconds (default: $HTTP_TIMEOUT_SECS or 15)')
     args = parser.parse_args()
     
     # Check for GitHub token
@@ -1534,6 +1531,8 @@ def main():
             'delay': 1,
             'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db}
         }
+        # HTTP timeout
+        config['http'] = {'timeout_secs': args.timeout_secs}
         # Apply overrides in URL mode
         if args.max_repos or args.repos:
             config['limits']['max_repos'] = args.repos or args.max_repos
@@ -1590,6 +1589,9 @@ def main():
         config.setdefault('dedup', {})
         config['dedup']['enabled'] = (not args.no_dedup)
         config['dedup']['db_path'] = args.dedup_db
+        # Inject HTTP timeout
+        config.setdefault('http', {})
+        config['http']['timeout_secs'] = args.timeout_secs
     except FileNotFoundError:
         print(f"❌ Error: Config file '{args.config}' not found")
         print("Creating default config...")
@@ -1612,7 +1614,8 @@ def main():
                 'max_people': 100
             },
             'delay': 1,
-            'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db}
+            'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db},
+            'http': {'timeout_secs': args.timeout_secs}
         }
         
         os.makedirs(os.path.dirname(args.config) or '.', exist_ok=True)
