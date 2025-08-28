@@ -137,3 +137,33 @@ if [ -f "$OUTPUT_FILE" ]; then
         echo "────────────────────────────────────────────────────────────────────────────────"
     fi
 fi
+
+# Locate the latest Attio export folder and show per-object counts
+LATEST_EXPORT_DIR=$(ls -dt data/export_* 2>/dev/null | head -1 || true)
+if [ -n "$LATEST_EXPORT_DIR" ] && [ -d "$LATEST_EXPORT_DIR" ]; then
+    echo ""
+    echo "📦 Attio import package: $LATEST_EXPORT_DIR"
+    ln -sfn "$LATEST_EXPORT_DIR" data/attio_latest
+    echo "- Latest Attio symlink: data/attio_latest"
+
+    PEOPLE_CSV="$LATEST_EXPORT_DIR/People/People.csv"
+    REPOS_CSV="$LATEST_EXPORT_DIR/Repos/Repos.csv"
+    MEMBERSHIP_CSV="$LATEST_EXPORT_DIR/Memberships/Membership.csv"
+    SIGNALS_CSV="$LATEST_EXPORT_DIR/Signals/Signals.csv"
+
+    count_csv() {
+        if [ -f "$1" ]; then
+            echo $(($(wc -l < "$1") - 1))
+        else
+            echo 0
+        fi
+    }
+
+    echo "👥 People rows:       $(count_csv "$PEOPLE_CSV")  ($PEOPLE_CSV)"
+    echo "📚 Repos rows:        $(count_csv "$REPOS_CSV")  ($REPOS_CSV)"
+    echo "🔗 Membership rows:   $(count_csv "$MEMBERSHIP_CSV")  ($MEMBERSHIP_CSV)"
+    echo "🔔 Signals rows:      $(count_csv "$SIGNALS_CSV")  ($SIGNALS_CSV)"
+else
+    echo ""
+    echo "⚠️  No Attio export folder found. If this is unexpected, ensure the run did find any repos/prospects."
+fi
