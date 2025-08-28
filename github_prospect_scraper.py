@@ -11,7 +11,7 @@ import time
 import json
 import hashlib
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Set
 import copy
 import requests
@@ -218,7 +218,7 @@ class GitHubScraper:
             cur = self._dedup_conn.cursor()
             cur.execute(
                 "INSERT OR IGNORE INTO seen_people(login, first_seen) VALUES(?, ?)",
-                (login, datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+                (login, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
             )
             self._dedup_conn.commit()
         except Exception:
@@ -938,6 +938,11 @@ class GitHubScraper:
         self._upsert_repo_record(repo)
         self._add_membership_record(user['login'], repo, author_data.get('signal_at'))
         self._add_signal_record(user['login'], repo, author_data)
+        # Mirror latest signal onto the People row with `signals_*` fields
+        try:
+            self._update_person_with_signal(user['login'], repo, author_data)
+        except Exception:
+            pass
         
         # Mark login as seen in dedup DB
         self._dedup_mark(user['login'])
@@ -1253,8 +1258,31 @@ class GitHubScraper:
             'signal': signal_text,
             'signal_at': signal_at,
             'url': author_data.get('url'),
+            'html_url': author_data.get('url'),
             'source': 'GitHub'
         }
+
+    def _update_person_with_signal(self, login: str, repo: Dict, author_data: Dict):
+        """Copy the latest signal details onto the person row with signals_* fields."""
+        if login not in self.people_records:
+            return
+        signal_at = author_data.get('signal_at') or ''
+        signal_type = self._sanitize_signal_type(author_data.get('signal_type'))
+        signal_text = author_data.get('signal') or ''
+        repo_full_name = repo.get('full_name')
+        repo_id = repo.get('id')
+        raw_id = f"{login}:{repo_full_name}:{signal_at}:{signal_type}:{signal_text[:20]}"
+        signal_id = hashlib.md5(raw_id.encode()).hexdigest()[:16]
+        self.people_records[login].update({
+            'signals_signal_id': signal_id,
+            'signals_signal_type': signal_type,
+            'signals_signal': signal_text,
+            'signals_signal_at': signal_at,
+            'signals_html_url': author_data.get('url'),
+            'signals_source': 'GitHub',
+            'signals_repo_full_name': repo_full_name,
+            'signals_repo_id': repo_id,
+        })
         
     def scrape(self):
         """Main scraping logic"""
