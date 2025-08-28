@@ -20,6 +20,7 @@ import yaml
 import argparse
 from dataclasses import dataclass, asdict
 from urllib.parse import urlparse
+from tqdm import tqdm
 
 
 @dataclass
@@ -215,14 +216,12 @@ class GitHubScraper:
             self.csv_writer.writeheader()
             self.csv_file.flush()
             self.csv_initialized = True
-            print(f"📝 Initialized CSV file: {self.output_path}")
     
     def _write_prospect_to_csv(self, prospect: Prospect):
         """Write a single prospect to CSV file immediately"""
         if self.csv_writer:
             self.csv_writer.writerow(prospect.to_dict())
             self.csv_file.flush()  # Ensure data is written immediately
-            print(f"    ✅ Wrote prospect #{len(self.all_prospects)}: {prospect.login} ({prospect.repo_full_name})")
     
     def _close_csv_file(self):
         """Close CSV file"""
@@ -438,21 +437,17 @@ class GitHubScraper:
         self._url_mode = True
         try:
             parsed = self.parse_github_url(github_url)
-            print(f"🔗 Processing GitHub URL: {github_url}")
-            
             if parsed['type'] == 'user':
                 username = parsed['username']
-                print(f"👤 Analyzing user profile: {username}")
                 
                 # Get user details first
                 user_details = self.get_user_details(username)
                 if not user_details:
-                    print(f"❌ User {username} not found")
+                    tqdm.write(f"❌ User {username} not found")
                     return
                 
                 # Get user's repositories
                 repos = self.get_user_repos(username, limit=10)
-                print(f"📦 Found {len(repos)} repositories for {username}")
                 
                 # Create a prospect from the user's most recent activity
                 if repos:
@@ -473,49 +468,40 @@ class GitHubScraper:
                     prospect = self.create_prospect(author_data, recent_repo)
                     if prospect:
                         self.all_prospects.append(prospect)
-                        print(f"✅ Added prospect: {prospect.login}")
                 
             elif parsed['type'] == 'repo':
                 owner = parsed['owner']
                 repo_name = parsed['repo']
-                print(f"📦 Analyzing repository: {owner}/{repo_name}")
                 
                 # Get repository details
                 repo_url = f"https://api.github.com/repos/{owner}/{repo_name}"
-                response = self.session.get(repo_url, headers=self.headers)
+                response = self.session.get(repo_url, headers=self.headers, timeout=10)
                 
                 if self._rate_limit_wait(response):
-                    response = self.session.get(repo_url, headers=self.headers)
+                    response = self.session.get(repo_url, headers=self.headers, timeout=10)
                 
                 if response.status_code != 200:
-                    print(f"❌ Repository {owner}/{repo_name} not found")
+                    tqdm.write(f"❌ Repository {owner}/{repo_name} not found")
                     return
                 
                 repo = response.json()
                 
                 # Get contributors from this specific repo
-                print(f"🔍 Extracting contributors from {repo['full_name']}")
-                
-                # Get PR authors
                 pr_authors = self.get_pr_authors(repo)
-                print(f"  → Found {len(pr_authors)} PR authors")
-                
-                for author_data in pr_authors:
-                    prospect = self.create_prospect(author_data, repo)
-                    if prospect:
-                        self.all_prospects.append(prospect)
-                        
-                # Get commit authors
                 commit_authors = self.get_commit_authors(repo)
-                print(f"  → Found {len(commit_authors)} commit authors")
                 
-                for author_data in commit_authors:
-                    prospect = self.create_prospect(author_data, repo)
-                    if prospect:
-                        self.all_prospects.append(prospect)
+                # Process all authors with progress bar
+                all_authors = pr_authors + commit_authors
+                if all_authors:
+                    pbar = tqdm(all_authors, desc=f"Processing {repo['full_name']}", unit="author")
+                    for author_data in pbar:
+                        prospect = self.create_prospect(author_data, repo)
+                        if prospect:
+                            self.all_prospects.append(prospect)
+                            pbar.set_description(f"Added {prospect.login}")
                         
         except Exception as e:
-            print(f"❌ Error processing URL {github_url}: {e}")
+            tqdm.write(f"❌ Error processing URL {github_url}: {e}")
     
     def print_prospects_summary(self):
         """Print a summary of all found prospects"""
@@ -591,10 +577,7 @@ class GitHubScraper:
         # Note: In URL mode, we'll show prospects even without emails for demo purposes
         # In regular scraping mode, we still skip users without emails
         if not email_commit and not email_profile and hasattr(self, '_url_mode') and not self._url_mode:
-            print(f"    ⚠️  Skipping {user['login']} - no email found")
             return None
-        elif not email_commit and not email_profile:
-            print(f"    ℹ️  Adding {user['login']} - no email found (demo mode)")
         
         # Extract LinkedIn from blog URL if present
         linkedin_username = None
@@ -709,7 +692,6 @@ class GitHubScraper:
         # Write to CSV immediately if incremental writing is enabled
         if self.output_path:
             self._write_prospect_to_csv(prospect)
-            print(f"    ✅ Wrote prospect #{len(self.all_prospects)}: {prospect.login} ({prospect.get_best_email()})")
             
         return prospect
         
@@ -719,42 +701,50 @@ class GitHubScraper:
         if self.output_path:
             self._init_csv_file()
             
-        print(f"🔍 Searching for repos matching: {self.config['search']['query']}")
         repos = self.search_repos()
-        print(f"📦 Found {len(repos)} repos to analyze")
         
-        for i, repo in enumerate(repos):
-            print(f"\n🏭 Processing {i+1}/{len(repos)}: {repo['full_name']}")
+        # Use tqdm for progress tracking
+        repo_pbar = tqdm(repos, desc="Processing repos", unit="repo")
+        
+        for repo in repo_pbar:
+            repo_pbar.set_description(f"Processing {repo['full_name']}")
             
             # Get PR authors
             if self.config['limits']['per_repo_prs'] > 0:
                 pr_authors = self.get_pr_authors(repo)
-                print(f"  → Found {len(pr_authors)} PR authors")
                 
-                for author_data in pr_authors:
-                    prospect = self.create_prospect(author_data, repo)
-                    if prospect:
-                        self.all_prospects.append(prospect)
+                if pr_authors:
+                    pr_pbar = tqdm(pr_authors, desc="  PR authors", unit="author", leave=False)
+                    for author_data in pr_pbar:
+                        prospect = self.create_prospect(author_data, repo)
+                        if prospect:
+                            self.all_prospects.append(prospect)
+                            pr_pbar.set_description(f"  Added {prospect.login}")
                         
             # Get commit authors
             if self.config['limits']['per_repo_commits'] > 0:
                 commit_authors = self.get_commit_authors(repo)
-                print(f"  → Found {len(commit_authors)} commit authors")
                 
-                for author_data in commit_authors:
-                    prospect = self.create_prospect(author_data, repo)
-                    if prospect:
-                        self.all_prospects.append(prospect)
+                if commit_authors:
+                    commit_pbar = tqdm(commit_authors, desc="  Commit authors", unit="author", leave=False)
+                    for author_data in commit_pbar:
+                        prospect = self.create_prospect(author_data, repo)
+                        if prospect:
+                            self.all_prospects.append(prospect)
+                            commit_pbar.set_description(f"  Added {prospect.login}")
+                        
+            # Update main progress bar with current stats
+            repo_pbar.set_postfix(prospects=len(self.all_prospects))
                         
             # Check if we've hit our people limit
             if len(self.all_prospects) >= self.config['limits']['max_people']:
-                print(f"\n✅ Reached max people limit ({self.config['limits']['max_people']})")
+                repo_pbar.set_description(f"Reached max people limit ({self.config['limits']['max_people']})")
                 break
                 
             # Be nice to GitHub
             time.sleep(self.config.get('delay', 1))
-            
-        print(f"\n📊 Total unique prospects found: {len(self.all_prospects)}")
+        
+        repo_pbar.close()
         
         # Print prospects summary at the end
         self.print_prospects_summary()
@@ -762,7 +752,6 @@ class GitHubScraper:
     def export_csv(self, output_path: str):
         """Export prospects to CSV"""
         if not self.all_prospects:
-            print("No prospects to export")
             return
             
         # Use same fieldnames as init_csv_file
@@ -805,8 +794,6 @@ class GitHubScraper:
             
             for prospect in self.all_prospects:
                 writer.writerow(prospect.to_dict())
-                
-        print(f"✅ Exported {len(self.all_prospects)} prospects to {output_path}")
 
 
 def main():
@@ -828,7 +815,6 @@ def main():
     
     # Handle URL mode
     if args.url:
-        print(f"🚀 GitHub URL Mode: {args.url}")
         
         # Use minimal config for URL mode
         config = {
