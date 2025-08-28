@@ -41,6 +41,17 @@ search:
 python github_prospect_scraper.py --config config.yaml --out prospects.csv
 ```
 
+## Attio CRM — OSS Maintainers Data Model
+
+The repo includes a finalized Attio object model for OSS maintainers covering People, Repos, Signals, Repo Membership, Companies, and Deals. See `docs/attio_oss_model.md` for the full specification and CSV headers.
+
+Key import headers for quick reference:
+
+- Repos: `repo_full_name,repo_name,owner_login,host,description,primary_language,license,topics,stars,forks,watchers,open_issues,is_fork,is_archived,created_at,updated_at,pushed_at,html_url,api_url,recent_push_30d`
+- People: `login,id,node_id,lead_id,name,company,email_profile,email_public_commit,Predicted Email,location,bio,pronouns,public_repos,public_gists,followers,following,created_at,updated_at,html_url,avatar_url,github_user_url,api_url`
+- Membership: `membership_id,login,repo_full_name,role,permission,contributions_past_year,last_activity_at`
+- Signals: `signal_id,login,repo_full_name,signal_type,signal,signal_at,url,source`
+
 ## 🆕 URL Mode - Quick Prospect Analysis
 
 Analyze any GitHub user or repository instantly:
@@ -251,6 +262,10 @@ python github_prospect_scraper.py --help
 2. **Score the leads** - Rank by repo relevance, contribution recency
 3. **Personalize outreach** - Use the signal data for context
 4. **Track results** - A/B test different approaches
+
+## Related Docs
+
+- See the Attio CRM data model for OSS maintainers: [docs/attio-crm-oss-maintainers-model.md](docs/attio-crm-oss-maintainers-model.md)
 
 ## Example Integration
 
