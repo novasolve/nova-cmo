@@ -23,6 +23,11 @@ if [ -n "$GITHUB_TOKEN" ]; then
     GITHUB_TOKEN="$(printf '%s' "$GITHUB_TOKEN" | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' | xargs)"
 fi
 
+# Default DEDUP_DB if not provided
+if [ -z "$DEDUP_DB" ]; then
+    DEDUP_DB="$(pwd)/data/dedup.db"
+fi
+
 # Check if GITHUB_TOKEN is set
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "❌ Error: GITHUB_TOKEN not set"
@@ -103,7 +108,10 @@ while [[ $# -gt 0 ]]; do
             echo "  -n, --max-repos N    Maximum number of repos to process (limit scope for testing)"
             echo "  -h, --help           Show this help message"
             echo ""
-            echo "Example: $0 -n 3   # Process only first 3 repos and get a small sample of prospects"
+            echo "Environment:"
+            echo "  DEDUP_DB             Absolute path to SQLite dedup DB (default: ./data/dedup.db)"
+            echo ""
+            echo "Example: DEDUP_DB=$(pwd)/data/dedup.db $0 -n 3"
             exit 0
             ;;
         *)
@@ -128,16 +136,17 @@ echo "💾 Output: $OUTPUT_FILE"
 if [ -n "$MAX_REPOS" ]; then
     echo "🔢 Max repos (-n): $MAX_REPOS"
 fi
-if [ -n "$REPOS_OVERRIDE" ]; then
+if [ -n "$REOS_OVERRIDE" ]; then
     echo "🔢 Max repos (--repos): $REPOS_OVERRIDE"
 fi
 if [ -n "$LEADS_OVERRIDE" ]; then
     echo "👥 Max leads (--leads): $LEADS_OVERRIDE"
 fi
+echo "🗃️  Dedup DB: $DEDUP_DB"
 echo ""
 
 # Run the scraper (build arguments without using eval for safety)
-ARGS=(github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE")
+ARGS=(github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE" --dedup-db "$DEDUP_DB")
 if [ -n "$MAX_REPOS" ]; then
   ARGS+=( -n "$MAX_REPOS" )
 fi

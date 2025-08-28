@@ -277,6 +277,28 @@ class GitHubScraper:
             return True
         return False
 
+    def _choose_main_email(self, email_profile: Optional[str], email_public_commit: Optional[str]) -> Optional[str]:
+        """Select a main email preferring work domains over personal.
+
+        Order:
+        1) Non-public-domain email among [profile, commit]
+        2) profile email
+        3) commit email
+        """
+        candidates = []
+        for e in [(email_profile or '').strip(), (email_public_commit or '').strip()]:
+            if e and '@' in e:
+                candidates.append(e)
+
+        # Prefer non-public domains
+        for e in candidates:
+            dom = self._normalize_domain(e)
+            if dom and not self._is_public_email_domain(dom):
+                return e
+
+        # Fallbacks
+        return candidates[0] if candidates else None
+
     def _get_org_details(self, org_login: str) -> Dict:
         if not org_login:
             return {}
@@ -960,6 +982,7 @@ class GitHubScraper:
             'company': user_details.get('company'),
             'email_profile': user_details.get('email'),
             'email_public_commit': email_public_commit,
+            'email_main': self._choose_main_email(user_details.get('email'), email_public_commit),
             'company_domain': company_domain,
             'Predicted Email': '',
             'location': user_details.get('location'),
@@ -1319,7 +1342,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_name','company_domain','email_addresses','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','company_domain','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1334,7 +1357,7 @@ class GitHubScraper:
                     'node_id': row.get('node_id'),
                     'lead_id': row.get('lead_id'),
                     'name': row.get('name'),
-                    'company_name': row.get('company'),
+                    'company_raw': row.get('company'),
                     'company_domain': row.get('company_domain'),
                     'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
@@ -1401,7 +1424,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company_name','email_addresses','email_public_commit',
+            'login','id','node_id','lead_id','name','company_raw','email_addresses','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1416,7 +1439,7 @@ class GitHubScraper:
                     'node_id': row.get('node_id'),
                     'lead_id': row.get('lead_id'),
                     'name': row.get('name'),
-                    'company_name': row.get('company'),
+                    'company_raw': row.get('company'),
                     'email_addresses': best_email,
                     'email_public_commit': row.get('email_public_commit'),
                     'Predicted Email': row.get('Predicted Email'),
@@ -1472,7 +1495,7 @@ def main():
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
     parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
-    parser.add_argument('--dedup-db', default='data/dedup.db', help='Path to SQLite DB for dedup (default: data/dedup.db)')
+    parser.add_argument('--dedup-db', default=os.environ.get('DEDUP_DB', 'data/dedup.db'), help='Path to SQLite DB for dedup (default: $DEDUP_DB or data/dedup.db)')
     parser.add_argument('--no-dedup', action='store_true', help='Disable deduplication (process all logins)')
     args = parser.parse_args()
     
