@@ -1224,8 +1224,16 @@ class GitHubScraper:
         # Initialize CSV file for incremental writing
         if self.output_path:
             self._init_csv_file()
+        # Config summary (useful when called via wrapper)
+        try:
+            max_people = (self.config.get('limits') or {}).get('max_people')
+            max_repos = (self.config.get('limits') or {}).get('max_repos')
+            print(f"🔎 Search window: {self.config.get('filters', {}).get('activity_days', 90)} days | Max repos: {max_repos} | Max leads: {max_people}")
+        except Exception:
+            pass
             
         repos = self.search_repos()
+        print(f"📦 Repos returned: {len(repos)}")
         
         # Use tqdm for progress tracking
         repo_pbar = tqdm(repos, desc="Processing repos", unit="repo")
@@ -1263,6 +1271,7 @@ class GitHubScraper:
             # Check if we've hit our leads (people with email) limit
             if self.leads_with_email_count >= self.config['limits']['max_people']:
                 repo_pbar.set_description(f"Reached max leads limit ({self.config['limits']['max_people']})")
+                print(f"✅ Stopping early: collected {self.leads_with_email_count} leads (target {self.config['limits']['max_people']})")
                 break
                 
             # Be nice to GitHub
