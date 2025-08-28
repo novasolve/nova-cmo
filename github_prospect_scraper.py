@@ -22,6 +22,7 @@ import argparse
 from dataclasses import dataclass, asdict
 from urllib.parse import urlparse
 from tqdm import tqdm
+import sqlite3
 
 
 @dataclass
@@ -163,7 +164,48 @@ class GitHubScraper:
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
         self.org_cache: Dict[str, Dict] = {}
+        # Dedup configuration
+        dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
+        self.dedup_enabled: bool = bool(dedup_cfg.get('enabled', True))
+        self.dedup_db_path: str = dedup_cfg.get('db_path') or 'data/dedup.db'
+        self._dedup_conn: Optional[sqlite3.Connection] = None
+        if self.dedup_enabled:
+            try:
+                os.makedirs(os.path.dirname(self.dedup_db_path) or '.', exist_ok=True)
+                self._dedup_conn = sqlite3.connect(self.dedup_db_path)
+                cur = self._dedup_conn.cursor()
+                cur.execute(
+                    "CREATE TABLE IF NOT EXISTS seen_people (login TEXT PRIMARY KEY, first_seen TEXT NOT NULL)"
+                )
+                self._dedup_conn.commit()
+            except Exception as e:
+                print(f"⚠️  Dedup DB init failed at {self.dedup_db_path}: {e}. Continuing without dedup.")
+                self.dedup_enabled = False
+                self._dedup_conn = None
         
+    def _dedup_seen(self, login: str) -> bool:
+        if not (self.dedup_enabled and self._dedup_conn and login):
+            return False
+        try:
+            cur = self._dedup_conn.cursor()
+            cur.execute("SELECT 1 FROM seen_people WHERE login = ?", (login,))
+            return cur.fetchone() is not None
+        except Exception:
+            return False
+        
+    def _dedup_mark(self, login: str):
+        if not (self.dedup_enabled and self._dedup_conn and login):
+            return
+        try:
+            cur = self._dedup_conn.cursor()
+            cur.execute(
+                "INSERT OR IGNORE INTO seen_people(login, first_seen) VALUES(?, ?)",
+                (login, datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'))
+            )
+            self._dedup_conn.commit()
+        except Exception:
+            pass
+
     def _create_session(self):
         """Create session with retry logic"""
         session = requests.Session()
@@ -302,6 +344,13 @@ class GitHubScraper:
             self.csv_file.close()
             self.csv_file = None
             self.csv_writer = None
+        # Close dedup DB
+        if self._dedup_conn:
+            try:
+                self._dedup_conn.close()
+            except Exception:
+                pass
+            self._dedup_conn = None
         
     def search_repos(self) -> List[Dict]:
         """Search GitHub repos based on config criteria"""
@@ -690,13 +739,18 @@ class GitHubScraper:
         """Create a Prospect object from author and repo data"""
         user = author_data['user']
         
+        # Dedup: skip if we've seen this login before
+        login_val = user.get('login')
+        if self._dedup_seen(login_val):
+            return None
+        
         # Generate stable lead_id
         lead_id = hashlib.md5(f"{user['login']}_{repo['full_name']}".encode()).hexdigest()[:12]
         
         # Skip if we've already seen this lead
         if lead_id in self.prospects:
             return None
-            
+        
         # Get full user details
         user_details = self.get_user_details(user['login'])
         
@@ -832,6 +886,9 @@ class GitHubScraper:
         self._upsert_repo_record(repo)
         self._add_membership_record(user['login'], repo, author_data.get('signal_at'))
         self._add_signal_record(user['login'], repo, author_data)
+        
+        # Mark login as seen in dedup DB
+        self._dedup_mark(user['login'])
             
         return prospect
 
@@ -1181,12 +1238,12 @@ class GitHubScraper:
                             self.all_prospects.append(prospect)
                             commit_pbar.set_description(f"  Added {prospect.login}")
                         
-            # Update main progress bar with current stats
-            repo_pbar.set_postfix(prospects=len(self.all_prospects))
+            # Update main progress bar with current stats (leads = with email)
+            repo_pbar.set_postfix(prospects=len(self.all_prospects), leads=self.leads_with_email_count)
                         
-            # Check if we've hit our people limit
-            if len(self.all_prospects) >= self.config['limits']['max_people']:
-                repo_pbar.set_description(f"Reached max people limit ({self.config['limits']['max_people']})")
+            # Check if we've hit our leads (people with email) limit
+            if self.leads_with_email_count >= self.config['limits']['max_people']:
+                repo_pbar.set_description(f"Reached max leads limit ({self.config['limits']['max_people']})")
                 break
                 
             # Be nice to GitHub
@@ -1262,7 +1319,7 @@ class GitHubScraper:
             os.makedirs(d, exist_ok=True)
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','company_domain','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_name','company_domain','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1270,8 +1327,32 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                # ensure all keys exist
-                w.writerow({k: row.get(k) for k in people_headers})
+                out = {
+                    'login': row.get('login'),
+                    'id': row.get('id'),
+                    'node_id': row.get('node_id'),
+                    'lead_id': row.get('lead_id'),
+                    'name': row.get('name'),
+                    'company_name': row.get('company'),
+                    'company_domain': row.get('company_domain'),
+                    'email_profile': row.get('email_profile'),
+                    'email_public_commit': row.get('email_public_commit'),
+                    'Predicted Email': row.get('Predicted Email'),
+                    'location': row.get('location'),
+                    'bio': row.get('bio'),
+                    'pronouns': row.get('pronouns'),
+                    'public_repos': row.get('public_repos'),
+                    'public_gists': row.get('public_gists'),
+                    'followers': row.get('followers'),
+                    'following': row.get('following'),
+                    'created_at': row.get('created_at'),
+                    'updated_at': row.get('updated_at'),
+                    'html_url': row.get('html_url'),
+                    'avatar_url': row.get('avatar_url'),
+                    'github_user_url': row.get('github_user_url'),
+                    'api_url': row.get('api_url'),
+                }
+                w.writerow(out)
         
         # Repos.csv
         repo_headers = [
@@ -1319,7 +1400,7 @@ class GitHubScraper:
         # Use the same accumulators as export_attio_csvs
         # People.csv
         people_headers = [
-            'login','id','node_id','lead_id','name','company','email_profile','email_public_commit',
+            'login','id','node_id','lead_id','name','company_name','email_profile','email_public_commit',
             'Predicted Email','location','bio','pronouns','public_repos','public_gists','followers','following',
             'created_at','updated_at','html_url','avatar_url','github_user_url','api_url'
         ]
@@ -1327,7 +1408,31 @@ class GitHubScraper:
             w = csv.DictWriter(f, fieldnames=people_headers)
             w.writeheader()
             for row in self.people_records.values():
-                w.writerow({k: row.get(k) for k in people_headers})
+                out = {
+                    'login': row.get('login'),
+                    'id': row.get('id'),
+                    'node_id': row.get('node_id'),
+                    'lead_id': row.get('lead_id'),
+                    'name': row.get('name'),
+                    'company_name': row.get('company'),
+                    'email_profile': row.get('email_profile'),
+                    'email_public_commit': row.get('email_public_commit'),
+                    'Predicted Email': row.get('Predicted Email'),
+                    'location': row.get('location'),
+                    'bio': row.get('bio'),
+                    'pronouns': row.get('pronouns'),
+                    'public_repos': row.get('public_repos'),
+                    'public_gists': row.get('public_gists'),
+                    'followers': row.get('followers'),
+                    'following': row.get('following'),
+                    'created_at': row.get('created_at'),
+                    'updated_at': row.get('updated_at'),
+                    'html_url': row.get('html_url'),
+                    'avatar_url': row.get('avatar_url'),
+                    'github_user_url': row.get('github_user_url'),
+                    'api_url': row.get('api_url'),
+                }
+                w.writerow(out)
         # Repos.csv
         repo_headers = [
             'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
@@ -1362,11 +1467,11 @@ def main():
     parser.add_argument('--out', default='data/prospects.csv', help='Output CSV path')
     parser.add_argument('--out-dir', default='data', help='Directory to write split Attio CSVs (people/repos/memberships/signals)')
     parser.add_argument('-n', '--max-repos', type=int, help='Maximum number of repos to process (overrides config)')
-    parser.add_argument('--repos', type=int, help='Alias for --max-repos (overrides config.limits.max_repos)')
-    parser.add_argument('--leads', type=int, help='Maximum number of people/leads to collect (overrides config.limits.max_people)')
     parser.add_argument('--url', help='GitHub URL to scrape (user profile or repository)')
     parser.add_argument('--print-only', action='store_true', help='Only print results, do not save to CSV')
     parser.add_argument('--run-all-segments', action='store_true', help='Run all queries in config.target_segments and combine results')
+    parser.add_argument('--dedup-db', default='data/dedup.db', help='Path to SQLite DB for dedup (default: data/dedup.db)')
+    parser.add_argument('--no-dedup', action='store_true', help='Disable deduplication (process all logins)')
     args = parser.parse_args()
     
     # Check for GitHub token
@@ -1399,15 +1504,9 @@ def main():
         config = {
             'filters': {'activity_days': 90},
             'limits': {'per_repo_prs': 10, 'per_repo_commits': 10, 'max_people': 50},
-            'delay': 1
+            'delay': 1,
+            'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db}
         }
-        # Apply overrides in URL mode as well
-        if args.max_repos or args.repos:
-            config['limits']['max_repos'] = args.repos or args.max_repos
-            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
-        if args.leads:
-            config['limits']['max_people'] = args.leads
-            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
         
         # Don't save to CSV if print-only mode
         output_path = None if args.print_only else args.out
@@ -1426,8 +1525,11 @@ def main():
         # Always print results in URL mode
         scraper.print_prospects_summary()
         
-        # Close CSV file
+        # Close CSV file and dedup DB
         if output_path:
+            scraper._close_csv_file()
+        else:
+            # Ensure dedup DB closed even if no CSV
             scraper._close_csv_file()
         
         return
@@ -1437,13 +1539,14 @@ def main():
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f)
             
-        # Overrides from CLI
-        if args.max_repos or args.repos:
-            config['limits']['max_repos'] = args.repos or args.max_repos
-            print(f"🔧 Overriding max_repos to {config['limits']['max_repos']}")
-        if args.leads:
-            config['limits']['max_people'] = args.leads
-            print(f"🔧 Overriding max_people to {config['limits']['max_people']}")
+        # Override max_repos if -n argument is provided
+        if args.max_repos:
+            config['limits']['max_repos'] = args.max_repos
+            print(f"🔧 Overriding max_repos to {args.max_repos}")
+        # Inject dedup configuration
+        config.setdefault('dedup', {})
+        config['dedup']['enabled'] = (not args.no_dedup)
+        config['dedup']['db_path'] = args.dedup_db
     except FileNotFoundError:
         print(f"❌ Error: Config file '{args.config}' not found")
         print("Creating default config...")
@@ -1465,7 +1568,8 @@ def main():
                 'per_repo_commits': 5,
                 'max_people': 100
             },
-            'delay': 1
+            'delay': 1,
+            'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db}
         }
         
         os.makedirs(os.path.dirname(args.config) or '.', exist_ok=True)
@@ -1498,6 +1602,8 @@ def main():
                     continue
                 seen_ids.add(p.lead_id)
                 combined.append(p)
+            # Close dedup DB between segments
+            scraper._close_csv_file()
         # Write combined CSVs
         if args.out:
             fieldnames = list(combined[0].to_dict().keys()) if combined else []
