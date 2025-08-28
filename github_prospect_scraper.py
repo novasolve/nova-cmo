@@ -211,6 +211,30 @@ class GitHubScraper:
             return None
         return domain
 
+    def _is_public_email_domain(self, domain: Optional[str]) -> bool:
+        """Return True if the domain looks like a public/free email provider."""
+        if not domain:
+            return False
+        domain = domain.lower()
+        public_set = {
+            'gmail.com', 'googlemail.com', 'outlook.com', 'hotmail.com', 'live.com', 'msn.com',
+            'icloud.com', 'me.com', 'mac.com', 'aol.com', 'proton.me', 'protonmail.com', 'pm.me',
+            'gmx.com', 'fastmail.com', 'tutanota.com', 'hey.com', 'hushmail.com', 'mail.com',
+            'yandex.ru', 'yandex.com', 'zoho.com'
+        }
+        if domain in public_set:
+            return True
+        # Common family patterns
+        if domain.startswith('yahoo.') or domain.endswith('.yahoo.com'):
+            return True
+        if domain.startswith('hotmail.') or domain.endswith('.hotmail.com'):
+            return True
+        if domain.startswith('outlook.') or domain.endswith('.outlook.com'):
+            return True
+        if domain.startswith('live.') or domain.endswith('.live.com'):
+            return True
+        return False
+
     def _get_org_details(self, org_login: str) -> Dict:
         if not org_login:
             return {}
@@ -849,17 +873,25 @@ class GitHubScraper:
         company_domain = None
         email_profile = user_details.get('email')
         if email_profile:
-            company_domain = self._normalize_domain(email_profile)
+            dom = self._normalize_domain(email_profile)
+            if dom and not self._is_public_email_domain(dom):
+                company_domain = dom
         if not company_domain and email_public_commit:
-            company_domain = self._normalize_domain(email_public_commit)
+            dom = self._normalize_domain(email_public_commit)
+            if dom and not self._is_public_email_domain(dom):
+                company_domain = dom
         if not company_domain and repo:
             owner_login = (repo.get('owner') or {}).get('login')
             owner_type = (repo.get('owner') or {}).get('type')
             if owner_login and owner_type == 'Organization':
                 org = self._get_org_details(owner_login)
-                company_domain = self._normalize_domain(org.get('blog')) or company_domain
+                dom = self._normalize_domain(org.get('blog'))
+                if dom and not self._is_public_email_domain(dom):
+                    company_domain = dom
             if not company_domain:
-                company_domain = self._normalize_domain(repo.get('homepage'))
+                dom = self._normalize_domain(repo.get('homepage'))
+                if dom and not self._is_public_email_domain(dom):
+                    company_domain = dom
 
         person_row = {
             'login': login,
@@ -993,11 +1025,15 @@ class GitHubScraper:
         if owner_login and owner_type == 'Organization':
             try:
                 org = self._get_org_details(owner_login)
-                company_domain = self._normalize_domain((org or {}).get('blog')) or company_domain
+                dom = self._normalize_domain((org or {}).get('blog'))
+                if dom and not self._is_public_email_domain(dom):
+                    company_domain = dom
             except Exception:
                 company_domain = None
         if not company_domain:
-            company_domain = self._normalize_domain((details or {}).get('homepage') or repo.get('homepage'))
+            dom = self._normalize_domain((details or {}).get('homepage') or repo.get('homepage'))
+            if dom and not self._is_public_email_domain(dom):
+                company_domain = dom
 
         repo_row = {
             'repo_id': repo.get('id'),
@@ -1017,6 +1053,7 @@ class GitHubScraper:
             'has_discussions': details.get('has_discussions'),
             'company_domain': company_domain,
             'stars': repo.get('stargazers_count', 0),
+            'watchers': repo.get('watchers_count', 0),
             'subscribers': details.get('subscribers_count'),
             'forks': repo.get('forks_count'),
             'open_issues': repo.get('open_issues_count'),
