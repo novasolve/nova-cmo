@@ -69,6 +69,8 @@ mkdir -p data
 CONFIG_FILE="configs/main.yaml"
 OUTPUT_FILE="data/prospects_$(date +%Y%m%d_%H%M%S).csv"
 MAX_REPOS=""
+REPOS_OVERRIDE=""
+LEADS_OVERRIDE=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -83,6 +85,14 @@ while [[ $# -gt 0 ]]; do
             ;;
         -n|--max-repos)
             MAX_REPOS="$2"
+            shift 2
+            ;;
+        --repos)
+            REPOS_OVERRIDE="$2"
+            shift 2
+            ;;
+        --leads)
+            LEADS_OVERRIDE="$2"
             shift 2
             ;;
         -h|--help)
@@ -116,16 +126,28 @@ echo "========================="
 echo "📋 Config: $CONFIG_FILE"
 echo "💾 Output: $OUTPUT_FILE"
 if [ -n "$MAX_REPOS" ]; then
-    echo "🔢 Max repos: $MAX_REPOS"
+    echo "🔢 Max repos (-n): $MAX_REPOS"
+fi
+if [ -n "$REPOS_OVERRIDE" ]; then
+    echo "🔢 Max repos (--repos): $REPOS_OVERRIDE"
+fi
+if [ -n "$LEADS_OVERRIDE" ]; then
+    echo "👥 Max leads (--leads): $LEADS_OVERRIDE"
 fi
 echo ""
 
 # Run the scraper (build arguments without using eval for safety)
+ARGS=(github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE")
 if [ -n "$MAX_REPOS" ]; then
-    python github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE" -n "$MAX_REPOS"
-else
-    python github_prospect_scraper.py --config "$CONFIG_FILE" --out "$OUTPUT_FILE"
+  ARGS+=( -n "$MAX_REPOS" )
 fi
+if [ -n "$REPOS_OVERRIDE" ]; then
+  ARGS+=( --repos "$REPOS_OVERRIDE" )
+fi
+if [ -n "$LEADS_OVERRIDE" ]; then
+  ARGS+=( --leads "$LEADS_OVERRIDE" )
+fi
+python "${ARGS[@]}"
 
 # Show results summary and preview
 if [ -f "$OUTPUT_FILE" ]; then
