@@ -514,7 +514,21 @@ def main():
     args = parser.parse_args()
     
     # Check for GitHub token
-    token = os.environ.get('GITHUB_TOKEN')
+    # Prefer token from config.github.token_env, then GITHUB_TOKEN, then GH_TOKEN
+    token_env_name = None
+    try:
+        with open(args.config, 'r') as _cf:
+            _cfg_for_token = yaml.safe_load(_cf) or {}
+            token_env_name = (((_cfg_for_token.get('github') or {}).get('token_env')) or None)
+    except Exception:
+        token_env_name = None
+    token = None
+    if token_env_name:
+        token = os.environ.get(token_env_name)
+    if not token:
+        token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    if token:
+        token = token.strip().strip('"').strip("'")
     if not token:
         print("⚠️  Warning: GITHUB_TOKEN environment variable not set")
         print("   Running without authentication (limited to public data)")
