@@ -43,7 +43,7 @@ class ConcurrentProcessor:
         self.github_rate_limit_reset = None
 
         # Cache settings
-        self.cache_ttl_hours = 2  # Cache results for 2 hours
+        self.cache_ttl_hours = 24  # Cache results for 24 hours to reduce API calls
 
     def _get_cache_key(self, repo_full_name: str, params: Dict[str, Any]) -> str:
         """Generate cache key for repository processing"""
