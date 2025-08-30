@@ -243,8 +243,8 @@ def main():
             'demo': False,
             'location': 'us',
             'language': 'english',
-            'english_only': '--english-only' in args_with_dash,
-            'us_only': '--us-only' in args_with_dash
+            'english_only': bool('--english-only' in args_with_dash),
+            'us_only': bool('--us-only' in args_with_dash)
         })()
     else:
         # Use argparse for traditional arguments
