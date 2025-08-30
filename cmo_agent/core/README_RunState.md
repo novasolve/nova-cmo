@@ -1,41 +1,74 @@
-# RunState
+This document is written for internal developers working on the CMO Agent execution engine.
 
-The **RunState** is the persistent execution context of the CMO Agent.
-It ensures that long-running outbound campaigns can be paused, resumed, monitored, and debugged without losing progress.
+# RunState — Single Source of Truth for Job Execution
 
----
+## TL;DR
+RunState is the durable, JSON-serializable snapshot of a job. The LangGraph agent reads RunState, tools produce results, and a reducer merges those results back into RunState. We checkpoint it frequently so jobs can pause, resume, and recover without losing progress.
 
-## 📌 Purpose
+## Table of Contents
 
-- Acts as the **single source of truth** during execution.
-- Stores all data flowing through the pipeline: discovery results, enriched leads, campaign actions, errors, and metrics.
-- Enables **resumability**: crash recovery, pause/resume, and checkpointing.
-- Supports **observability**: counters, reports, structured logs, and error context.
+- Why RunState exists
+- Lifecycle & where it’s used
+- Schema (fields & invariants)
+- Reducer rules (how tools write to state)
+- Serialization & persistence
+- Size, safety & performance
+- Extending the schema
+- Examples (snapshots)
+- Integration points
+- Testing checklist
+
+## Why RunState exists
+
+Long-running campaigns can span hundreds of tool calls and hours of runtime. RunState enables:
+
+- Deterministic progress: one place to read/write the job’s evolving state.
+- Idempotency: tools write structured results; reducers merge safely.
+- Resumability: persist to disk/DB; reload after crashes or pauses.
+- Observability: counters, reports, and error history.
 
 ---
 
 ## 🏗️ Schema
 
 ```python
-class RunState(TypedDict):
-    # Job metadata
-    job_id: str             # Unique identifier for this run
-    goal: str               # Natural language goal / query
+from typing import TypedDict, List, Dict, Any
 
-    # Discovery
-    repos: List[Dict]       # GitHub repositories discovered
-    candidates: List[Dict]  # Initial contributors / maintainers
+class RunState(TypedDict, total=False):
+    # Job metadata (immutable per job)
+    job_id: str
+    goal: str
+    created_at: str
+    created_by: str
 
-    # Enrichment
-    leads: List[Dict]       # Fully enriched lead profiles
+    # Versioning & control
+    state_version: int              # schema version for migrations
+    current_stage: str              # e.g. "discovery", "enrichment", ...
+    ended: bool                     # termination signal for the graph
 
-    # Campaign
-    to_send: List[Dict]     # Final email payloads queued for dispatch
-    reports: Dict           # Aggregate reporting + analytics
+    # ICP filters
+    icp: Dict[str, Any]             # languages, stars_range, activity_days, topics
 
-    # Monitoring
-    counters: Dict          # API call usage, throughput, etc.
-    errors: List[Dict]      # Structured error objects with context
+    # Pipeline data
+    repos: List[Dict[str, Any]]
+    candidates: List[Dict[str, Any]]
+    leads: List[Dict[str, Any]]
+    to_send: List[Dict[str, Any]]
+
+    # Reporting & monitoring
+    reports: Dict[str, Any]
+    errors: List[Dict[str, Any]]    # structured ErrorEntry
+    counters: Dict[str, Any]        # {steps, api_calls, tokens, tool_calls_by_kind, ...}
+
+    # Checkpoints & config
+    checkpoints: List[str]          # artifact paths/ids (CSV, JSON)
+    checkpoints_meta: List[Dict[str, Any]]  # {id, created_at, stage, type, reason, path}
+    config: Dict[str, Any]          # caps, pacing, retries
+
+    # History & governance
+    history: List[Dict[str, Any]]   # conversation/decisions (bounded)
+    idempotency_keys: Dict[str, str]
+    privacy: Dict[str, Any]         # {redact_pii: bool, pii_fields: [...]}
 ```
 
 ## 🔍 Current vs Target RunState
