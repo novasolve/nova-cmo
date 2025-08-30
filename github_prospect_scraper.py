@@ -344,15 +344,51 @@ class GitHubScraper:
         
     def _rate_limit_wait(self, response):
         """Handle GitHub rate limiting"""
+        # Check remaining requests before we hit the limit
+        remaining = response.headers.get('X-RateLimit-Remaining', '0')
+        limit = response.headers.get('X-RateLimit-Limit', '5000')
+        reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
+        
+        # Log current rate limit status
+        if remaining and int(remaining) < 100:
+            current_time = time.time()
+            minutes_until_reset = max(0, (reset_time - current_time) / 60)
+            print(f"⚠️  GitHub API rate limit: {remaining}/{limit} remaining. Resets in {minutes_until_reset:.1f} minutes")
+        
         if response.status_code == 403:
-            reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
-            if reset_time:
+            # Check if it's rate limiting or other 403 error
+            if 'rate limit' in response.text.lower() or reset_time:
                 wait_time = reset_time - int(time.time()) + 5
                 if wait_time > 0:
-                    print(f"Rate limited. Waiting {wait_time} seconds...")
+                    print(f"🚫 GitHub rate limit exceeded! Waiting {wait_time} seconds ({wait_time/60:.1f} minutes)...")
+                    print(f"💡 Tip: Use multiple tokens or implement caching to avoid rate limits")
                     time.sleep(wait_time)
                     return True
         return False
+    
+    def check_rate_limit(self):
+        """Check current GitHub API rate limit status"""
+        url = "https://api.github.com/rate_limit"
+        response = self.session.get(url, headers=self.headers, timeout=10)
+        
+        if response.status_code == 200:
+            data = response.json()
+            core = data.get('resources', {}).get('core', {})
+            search = data.get('resources', {}).get('search', {})
+            
+            print("\n📊 GitHub API Rate Limit Status:")
+            print(f"   Core API: {core.get('remaining', 0)}/{core.get('limit', 5000)} remaining")
+            print(f"   Search API: {search.get('remaining', 0)}/{search.get('limit', 30)} remaining")
+            
+            # Check if we're close to limits
+            if core.get('remaining', 0) < 100:
+                reset_time = core.get('reset', 0)
+                current_time = time.time()
+                minutes_until_reset = max(0, (reset_time - current_time) / 60)
+                print(f"   ⚠️  Warning: Low on API calls! Resets in {minutes_until_reset:.1f} minutes")
+                
+            return core.get('remaining', 0), search.get('remaining', 0)
+        return None, None
 
     def _normalize_domain(self, value: Optional[str]) -> Optional[str]:
         """Extract and normalize a domain from an email or URL string."""
