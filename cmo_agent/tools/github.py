@@ -5,8 +5,10 @@ import logging
 from typing import List, Dict, Any
 try:
     from .base import GitHubTool, ToolResult
+    from ..core.monitoring import record_api_call, record_error
 except ImportError:
     from base import GitHubTool, ToolResult
+    # Monitoring not available in standalone mode
 
 logger = logging.getLogger(__name__)
 
