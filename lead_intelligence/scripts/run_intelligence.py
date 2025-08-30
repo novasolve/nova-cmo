@@ -228,7 +228,7 @@ def main():
         # Create args object from simple config and dash arguments
         args = type('Args', (), {
             'interactive': False,
-            'list_icps': False,
+            'list_icps': '--list-icps' in sys.argv,
             'max_repos': simple_config.get('max_repos', 50) if simple_config else 50,
             'max_leads': simple_config.get('max_leads', 200) if simple_config else 200,
             'search_days': simple_config.get('search_days', 60) if simple_config else 60,
