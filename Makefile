@@ -46,7 +46,7 @@ intelligence: install ## Run complete lead intelligence cycle (US + English only
 	@echo "🚀 Running Lead Intelligence System..."
 	@echo "🎯 Available ICPs (Ideal Customer Profiles):"
 	@echo "=============================================="
-	@python lead_intelligence/scripts/run_intelligence.py --list-icps
+	@python lead_intelligence/scripts/run_intelligence.py --list-icps || echo "⚠️  Could not load ICP list"
 	@echo ""
 	@echo "📊 Starting intelligence pipeline..."
 	python lead_intelligence/scripts/run_intelligence.py --us-only --english-only $(filter-out $@ install,$(MAKECMDGOALS))
