@@ -6,7 +6,7 @@ Quick test to verify your hardcoded GitHub token works
 import requests
 
 # ⚠️ REPLACE THIS WITH YOUR ACTUAL GITHUB TOKEN ⚠️
-GITHUB_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
+GITHUB_TOKEN = "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"
 
 def test_token():
     """Test if the GitHub token is valid"""

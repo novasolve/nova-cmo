@@ -122,9 +122,9 @@ class ProspectInsightsEngine:
         analysis['technical_expertise'] = self.content_analyzer._extract_technical_expertise(prospect)
 
         # Network influence
-        if prospect.followers and prospect.followers > 500:
+        if prospect.followers is not None and prospect.followers > 500:
             analysis['network_influence'] = 'high'
-        elif prospect.followers and prospect.followers > 100:
+        elif prospect.followers is not None and prospect.followers > 100:
             analysis['network_influence'] = 'medium'
 
         return analysis
@@ -194,7 +194,7 @@ class ProspectInsightsEngine:
             base_score += 0.2
 
         # Network boost
-        if prospect.followers and prospect.followers > 50:
+        if prospect.followers is not None and prospect.followers > 50:
             base_score += 0.1
 
         prediction['response_likelihood'] = min(base_score, 0.9)
