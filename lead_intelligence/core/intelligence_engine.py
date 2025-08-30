@@ -362,7 +362,7 @@ class IntelligenceEngine:
             pipeline_metadata['summary'] = {
                 'total_leads_processed': len(raw_leads),
                 'monday_wave_size': len(monday_wave_leads),
-                'conversion_rate': len(monday_wave_leads) / len(raw_leads) if raw_leads and len(raw_leads) > 0 else 0,
+                'conversion_rate': len(monday_wave_leads) / len(raw_leads) if raw_leads else 0,
                 'export_files_created': len(export_results.get('files', []))
             }
 
@@ -1544,7 +1544,7 @@ class IntelligenceEngine:
                 'low_potential': len([l for l in leads if l.engagement_potential == 'low']),
                 'with_email': len([l for l in leads if l.prospect.has_email()]),
                 'with_company': len([l for l in leads if l.prospect.company]),
-                'average_score': round(sum(l.intelligence_score for l in leads) / len(leads), 2) if leads and len(leads) > 0 else 0
+                'average_score': round(sum(l.intelligence_score for l in leads) / len(leads), 2) if leads else 0
             },
             'top_performers': [
                 {
@@ -1568,10 +1568,10 @@ class IntelligenceEngine:
         """Generate quality analysis report"""
         # Quality metrics analysis
         quality_metrics = {
-            'email_coverage': len([l for l in leads if l.prospect.has_email()]) / len(leads) if leads and len(leads) > 0 else 0,
-            'company_coverage': len([l for l in leads if l.prospect.company]) / len(leads) if leads and len(leads) > 0 else 0,
-            'location_coverage': len([l for l in leads if l.prospect.location]) / len(leads) if leads and len(leads) > 0 else 0,
-            'high_score_percentage': len([l for l in leads if l.intelligence_score >= 5.0]) / len(leads) if leads and len(leads) > 0 else 0
+            'email_coverage': len([l for l in leads if l.prospect.has_email()]) / len(leads) if leads else 0,
+            'company_coverage': len([l for l in leads if l.prospect.company]) / len(leads) if leads else 0,
+            'location_coverage': len([l for l in leads if l.prospect.location]) / len(leads) if leads else 0,
+            'high_score_percentage': len([l for l in leads if l.intelligence_score >= 5.0]) / len(leads) if leads else 0
         }
 
         # Signal frequency analysis
