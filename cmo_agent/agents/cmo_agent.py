@@ -174,6 +174,10 @@ class CMOAgent:
         self._pause_requested = False
         self._job_states = {}  # job_id -> saved state for resume
 
+        # Error handling and retry logic
+        from ..core.state import ErrorHandler
+        self.error_handler = ErrorHandler(self.config)
+
     def request_pause(self, job_id: str):
         """Request to pause a running job"""
         logger.info(f"Pause requested for job {job_id}")
@@ -605,12 +609,17 @@ class CMOAgent:
             if not tool_calls:
                 return state
 
-            # Execute tool calls
+            # Execute tool calls with retry logic
             for call in tool_calls:
                 if call.get("name") == tool_name:
                     try:
-                        # Execute tool
-                        result = await tool.execute(**call.get("args", {}))
+                        # Execute tool with retry logic
+                        async def execute_tool_with_retry():
+                            return await tool.execute(**call.get("args", {}))
+
+                        result = await self.error_handler.execute_with_retry(
+                            execute_tool_with_retry
+                        )
 
                         # Store result in state
                         state = self._reduce_tool_result(state, tool_name, result)
@@ -619,7 +628,7 @@ class CMOAgent:
                         self.stats["tools_executed"] += 1
 
                     except Exception as e:
-                        logger.error(f"Tool {tool_name} execution failed: {e}")
+                        logger.error(f"Tool {tool_name} execution failed after retries: {e}")
                         error_result = ToolResult(success=False, error=str(e))
 
                         # Add detailed error to state
@@ -923,18 +932,15 @@ Available tools: {', '.join(self.tools.keys())}
             # Update stats
             self.stats["jobs_processed"] += 1
 
-            # Save final checkpoint
-            if final_state:
-                await self._save_checkpoint(job_meta.job_id, final_state, "completed")
-
-            # Collect artifacts
-            artifacts = await self._collect_artifacts(job_meta.job_id)
+            # Finalize job with comprehensive artifact collection
+            finalization_result = await self._finalize_job(job_meta.job_id, final_state, "completed")
 
             return {
                 "success": True,
                 "job_id": job_meta.job_id,
                 "final_state": final_state,
-                "artifacts": artifacts,
+                "artifacts": finalization_result.get("artifacts", []),
+                "report": finalization_result.get("report"),
             }
 
     async def resume_job(self, job_id: str, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
@@ -991,14 +997,15 @@ Available tools: {', '.join(self.tools.keys())}
             # Update stats
             self.stats["jobs_processed"] += 1
 
-            # Collect artifacts
-            artifacts = await self._collect_artifacts(job_id)
+            # Finalize job after successful resume
+            finalization_result = await self._finalize_job(job_id, final_state, "completed")
 
             return {
                 "success": True,
                 "job_id": job_id,
                 "final_state": final_state,
-                "artifacts": artifacts,
+                "artifacts": finalization_result.get("artifacts", []),
+                "report": finalization_result.get("report"),
                 "resumed": True,
             }
 
@@ -1026,11 +1033,8 @@ Available tools: {', '.join(self.tools.keys())}
             logger.error(f"Job execution failed: {e}")
             job_id = job_meta.job_id if job_meta else "unknown"
 
-            # Save error checkpoint
+            # Add critical error to final state if available
             if final_state:
-                await self._save_checkpoint(job_id, final_state, "error")
-
-                # Add critical error to final state
                 error_info = {
                     "stage": "job_execution",
                     "error": str(e),
@@ -1041,12 +1045,17 @@ Available tools: {', '.join(self.tools.keys())}
                 }
                 final_state.setdefault("errors", []).append(error_info)
 
+            # Finalize job even on failure to collect partial results
+            finalization_result = await self._finalize_job(job_id, final_state, "failed")
+
             return {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "job_id": job_id,
                 "final_state": final_state,
+                "artifacts": finalization_result.get("artifacts", []),
+                "report": finalization_result.get("report"),
             }
 
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
@@ -1139,6 +1148,11 @@ Available tools: {', '.join(self.tools.keys())}
             })
 
             logger.info(f"Checkpoint saved: {checkpoint_file}")
+
+            # Clean up old checkpoints periodically
+            if checkpoint_type == "periodic":
+                await self._cleanup_checkpoints(job_id)
+
             return str(checkpoint_file)
 
         except Exception as e:
@@ -1232,6 +1246,389 @@ Available tools: {', '.join(self.tools.keys())}
         except Exception as e:
             logger.error(f"Failed to cleanup checkpoints for job {job_id}: {e}")
 
+    async def _finalize_job(self, job_id: str, final_state: RunState, job_status: str = "completed"):
+        """Finalize job with proper artifact collection and cleanup"""
+        try:
+            logger.info(f"Finalizing job {job_id} with status: {job_status}")
+
+            # Collect artifacts based on job status
+            artifacts = await self._collect_artifacts(job_id, final_state, job_status)
+
+            # Save final checkpoint
+            if final_state:
+                await self._save_checkpoint(job_id, final_state, job_status)
+
+            # Clean up temporary resources
+            await self._cleanup_job_resources(job_id, job_status)
+
+            # Generate final report
+            final_report = self._generate_final_report(job_id, final_state, artifacts, job_status)
+
+            return {
+                "job_id": job_id,
+                "status": job_status,
+                "artifacts": artifacts,
+                "final_state": final_state,
+                "report": final_report,
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to finalize job {job_id}: {e}")
+            return {
+                "job_id": job_id,
+                "status": "finalization_failed",
+                "error": str(e),
+                "artifacts": [],
+            }
+
+    async def _collect_artifacts(self, job_id: str, final_state: RunState = None, job_status: str = "completed"):
+        """Collect and organize artifacts based on job completion status"""
+        artifacts = []
+
+        try:
+            # Always collect available data regardless of completion status
+            if final_state:
+                # Collect repositories data
+                repos = final_state.get("repos", [])
+                if repos:
+                    artifacts.append(await self._export_repos_data(job_id, repos, job_status))
+
+                # Collect leads data
+                leads = final_state.get("leads", [])
+                if leads:
+                    artifacts.append(await self._export_leads_data(job_id, leads, job_status))
+
+                # Collect candidates data
+                candidates = final_state.get("candidates", [])
+                if candidates:
+                    artifacts.append(await self._export_candidates_data(job_id, candidates, job_status))
+
+                # Collect personalization data if available
+                to_send = final_state.get("to_send", [])
+                if to_send:
+                    artifacts.append(await self._export_personalization_data(job_id, to_send, job_status))
+
+                # Collect reports if available
+                reports = final_state.get("reports", {})
+                if reports:
+                    artifacts.append(await self._export_reports_data(job_id, reports, job_status))
+
+            # Collect error logs if job failed
+            if job_status in ["failed", "paused"]:
+                error_artifact = await self._export_error_summary(job_id, final_state)
+                if error_artifact:
+                    artifacts.append(error_artifact)
+
+            # Collect performance metrics
+            metrics_artifact = await self._export_performance_metrics(job_id, final_state)
+            if metrics_artifact:
+                artifacts.append(metrics_artifact)
+
+        except Exception as e:
+            logger.error(f"Failed to collect artifacts for job {job_id}: {e}")
+
+        return artifacts
+
+    async def _export_repos_data(self, job_id: str, repos: list, job_status: str):
+        """Export repositories data to artifact"""
+        try:
+            from pathlib import Path
+            import json
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_repos_{job_status}.json"
+            filepath = exports_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump({
+                    "job_id": job_id,
+                    "job_status": job_status,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_type": "repositories",
+                    "count": len(repos),
+                    "repositories": repos,
+                }, f, indent=2, default=str)
+
+            return {
+                "type": "repositories",
+                "path": str(filepath),
+                "filename": filename,
+                "count": len(repos),
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export repos data: {e}")
+            return None
+
+    async def _export_leads_data(self, job_id: str, leads: list, job_status: str):
+        """Export leads data to artifact"""
+        try:
+            from pathlib import Path
+            import json
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_leads_{job_status}.json"
+            filepath = exports_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump({
+                    "job_id": job_id,
+                    "job_status": job_status,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_type": "leads",
+                    "count": len(leads),
+                    "leads": leads,
+                }, f, indent=2, default=str)
+
+            return {
+                "type": "leads",
+                "path": str(filepath),
+                "filename": filename,
+                "count": len(leads),
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export leads data: {e}")
+            return None
+
+    async def _export_candidates_data(self, job_id: str, candidates: list, job_status: str):
+        """Export candidates data to artifact"""
+        try:
+            from pathlib import Path
+            import json
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_candidates_{job_status}.json"
+            filepath = exports_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump({
+                    "job_id": job_id,
+                    "job_status": job_status,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_type": "candidates",
+                    "count": len(candidates),
+                    "candidates": candidates,
+                }, f, indent=2, default=str)
+
+            return {
+                "type": "candidates",
+                "path": str(filepath),
+                "filename": filename,
+                "count": len(candidates),
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export candidates data: {e}")
+            return None
+
+    async def _export_personalization_data(self, job_id: str, to_send: list, job_status: str):
+        """Export personalization data to artifact"""
+        try:
+            from pathlib import Path
+            import json
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_personalization_{job_status}.json"
+            filepath = exports_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump({
+                    "job_id": job_id,
+                    "job_status": job_status,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_type": "personalization",
+                    "count": len(to_send),
+                    "to_send": to_send,
+                }, f, indent=2, default=str)
+
+            return {
+                "type": "personalization",
+                "path": str(filepath),
+                "filename": filename,
+                "count": len(to_send),
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export personalization data: {e}")
+            return None
+
+    async def _export_reports_data(self, job_id: str, reports: dict, job_status: str):
+        """Export reports data to artifact"""
+        try:
+            from pathlib import Path
+            import json
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_reports_{job_status}.json"
+            filepath = exports_dir / filename
+
+            with open(filepath, 'w') as f:
+                json.dump({
+                    "job_id": job_id,
+                    "job_status": job_status,
+                    "export_timestamp": datetime.now().isoformat(),
+                    "data_type": "reports",
+                    "reports": reports,
+                }, f, indent=2, default=str)
+
+            return {
+                "type": "reports",
+                "path": str(filepath),
+                "filename": filename,
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export reports data: {e}")
+            return None
+
+    async def _export_error_summary(self, job_id: str, final_state: RunState):
+        """Export error summary for failed/paused jobs"""
+        try:
+            from pathlib import Path
+            import json
+
+            errors = final_state.get("errors", []) if final_state else []
+            counters = final_state.get("counters", {}) if final_state else {}
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_error_summary.json"
+            filepath = exports_dir / filename
+
+            error_summary = {
+                "job_id": job_id,
+                "export_timestamp": datetime.now().isoformat(),
+                "data_type": "error_summary",
+                "total_errors": len(errors),
+                "counters": counters,
+                "errors": errors[-10:],  # Last 10 errors for summary
+                "error_types": {},
+            }
+
+            # Count error types
+            for error in errors:
+                error_type = error.get("error_type", "unknown")
+                error_summary["error_types"][error_type] = error_summary["error_types"].get(error_type, 0) + 1
+
+            with open(filepath, 'w') as f:
+                json.dump(error_summary, f, indent=2, default=str)
+
+            return {
+                "type": "error_summary",
+                "path": str(filepath),
+                "filename": filename,
+                "error_count": len(errors),
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export error summary: {e}")
+            return None
+
+    async def _export_performance_metrics(self, job_id: str, final_state: RunState):
+        """Export performance metrics"""
+        try:
+            from pathlib import Path
+            import json
+
+            counters = final_state.get("counters", {}) if final_state else {}
+
+            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            exports_dir.mkdir(exist_ok=True)
+
+            filename = f"{job_id}_metrics.json"
+            filepath = exports_dir / filename
+
+            metrics = {
+                "job_id": job_id,
+                "export_timestamp": datetime.now().isoformat(),
+                "data_type": "performance_metrics",
+                "counters": counters,
+                "derived_metrics": {
+                    "api_efficiency": counters.get("api_calls", 0) / max(counters.get("steps", 1), 1),
+                    "error_rate": counters.get("errors", 0) / max(counters.get("steps", 1), 1),
+                    "tool_error_rate": counters.get("tool_errors", 0) / max(counters.get("steps", 1), 1),
+                },
+            }
+
+            with open(filepath, 'w') as f:
+                json.dump(metrics, f, indent=2, default=str)
+
+            return {
+                "type": "performance_metrics",
+                "path": str(filepath),
+                "filename": filename,
+                "format": "json",
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export performance metrics: {e}")
+            return None
+
+    async def _cleanup_job_resources(self, job_id: str, job_status: str):
+        """Clean up temporary resources after job completion"""
+        try:
+            # Clean up old checkpoints if job completed successfully
+            if job_status == "completed":
+                await self._cleanup_checkpoints(job_id)
+
+            # Clear job state from memory
+            self.clear_job_state(job_id)
+
+            logger.info(f"Cleaned up resources for job {job_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup resources for job {job_id}: {e}")
+
+    def _generate_final_report(self, job_id: str, final_state: RunState, artifacts: list, job_status: str):
+        """Generate a final report summarizing the job"""
+        try:
+            counters = final_state.get("counters", {}) if final_state else {}
+
+            report = {
+                "job_id": job_id,
+                "status": job_status,
+                "completed_at": datetime.now().isoformat(),
+                "summary": {
+                    "steps_completed": counters.get("steps", 0),
+                    "api_calls_made": counters.get("api_calls", 0),
+                    "errors_encountered": counters.get("errors", 0),
+                    "repositories_found": len(final_state.get("repos", [])) if final_state else 0,
+                    "leads_processed": len(final_state.get("leads", [])) if final_state else 0,
+                    "candidates_found": len(final_state.get("candidates", [])) if final_state else 0,
+                    "emails_prepared": len(final_state.get("to_send", [])) if final_state else 0,
+                },
+                "artifacts_generated": len(artifacts),
+                "artifacts": artifacts,
+            }
+
+            return report
+
+        except Exception as e:
+            logger.error(f"Failed to generate final report for job {job_id}: {e}")
+            return {
+                "job_id": job_id,
+                "status": "report_generation_failed",
+                "error": str(e),
+            }
+
     def _is_significant_milestone(self, state: RunState) -> bool:
         """Check if current state represents a significant milestone"""
         counters = state.get("counters", {})
@@ -1265,6 +1662,6 @@ Available tools: {', '.join(self.tools.keys())}
 
         for milestone in api_milestones:
             if api_calls == milestone:
-                return True
+            return True
 
         return False
