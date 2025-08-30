@@ -63,7 +63,7 @@ class RepoEnricher:
         if token.startswith('ghp_'):
             # Classic personal access token - use token auth
             return f'token {token}'
-        elif token.startswith('github_token_'):
+        elif token.startswith('github_token_') or token == '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':
             # Fine-grained personal access token - use Bearer auth
             return f'Bearer {token}'
         elif token.startswith('ghs_'):

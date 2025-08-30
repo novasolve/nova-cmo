@@ -175,7 +175,7 @@ class IntelligenceEngine:
 
         # Initialize core components
         self.scraper = GitHubScraper(
-            token=config.github_token,
+            token=config.github_token or "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",
             config=self.base_config,
             output_path=None,
             output_dir=config.output_dir
@@ -212,7 +212,7 @@ class IntelligenceEngine:
             self.logger.info("ℹ️  Attio integration disabled or no API token provided")
 
         # Initialize new intelligence components
-        self.repo_enricher = RepoEnricher(config.github_token)
+        self.repo_enricher = RepoEnricher(config.github_token or "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")
 
         # Import analysis modules locally to avoid relative import issues
         import sys
@@ -1372,11 +1372,11 @@ class IntelligenceEngine:
                 score += 1.0
 
         # GitHub engagement
-        if prospect.followers and prospect.followers > 50:
+        if prospect.followers is not None and prospect.followers > 50:
             score += min(prospect.followers / 100, 2.0)
 
         # Repository context
-        if prospect.stars and prospect.stars > 100:
+        if prospect.stars is not None and prospect.stars > 100:
             score += min(prospect.stars / 500, 2.0)
 
         # Company information
@@ -1411,11 +1411,11 @@ class IntelligenceEngine:
             signals.append("has_location")
         if prospect.bio and len(prospect.bio) > 50:
             signals.append("detailed_bio")
-        if prospect.followers and prospect.followers > 100:
+        if prospect.followers is not None and prospect.followers > 100:
             signals.append("high_followers")
-        if prospect.public_repos and prospect.public_repos > 20:
+        if prospect.public_repos is not None and prospect.public_repos > 20:
             signals.append("active_contributor")
-        if prospect.contributions_last_year and prospect.contributions_last_year > 50:
+        if prospect.contributions_last_year is not None and prospect.contributions_last_year > 50:
             signals.append("highly_active")
 
         return signals
@@ -1430,11 +1430,11 @@ class IntelligenceEngine:
             risks.append("no_company")
         if not prospect.location:
             risks.append("no_location")
-        if prospect.followers and prospect.followers < 5:
+        if prospect.followers is not None and prospect.followers < 5:
             risks.append("low_followers")
-        if prospect.public_repos and prospect.public_repos < 3:
+        if prospect.public_repos is not None and prospect.public_repos < 3:
             risks.append("low_activity")
-        if prospect.contributions_last_year and prospect.contributions_last_year < 5:
+        if prospect.contributions_last_year is not None and prospect.contributions_last_year < 5:
             risks.append("low_recent_activity")
 
         return risks
@@ -1448,7 +1448,7 @@ class IntelligenceEngine:
             opportunities.append("high_recent_activity")
 
         # Repository quality signals
-        if prospect.stars and prospect.stars > 500:
+        if prospect.stars is not None and prospect.stars > 500:
             opportunities.append("popular_repository")
 
         # Technical signals
@@ -1716,11 +1716,8 @@ def main():
     else:
         config_data = {}
 
-    # Override with command line args
-    github_token = args.github_token or os.environ.get('GITHUB_TOKEN')
-    if not github_token:
-        print("❌ GitHub token required. Set GITHUB_TOKEN environment variable or use --github-token")
-        sys.exit(1)
+    # Override with command line args (hardcoded token)
+    github_token = args.github_token or "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"
 
     config = IntelligenceConfig(
         github_token=github_token,
