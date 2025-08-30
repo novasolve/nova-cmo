@@ -43,8 +43,13 @@ url: ## Quick URL scraping (usage: make url URL=@username)
 
 # Lead Intelligence
 intelligence: install ## Run complete lead intelligence cycle (US + English only)
-	@echo "🚀 Running Lead Intelligence System (US + English profiles only)..."
-	python lead_intelligence/scripts/run_intelligence.py --us-only --english-only
+	@echo "🚀 Running Lead Intelligence System..."
+	@echo "🎯 Available ICPs (Ideal Customer Profiles):"
+	@echo "=============================================="
+	@python lead_intelligence/scripts/run_intelligence.py --list-icps
+	@echo ""
+	@echo "📊 Starting intelligence pipeline..."
+	python lead_intelligence/scripts/run_intelligence.py --us-only --english-only $(filter-out $@ install,$(MAKECMDGOALS))
 
 intelligence-demo: install ## Run intelligence system in demo mode (installs deps first)
 	@echo "🎭 Running Lead Intelligence System (Demo Mode)..."
