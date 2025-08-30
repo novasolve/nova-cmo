@@ -587,13 +587,41 @@ class CMOAgent:
                     logger.info(f"Executing tool: {tool_name}")
                     try:
                         tool = self.tools[tool_name]
-                        result = await tool.execute(**call.get("args", {}))
+                        # Hydrate missing or unsafe args from state for robustness
+                        raw_args = call.get("args", {})
+                        hydrated_args, hydration_note = self._hydrate_tool_args(tool_name, raw_args, state)
+                        if hydration_note:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": hydration_note,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+
+                        # If we cannot safely hydrate required args, skip executing this tool
+                        if hydrated_args is None:
+                            logger.info(f"Skipping tool {tool_name} due to insufficient arguments after hydration")
+                            continue
+
+                        result = await tool.execute(**hydrated_args)
 
                         # Store result
                         state = self._reduce_tool_result(state, tool_name, result)
                         self.stats["tools_executed"] += 1
 
                         logger.info(f"Tool {tool_name} executed successfully")
+
+                        # Append a function-style summary to conversation history for LLM awareness
+                        try:
+                            summary_msg = self._summarize_tool_result(tool_name, result, state)
+                            if summary_msg:
+                                state.setdefault("history", []).append({
+                                    "type": "ai",
+                                    "content": summary_msg,
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                        except Exception:
+                            # Non-fatal if summarization fails
+                            pass
 
                         # Check if this is the done tool
                         if tool_name == "done":
@@ -622,6 +650,17 @@ class CMOAgent:
                             result = await tool.execute(repos=repos, top_authors_per_repo=5)
                             state = self._reduce_tool_result(state, "extract_people", result)
                             self.stats["tools_executed"] += 1
+                            # Inform LLM about auto-progress result
+                            try:
+                                summary_msg = self._summarize_tool_result("extract_people", result, state, auto_progress=True)
+                                if summary_msg:
+                                    state.setdefault("history", []).append({
+                                        "type": "ai",
+                                        "content": summary_msg,
+                                        "timestamp": datetime.now().isoformat(),
+                                    })
+                            except Exception:
+                                pass
                             # After extracting, return early to let next loop continue
                             state.setdefault("counters", {})
                             state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
@@ -646,6 +685,17 @@ class CMOAgent:
                                 result = await tool.execute(logins=unique_logins[:25])
                                 state = self._reduce_tool_result(state, "enrich_github_users", result)
                                 self.stats["tools_executed"] += 1
+                                # Inform LLM about auto-progress result
+                                try:
+                                    summary_msg = self._summarize_tool_result("enrich_github_users", result, state, auto_progress=True)
+                                    if summary_msg:
+                                        state.setdefault("history", []).append({
+                                            "type": "ai",
+                                            "content": summary_msg,
+                                            "timestamp": datetime.now().isoformat(),
+                                        })
+                                except Exception:
+                                    pass
                                 state.setdefault("counters", {})
                                 state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
                                 logger.info("Auto-progress: enrich_github_users completed, yielding control")
@@ -654,8 +704,8 @@ class CMOAgent:
                                 logger.warning(f"Auto-progress enrich_github_users failed: {e}")
 
                     # If we have enriched leads but missing emails and have candidates mapping, find emails in batch
-                    if state.get("leads") and "find_commit_emails_batch" in self.tools:
-                        leads_without_email = [l for l in state.get("leads", []) if not l.get("email")]
+                    if state.get("leads") and "find_commit_emails_batch" in self.tools and not state.get("email_search_exhausted"):
+                        leads_without_email = [l for l in state.get("leads", []) if not l.get("email") and not l.get("no_email_found")]
                         if leads_without_email and candidates:
                             user_repo_pairs = []
                             # Build (login, repo_full_name) pairs from candidates signals
@@ -667,16 +717,101 @@ class CMOAgent:
                             if user_repo_pairs:
                                 logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
                                 try:
+                                    # Track before/after counts to detect progress
+                                    before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
                                     tool = self.tools["find_commit_emails_batch"]
                                     result = await tool.execute(user_repo_pairs=user_repo_pairs[:50], days=90)
                                     state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
+                                    after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
+
                                     self.stats["tools_executed"] += 1
                                     state.setdefault("counters", {})
                                     state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
+
+                                    # Inform LLM about auto-progress result
+                                    try:
+                                        summary_msg = self._summarize_tool_result("find_commit_emails_batch", result, state, auto_progress=True, extra_info={
+                                            "before": before_with_email,
+                                            "after": after_with_email,
+                                        })
+                                        if summary_msg:
+                                            state.setdefault("history", []).append({
+                                                "type": "ai",
+                                                "content": summary_msg,
+                                                "timestamp": datetime.now().isoformat(),
+                                            })
+                                    except Exception:
+                                        pass
+
+                                    # Detect no-progress attempts and set exhaustion flag to break loops
+                                    if after_with_email <= before_with_email:
+                                        streak = state["counters"].get("email_find_noop_streak", 0) + 1
+                                        state["counters"]["email_find_noop_streak"] = streak
+                                        if streak >= 2:
+                                            # Mark unresolvable leads and stop auto email search
+                                            for lead in state.get("leads", []):
+                                                if not lead.get("email"):
+                                                    attempts = lead.get("_email_attempts", 0) + 1
+                                                    lead["_email_attempts"] = attempts
+                                                    if attempts >= 2:
+                                                        lead["no_email_found"] = True
+                                            state["email_search_exhausted"] = True
+                                            logger.info("Auto-progress: email search exhausted; marking unresolvable leads and stopping further attempts")
+                                    else:
+                                        # Reset noop streak on progress
+                                        if state["counters"].get("email_find_noop_streak"):
+                                            state["counters"]["email_find_noop_streak"] = 0
+
                                     logger.info("Auto-progress: find_commit_emails_batch completed, yielding control")
                                     return state
                                 except Exception as e:
                                     logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
+
+                    # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
+                    leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+                    if leads_with_email and not state.get("ended"):
+                        try:
+                            # Attempt simple personalization (optional) - skip if not available
+                            # Export leads with email
+                            if "export_csv" in self.tools:
+                                export_tool = self.tools["export_csv"]
+                                job_id = state.get("job_id", "job")
+                                export_path = f"{job_id}_leads.csv"
+                                export_rows = leads_with_email
+                                export_result = await export_tool.execute(rows=export_rows, path=export_path)
+                                state = self._reduce_tool_result(state, "export_csv", export_result)
+                                try:
+                                    summary_msg = self._summarize_tool_result("export_csv", export_result, state, auto_progress=True)
+                                    if summary_msg:
+                                        state.setdefault("history", []).append({
+                                            "type": "ai",
+                                            "content": summary_msg,
+                                            "timestamp": datetime.now().isoformat(),
+                                        })
+                                except Exception:
+                                    pass
+
+                            # Signal completion
+                            if "done" in self.tools:
+                                done_tool = self.tools["done"]
+                                summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
+                                done_result = await done_tool.execute(summary=summary_text)
+                                state = self._reduce_tool_result(state, "done", done_result)
+                                try:
+                                    summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
+                                    if summary_msg:
+                                        state.setdefault("history", []).append({
+                                            "type": "ai",
+                                            "content": summary_msg,
+                                            "timestamp": datetime.now().isoformat(),
+                                        })
+                                except Exception:
+                                    pass
+                                state["ended"] = True
+                                logger.info("Auto-progress: finalized job via export and done")
+                                return state
+                        except Exception as e:
+                            logger.warning(f"Auto-finalization failed: {e}")
                 except Exception as e:
                     logger.warning(f"Auto-progress block encountered an error: {e}")
 
@@ -734,9 +869,11 @@ class CMOAgent:
         # Handle different tool types
         if tool_name == "search_github_repos" and result.success:
             state["repos"] = result.data.get("repos", [])
+            state["current_stage"] = "discovery"
 
         elif tool_name == "extract_people" and result.success:
             state["candidates"] = result.data.get("candidates", [])
+            state["current_stage"] = "extraction"
 
         elif tool_name == "enrich_github_user" and result.success:
             # Add enriched profile to leads
@@ -772,6 +909,7 @@ class CMOAgent:
                         break
                 if not updated:
                     state["leads"].append(profile)
+            state["current_stage"] = "enrichment"
 
         elif tool_name == "find_commit_emails" and result.success:
             # Add email to the corresponding lead
@@ -782,6 +920,7 @@ class CMOAgent:
                     if lead.get("login") == login:
                         lead["email"] = emails[0]  # Take first email
                         break
+            state["current_stage"] = "validation"
 
         elif tool_name == "find_commit_emails_batch" and result.success:
             # Handle batched email lookup
@@ -794,6 +933,7 @@ class CMOAgent:
                         if lead.get("login") == login:
                             lead["email"] = emails[0]  # Take first email
                             break
+            state["current_stage"] = "validation"
 
         elif tool_name == "mx_check" and result.success:
             # Mark emails as valid/invalid
@@ -802,6 +942,7 @@ class CMOAgent:
                 email = lead.get("email")
                 if email:
                     lead["email_valid"] = email in valid_emails
+            state["current_stage"] = "validation"
 
         elif tool_name == "score_icp" and result.success:
             # This would be handled per-lead in the enrichment phase
@@ -811,21 +952,25 @@ class CMOAgent:
             # Add rendered email to to_send
             state.setdefault("to_send", [])
             state["to_send"].append(result.data)
+            state["current_stage"] = "personalization"
 
         elif tool_name == "send_instantly" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["instantly"] = result.data
+            state["current_stage"] = "sending"
 
         elif tool_name == "sync_attio" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["attio"] = result.data
+            state["current_stage"] = "sync"
 
         elif tool_name == "sync_linear" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["linear"] = result.data
+            state["current_stage"] = "sync"
 
         elif tool_name == "export_csv" and result.success:
             # Add to checkpoints
@@ -836,12 +981,108 @@ class CMOAgent:
                 "count": result.data.get("count"),
                 "timestamp": datetime.now().isoformat(),
             })
+            state["current_stage"] = "export"
 
         elif tool_name == "done" and result.success:
             state["ended"] = True
             state["completed_at"] = result.data.get("completed_at")
+            state["current_stage"] = "completed"
 
         return state
+
+    def _summarize_tool_result(self, tool_name: str, result: ToolResult, state: RunState, auto_progress: bool = False, extra_info: Dict[str, Any] = None) -> str:
+        """Create a concise summary line for a tool result to feed back to the LLM."""
+        try:
+            prefix = "[auto] " if auto_progress else ""
+            if not getattr(result, "success", False):
+                return f"{prefix}{tool_name} failed: {getattr(result, 'error', 'unknown error')}"
+
+            if tool_name == "search_github_repos":
+                count = len(state.get("repos", []))
+                return f"{prefix}search_github_repos: found {count} repositories."
+            if tool_name == "extract_people":
+                count = len(state.get("candidates", []))
+                return f"{prefix}extract_people: extracted {count} candidates from repositories."
+            if tool_name in ("enrich_github_user", "enrich_github_users"):
+                count = len(state.get("leads", []))
+                return f"{prefix}{tool_name}: enriched {count} profiles total."
+            if tool_name == "find_commit_emails_batch":
+                count = len([l for l in state.get("leads", []) if l.get("email")])
+                if extra_info and "before" in extra_info and "after" in extra_info:
+                    return f"{prefix}find_commit_emails_batch: emails on leads {extra_info['before']} -> {extra_info['after']} (now {count} leads have emails)."
+                return f"{prefix}find_commit_emails_batch: now {count} leads have emails."
+            if tool_name == "mx_check":
+                valid = len([l for l in state.get("leads", []) if l.get("email_valid")])
+                return f"{prefix}mx_check: validated emails, {valid} marked valid."
+            if tool_name == "export_csv":
+                path = result.data.get("path") if hasattr(result, "data") else None
+                count = result.data.get("count") if hasattr(result, "data") else None
+                return f"{prefix}export_csv: exported {count} rows to {path}."
+            if tool_name == "done":
+                return f"{prefix}done: job completed."
+        except Exception:
+            return ""
+        return ""
+
+    def _hydrate_tool_args(self, tool_name: str, args: Dict[str, Any], state: RunState) -> (Optional[Dict[str, Any]], Optional[str]):
+        """Best-effort fill of missing required args from state to avoid LLM mis-calls.
+
+        Returns (args_or_none, note). If args_or_none is None, caller should skip execution.
+        """
+        try:
+            note = None
+            # Shallow copy to avoid mutating original
+            hydrated = dict(args or {})
+
+            if tool_name == "export_csv":
+                # Requires rows and path
+                if "rows" not in hydrated or not hydrated.get("rows"):
+                    leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+                    fallback_rows = leads_with_email or state.get("to_send", []) or state.get("leads", [])
+                    if not fallback_rows:
+                        return None, "[auto] export_csv skipped: no data rows available in state."
+                    hydrated["rows"] = fallback_rows
+                if "path" not in hydrated or not hydrated.get("path"):
+                    job_id = state.get("job_id", "job")
+                    hydrated["path"] = f"{job_id}_leads.csv"
+                note = f"[auto] Filled export_csv args: rows={len(hydrated['rows'])}, path={hydrated['path']}"
+                return hydrated, note
+
+            if tool_name == "mx_check":
+                # Requires emails list
+                if "emails" not in hydrated or not hydrated.get("emails"):
+                    emails = []
+                    for lead in state.get("leads", []):
+                        if lead.get("email"):
+                            emails.append(lead["email"])
+                    if not emails:
+                        return None, "[auto] mx_check skipped: no emails found in state."
+                    hydrated["emails"] = list(dict.fromkeys(emails))
+                    note = f"[auto] Filled mx_check emails: {len(hydrated['emails'])}"
+                return hydrated, note
+
+            if tool_name == "score_icp":
+                # Requires single profile
+                if "profile" not in hydrated or not hydrated.get("profile"):
+                    lead = None
+                    # Prefer a lead with email; else any lead
+                    leads = state.get("leads", [])
+                    for l in leads:
+                        if l.get("email"):
+                            lead = l
+                            break
+                    if lead is None and leads:
+                        lead = leads[0]
+                    if lead is None:
+                        return None, "[auto] score_icp skipped: no lead profile available."
+                    hydrated["profile"] = lead
+                    note = f"[auto] Filled score_icp profile for {lead.get('login', 'unknown')}"
+                return hydrated, note
+
+            # Default: return original args without note
+            return hydrated, None
+        except Exception:
+            return args, None
 
     def _build_system_prompt(self, state: RunState) -> str:
         """Build the system prompt for the agent"""
@@ -863,6 +1104,11 @@ FOLLOW THIS EXACT SEQUENCE:
 11. done - FINISH the campaign
 
 CRITICAL: Call done("Completed") immediately after any major step if you have meaningful results.
+
+RULES TO AVOID LOOPS:
+- If repositories already exist in state, do NOT call search_github_repos again. Proceed to extract_people.
+- Use the assistant function result summaries in the conversation to update your plan. Do not repeat tools that already succeeded unless new inputs are provided.
+- If leads have emails, proceed towards mx_check, export_csv and done.
 
 Available tools: {', '.join(self.tools.keys())}
 """
