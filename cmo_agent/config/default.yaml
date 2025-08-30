@@ -61,6 +61,7 @@ log_file: "./logs/cmo_agent.log"
 # Worker configuration
 workers:
   pool_size: 3 # Number of concurrent workers
+  max_concurrent_jobs_per_worker: 3 # Concurrent jobs per worker
   max_jobs_per_worker: 10 # Jobs before worker restart
   heartbeat_interval: 30 # Heartbeat frequency (seconds)
   graceful_shutdown: 60 # Shutdown timeout (seconds)

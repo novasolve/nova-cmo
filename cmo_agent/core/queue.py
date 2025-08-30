@@ -152,17 +152,33 @@ class InMemoryJobQueue(JobQueue):
 
     async def pause_job(self, job_id: str) -> None:
         """Pause a running job"""
-        job = self._jobs.get(job_id)
-        if job and job.status == JobStatus.RUNNING:
-            job.pause()
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.RUNNING:
+                job.pause()
+
+                # Emit progress update
+                if job_id in self._progress_streams:
+                    try:
+                        await self._progress_streams[job_id].put(job.progress)
+                    except Exception:
+                        pass
 
     async def resume_job(self, job_id: str) -> None:
         """Resume a paused job"""
-        job = self._jobs.get(job_id)
-        if job and job.status == JobStatus.PAUSED:
-            job.resume()
-            # Re-queue the job
-            await self.enqueue_job(job, priority=1)  # Higher priority for resumed jobs
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job and job.status == JobStatus.PAUSED:
+                job.resume()
+                # Re-queue the job
+                await self.enqueue_job(job, priority=1)  # Higher priority for resumed jobs
+
+                # Emit progress update
+                if job_id in self._progress_streams:
+                    try:
+                        await self._progress_streams[job_id].put(job.progress)
+                    except Exception:
+                        pass
 
     async def cancel_job(self, job_id: str) -> None:
         """Cancel a job"""

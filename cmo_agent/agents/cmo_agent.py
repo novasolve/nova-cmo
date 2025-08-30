@@ -170,6 +170,37 @@ class CMOAgent:
             "errors_encountered": 0,
         }
 
+        # Pause/Resume state management
+        self._pause_requested = False
+        self._job_states = {}  # job_id -> saved state for resume
+
+    def request_pause(self, job_id: str):
+        """Request to pause a running job"""
+        logger.info(f"Pause requested for job {job_id}")
+        self._pause_requested = True
+
+    def request_resume(self, job_id: str):
+        """Request to resume a paused job"""
+        logger.info(f"Resume requested for job {job_id}")
+        self._pause_requested = False
+
+    def save_job_state(self, job_id: str, state: RunState):
+        """Save job state for potential resume"""
+        logger.info(f"Saving state for job {job_id}")
+        self._job_states[job_id] = state
+
+    def get_job_state(self, job_id: str) -> Optional[RunState]:
+        """Get saved job state for resume"""
+        return self._job_states.get(job_id)
+
+    def clear_job_state(self, job_id: str):
+        """Clear saved job state"""
+        self._job_states.pop(job_id, None)
+
+    def is_pause_requested(self) -> bool:
+        """Check if pause has been requested"""
+        return self._pause_requested
+
     def _create_tool_schemas(self) -> List[Dict[str, Any]]:
         """Create tool schemas for LLM binding"""
         tool_schemas = []
@@ -857,6 +888,22 @@ Available tools: {', '.join(self.tools.keys())}
                     if progress_callback:
                         await progress_callback(progress_info)
 
+                    # Check for pause request
+                    if self.is_pause_requested():
+                        logger.info(f"Pause detected for job {job_meta.job_id}, saving state and stopping")
+                        # Save current state for resume
+                        self.save_job_state(job_meta.job_id, step_result)
+                        await self._save_checkpoint(job_meta.job_id, step_result, "paused")
+
+                        # Return partial result
+                        return {
+                            "success": False,
+                            "job_id": job_meta.job_id,
+                            "final_state": step_result,
+                            "paused": True,
+                            "message": "Job paused by user request",
+                        }
+
                     # Periodic checkpointing
                     if await self._should_checkpoint(step_result):
                         await self._save_checkpoint(job_meta.job_id, step_result, "periodic")
@@ -889,6 +936,91 @@ Available tools: {', '.join(self.tools.keys())}
                 "final_state": final_state,
                 "artifacts": artifacts,
             }
+
+    async def resume_job(self, job_id: str, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
+        """Resume a paused job from saved state"""
+        logger.info(f"Attempting to resume job {job_id}")
+
+        # Get saved state
+        saved_state = self.get_job_state(job_id)
+        if not saved_state:
+            raise ValueError(f"No saved state found for job {job_id}")
+
+        # Clear pause flag for resume
+        self._pause_requested = False
+
+        # Continue from saved state
+        final_state = None
+        max_steps = self.config.get("max_steps", 40)
+
+        try:
+            async for step_result in self.graph.astream(saved_state, {"recursion_limit": max_steps + 10}):
+                final_state = step_result
+
+                # Extract progress information
+                progress_info = self._extract_progress_info(step_result)
+                if progress_callback:
+                    await progress_callback(progress_info)
+
+                # Check for pause request (can pause again during resume)
+                if self.is_pause_requested():
+                    logger.info(f"Pause detected during resume for job {job_id}, saving state and stopping")
+                    self.save_job_state(job_id, step_result)
+                    await self._save_checkpoint(job_id, step_result, "paused")
+
+                    return {
+                        "success": False,
+                        "job_id": job_id,
+                        "final_state": step_result,
+                        "paused": True,
+                        "message": "Job paused again during resume",
+                    }
+
+                # Periodic checkpointing
+                if await self._should_checkpoint(step_result):
+                    await self._save_checkpoint(job_id, step_result, "periodic")
+
+            logger.info(f"Job {job_id} resumed and completed successfully")
+
+            # Save final checkpoint
+            await self._save_checkpoint(job_id, final_state, "completed")
+
+            # Clear saved state since job is complete
+            self.clear_job_state(job_id)
+
+            # Update stats
+            self.stats["jobs_processed"] += 1
+
+            # Collect artifacts
+            artifacts = await self._collect_artifacts(job_id)
+
+            return {
+                "success": True,
+                "job_id": job_id,
+                "final_state": final_state,
+                "artifacts": artifacts,
+                "resumed": True,
+            }
+
+        except Exception as e:
+            logger.error(f"Job resume failed for {job_id}: {e}")
+
+            # Save error checkpoint
+            if final_state:
+                await self._save_checkpoint(job_id, final_state, "error")
+
+            # Add error to final state
+            if hasattr(final_state, 'setdefault'):
+                final_state.setdefault("errors", []).append({
+                    "stage": "job_resume",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "timestamp": datetime.now().isoformat(),
+                    "job_id": job_id,
+                    "critical": True,
+                })
+
+            raise
 
         except Exception as e:
             logger.error(f"Job execution failed: {e}")
@@ -1014,22 +1146,125 @@ Available tools: {', '.join(self.tools.keys())}
             return None
 
     async def _should_checkpoint(self, state: RunState) -> bool:
-        """Determine if we should create a checkpoint"""
+        """Determine if we should create a checkpoint using hybrid strategy"""
+        import time
+
         counters = state.get("counters", {})
         current_step = counters.get("steps", 0)
+        current_stage = state.get("current_stage", "")
 
-        # Checkpoint every 5 steps or when significant milestones are reached
-        if current_step % 5 == 0:
+        # Get checkpoint configuration
+        checkpoint_config = self.config.get("job_config", {}).get("checkpoints", {})
+        time_interval = checkpoint_config.get("time_interval", 300)  # 5 minutes default
+        step_interval = checkpoint_config.get("step_interval", 50)   # Every 50 steps
+        volume_interval = checkpoint_config.get("volume_interval", 1000)  # Every 1000 leads
+
+        # Time-based checkpointing
+        last_checkpoint_time = getattr(self, '_last_checkpoint_time', 0)
+        current_time = time.time()
+
+        if current_time - last_checkpoint_time >= time_interval:
+            self._last_checkpoint_time = current_time
+            logger.debug(f"Time-based checkpoint triggered after {time_interval}s")
             return True
 
-        # Checkpoint when we have significant data
+        # Step-based checkpointing
+        if current_step > 0 and current_step % step_interval == 0:
+            logger.debug(f"Step-based checkpoint triggered at step {current_step}")
+            return True
+
+        # Volume-based checkpointing
         repos_count = len(state.get("repos", []))
         leads_count = len(state.get("leads", []))
+        candidates_count = len(state.get("candidates", []))
 
-        if repos_count > 0 and repos_count % 10 == 0:
+        total_volume = repos_count + leads_count + candidates_count
+
+        if total_volume > 0 and total_volume % volume_interval == 0:
+            logger.debug(f"Volume-based checkpoint triggered at {total_volume} items")
             return True
 
-        if leads_count > 0 and leads_count % 20 == 0:
+        # Stage transition checkpointing
+        last_checkpointed_stage = getattr(self, '_last_checkpointed_stage', None)
+        if last_checkpointed_stage != current_stage and current_stage:
+            self._last_checkpointed_stage = current_stage
+            logger.debug(f"Stage transition checkpoint triggered: {current_stage}")
             return True
+
+        # Milestone-based checkpointing
+        if self._is_significant_milestone(state):
+            logger.debug("Significant milestone checkpoint triggered")
+            return True
+
+        return False
+
+    async def _cleanup_checkpoints(self, job_id: str):
+        """Clean up old checkpoints to prevent disk space issues"""
+        try:
+            from pathlib import Path
+            import os
+
+            checkpoints_dir = Path(self.config.get("directories", {}).get("checkpoints", "./checkpoints"))
+            if not checkpoints_dir.exists():
+                return
+
+            # Get all checkpoints for this job
+            job_checkpoints = list(checkpoints_dir.glob(f"{job_id}_*.json"))
+
+            # Sort by modification time (newest first)
+            job_checkpoints.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+
+            # Keep only the most recent checkpoints
+            max_checkpoints = self.config.get("persistence", {}).get("max_checkpoints", 50)
+
+            if len(job_checkpoints) > max_checkpoints:
+                checkpoints_to_delete = job_checkpoints[max_checkpoints:]
+
+                for checkpoint_file in checkpoints_to_delete:
+                    try:
+                        os.remove(checkpoint_file)
+                        logger.debug(f"Cleaned up old checkpoint: {checkpoint_file}")
+                    except Exception as e:
+                        logger.warning(f"Failed to delete checkpoint {checkpoint_file}: {e}")
+
+                logger.info(f"Cleaned up {len(checkpoints_to_delete)} old checkpoints for job {job_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to cleanup checkpoints for job {job_id}: {e}")
+
+    def _is_significant_milestone(self, state: RunState) -> bool:
+        """Check if current state represents a significant milestone"""
+        counters = state.get("counters", {})
+        current_step = counters.get("steps", 0)
+        current_stage = state.get("current_stage", "")
+
+        # First completion of major stages
+        if current_stage in ["discovery", "extraction", "enrichment", "personalization"]:
+            # Check if this is the first time we're in this stage
+            stage_history = getattr(self, '_stage_history', set())
+            if current_stage not in stage_history:
+                self._stage_history = stage_history | {current_stage}
+                return True
+
+        # Significant data volume milestones
+        repos_count = len(state.get("repos", []))
+        leads_count = len(state.get("leads", []))
+        candidates_count = len(state.get("candidates", []))
+
+        # Milestone volumes
+        milestones = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
+
+        for milestone in milestones:
+            if (repos_count == milestone or leads_count == milestone or
+                candidates_count == milestone):
+                return True
+
+        # API call milestones
+        api_calls = counters.get("api_calls", 0)
+        api_milestones = [100, 500, 1000, 2500, 5000, 10000]
+
+        for milestone in api_milestones:
+            if api_calls == milestone:
+                return True
 
         return False
