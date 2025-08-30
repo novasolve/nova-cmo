@@ -204,27 +204,35 @@ def main():
         # No arguments - show help
         print_simple_help()
         return
-    elif len(sys.argv) > 1 and not any(arg.startswith('-') for arg in sys.argv[1:]):
-        # Pure simple arguments
-        simple_config = parse_simple_args(sys.argv[1:])
-        if simple_config is None:
-            # Show help for simple case
-            print_simple_help()
-            return
-        elif isinstance(simple_config, dict) and simple_config.get('command') == 'list_icps':
-            print_icp_list()
-            return
-        elif simple_config and simple_config.get('interactive'):
-            return run_interactive_mode()
+    elif len(sys.argv) > 1:
+        # Check if we have mixed arguments (some with -, some without)
+        args_with_dash = [arg for arg in sys.argv[1:] if arg.startswith('-')]
+        args_without_dash = [arg for arg in sys.argv[1:] if not arg.startswith('-')]
 
-        # Create args object from simple config
+        # Initialize simple_config
+        simple_config = None
+
+        if args_without_dash:
+            # We have simple arguments - try to parse them
+            simple_config = parse_simple_args(args_without_dash)
+            if simple_config is None:
+                # Show help for simple case
+                print_simple_help()
+                return
+            elif isinstance(simple_config, dict) and simple_config.get('command') == 'list_icps':
+                print_icp_list()
+                return
+            elif simple_config and simple_config.get('interactive'):
+                return run_interactive_mode()
+
+        # Create args object from simple config and dash arguments
         args = type('Args', (), {
             'interactive': False,
             'list_icps': False,
-            'max_repos': simple_config.get('max_repos', 50),
-            'max_leads': simple_config.get('max_leads', 200),
-            'search_days': simple_config.get('search_days', 60),
-            'icp': simple_config.get('icp'),
+            'max_repos': simple_config.get('max_repos', 50) if simple_config else 50,
+            'max_leads': simple_config.get('max_leads', 200) if simple_config else 200,
+            'search_days': simple_config.get('search_days', 60) if simple_config else 60,
+            'icp': simple_config.get('icp') if simple_config else None,
             'config': 'lead_intelligence/config/intelligence.yaml',
             'github_token': os.environ.get('GITHUB_TOKEN'),
             'base_config': 'config.yaml',
@@ -235,8 +243,8 @@ def main():
             'demo': False,
             'location': 'us',
             'language': 'english',
-            'english_only': True,
-            'us_only': True
+            'english_only': '--english-only' in args_with_dash,
+            'us_only': '--us-only' in args_with_dash
         })()
     else:
         # Use argparse for traditional arguments
@@ -370,6 +378,8 @@ def main():
         attio_api_token=attio_token,
         backup_enabled=intelligence_config_data.get('backup_enabled', True),
         logging_level=intelligence_config_data.get('logging_level', 'INFO'),
+        max_repos=getattr(args, 'max_repos', 50),
+        max_leads=getattr(args, 'max_leads', 200),
         # Filtering options
         location_filter=getattr(args, 'location', 'us'),
         language_filter=getattr(args, 'language', 'english'),
