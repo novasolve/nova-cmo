@@ -385,7 +385,7 @@ Best regards,
             'model': self.model
         }
 
-        key_str = json.dumps(key_data, sort_keys=True)
+        key_str = json.dumps(key_data, default=str)
         return hashlib.md5(key_str.encode()).hexdigest()
 
     def _get_cached_result(self, cache_key: str) -> Optional[Dict[str, Any]]:
