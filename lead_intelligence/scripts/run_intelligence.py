@@ -196,6 +196,9 @@ def print_simple_help():
 def main():
     import sys
 
+    # Initialize variables for both code paths
+    simple_config = None
+
     # Check if we have simple arguments (no dashes) or help
     if len(sys.argv) == 1:
         # No arguments - show help
@@ -229,7 +232,11 @@ def main():
             'verbose': False,
             'dry_run': False,
             'phase': 'all',
-            'demo': False
+            'demo': False,
+            'location': 'us',
+            'language': 'english',
+            'english_only': True,
+            'us_only': True
         })()
     else:
         # Use argparse for traditional arguments
@@ -263,10 +270,20 @@ def main():
         parser.add_argument('--max-leads', type=int, default=200, help='Maximum leads to collect')
         parser.add_argument('--search-days', type=int, default=60, help='Search repos active within N days')
         parser.add_argument('--icp', help='Target specific ICP')
+        parser.add_argument('--config', default='lead_intelligence/config/intelligence.yaml', help='Intelligence configuration file')
         parser.add_argument('--github-token', help='GitHub API token')
+        parser.add_argument('--base-config', default='config.yaml', help='Base GitHub scraper configuration file')
+        parser.add_argument('--output-dir', default='lead_intelligence/data', help='Output directory for intelligence data')
         parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
+        parser.add_argument('--phase', choices=['collect', 'analyze', 'report', 'all'], default='all', help='Run specific phase')
         parser.add_argument('--demo', action='store_true', help='Run in demo mode')
+
+        # Filtering options
+        parser.add_argument('--location', default='us', help='Filter by location (default: us)')
+        parser.add_argument('--language', default='english', help='Filter by language (default: english)')
+        parser.add_argument('--english-only', action='store_true', help='Only include English profiles')
+        parser.add_argument('--us-only', action='store_true', help='Only include US-based profiles')
 
         args = parser.parse_args()
 
@@ -278,112 +295,8 @@ def main():
     if hasattr(args, 'interactive') and args.interactive:
         return run_interactive_mode()
 
-    parser.add_argument(
-        '--list-icps',
-        action='store_true',
-        help='List all available ICPs and exit'
-    )
-
-    # Number inputs (easy parameter setting)
-    parser.add_argument(
-        '--max-repos',
-        type=int,
-        default=50,
-        help='Maximum repositories to process (default: 50)'
-    )
-
-    parser.add_argument(
-        '--max-leads',
-        type=int,
-        default=200,
-        help='Maximum leads to collect (default: 200)'
-    )
-
-    parser.add_argument(
-        '--search-days',
-        type=int,
-        default=60,
-        help='Search repositories active within last N days (default: 60)'
-    )
-
-    # Legacy arguments
-    parser.add_argument(
-        '--config',
-        default='lead_intelligence/config/intelligence.yaml',
-        help='Intelligence configuration file (default: lead_intelligence/config/intelligence.yaml)'
-    )
-
-    parser.add_argument(
-        '--github-token',
-        help='GitHub API token (can also use GITHUB_TOKEN env var)'
-    )
-
-    parser.add_argument(
-        '--base-config',
-        default='config.yaml',
-        help='Base GitHub scraper configuration file (default: config.yaml)'
-    )
-
-    parser.add_argument(
-        '--output-dir',
-        default='lead_intelligence/data',
-        help='Output directory for intelligence data (default: lead_intelligence/data)'
-    )
-
-    parser.add_argument(
-        '--verbose', '-v',
-        action='store_true',
-        help='Enable verbose logging'
-    )
-
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Show what would be done without actually running'
-    )
-
-    parser.add_argument(
-        '--phase',
-        choices=['collect', 'analyze', 'report', 'all'],
-        default='all',
-        help='Run specific phase (default: all)'
-    )
-
-    parser.add_argument(
-        '--demo',
-        action='store_true',
-        help='Run in demo mode with sample data (works without GitHub token)'
-    )
-
-    # First try to parse simple arguments
-    import sys
-    if len(sys.argv) > 1:
-        simple_config = parse_simple_args(sys.argv[1:])
-        if simple_config is None:
-            # Show help
-            parser.print_help()
-            return
-        elif isinstance(simple_config, dict) and simple_config.get('command') == 'list_icps':
-            print_icp_list()
-            return
-        elif simple_config and simple_config.get('interactive'):
-            return run_interactive_mode()
-    else:
-        simple_config = None
-
-    # Parse with argparse for traditional flags
-    args = parser.parse_args()
-
-    # Handle special modes first
-    if args.list_icps:
-        print_icp_list()
-        return
-
-    if args.interactive:
-        return run_interactive_mode()
-
     # Setup logging
-    setup_logging(args.verbose)
+    setup_logging(getattr(args, 'verbose', False))
     logger = logging.getLogger(__name__)
 
     # Check for GitHub token
@@ -397,8 +310,9 @@ def main():
         sys.exit(1)
 
     # Check for base config
-    if not Path(args.base_config).exists():
-        logger.error(f"❌ Base config file not found: {args.base_config}")
+    base_config_path = getattr(args, 'base_config', 'config.yaml')
+    if not Path(base_config_path).exists():
+        logger.error(f"❌ Base config file not found: {base_config_path}")
         sys.exit(1)
 
     # Merge simple config with args
@@ -426,10 +340,11 @@ def main():
 
     # Load intelligence config if it exists
     intelligence_config_data = {}
-    if Path(args.config).exists():
+    config_path = getattr(args, 'config', 'lead_intelligence/config/intelligence.yaml')
+    if Path(config_path).exists():
         try:
             import yaml
-            with open(args.config, 'r') as f:
+            with open(config_path, 'r') as f:
                 intelligence_config_data = yaml.safe_load(f) or {}
         except Exception as e:
             logger.warning(f"Could not load intelligence config: {e}")
@@ -441,8 +356,8 @@ def main():
     # Create intelligence config
     config = IntelligenceConfig(
         github_token=github_token,
-        base_config_path=args.base_config,
-        output_dir=args.output_dir,
+        base_config_path=base_config_path,
+        output_dir=getattr(args, 'output_dir', 'lead_intelligence/data'),
         analysis_dir=intelligence_config_data.get('analysis_dir', 'lead_intelligence/analysis'),
         reporting_dir=intelligence_config_data.get('reporting_dir', 'lead_intelligence/reporting'),
         enrichment_enabled=intelligence_config_data.get('enrichment_enabled', True),
@@ -454,17 +369,22 @@ def main():
         attio_integration_enabled=intelligence_config_data.get('attio_integration_enabled', bool(attio_token)),
         attio_api_token=attio_token,
         backup_enabled=intelligence_config_data.get('backup_enabled', True),
-        logging_level=intelligence_config_data.get('logging_level', 'INFO')
+        logging_level=intelligence_config_data.get('logging_level', 'INFO'),
+        # Filtering options
+        location_filter=getattr(args, 'location', 'us'),
+        language_filter=getattr(args, 'language', 'english'),
+        english_only=getattr(args, 'english_only', True),
+        us_only=getattr(args, 'us_only', True)
     )
 
     if args.dry_run:
         print("🔍 DRY RUN MODE")
         print("Configuration:")
         print(f"  GitHub Token: {'*' * 20}...{github_token[-4:] if github_token else 'None'}")
-        print(f"  Base Config: {args.base_config}")
-        print(f"  Intelligence Config: {args.config}")
-        print(f"  Output Directory: {args.output_dir}")
-        print(f"  Phase: {args.phase}")
+        print(f"  Base Config: {base_config_path}")
+        print(f"  Intelligence Config: {config_path}")
+        print(f"  Output Directory: {getattr(args, 'output_dir', 'lead_intelligence/data')}")
+        print(f"  Phase: {getattr(args, 'phase', 'all')}")
         print(f"  Enrichment: {config.enrichment_enabled}")
         print(f"  Scoring: {config.scoring_enabled}")
         print("Would run intelligence engine with above configuration.")
@@ -783,7 +703,12 @@ def run_interactive_mode():
         max_workers=4,
         validation_enabled=True,
         error_handling_enabled=True,
-        logging_level='INFO'
+        logging_level='INFO',
+        # Filtering options - default to US and English only
+        location_filter='us',
+        language_filter='english',
+        english_only=True,
+        us_only=True
     )
 
     try:

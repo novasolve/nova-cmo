@@ -216,10 +216,14 @@ class BeautifulLogger:
 
     def _log_with_icon(self, level: str, message: str, icon_key: str = None, separator: bool = False):
         """Internal method to log with custom icon"""
+        # Map SUCCESS to INFO level since SUCCESS doesn't exist in standard logging
+        level_map = {'SUCCESS': 'INFO'}
+        mapped_level = level_map.get(level, level)
+
         # Create a log record with custom attributes
         record = logging.LogRecord(
             name=self.logger.name,
-            level=getattr(logging, level),
+            level=getattr(logging, mapped_level),
             pathname="",
             lineno=0,
             msg=message,
