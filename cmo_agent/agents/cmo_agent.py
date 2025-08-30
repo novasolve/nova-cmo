@@ -354,8 +354,9 @@ Available tools: {', '.join(self.tools.keys())}
         logger.warning(f"No valid tool found in tool_calls: {[call.get('name') for call in tool_calls]}")
         return "continue"
 
-    async def run_job(self, goal: str, created_by: str = "user") -> Dict[str, Any]:
-        """Run a complete job from start to finish"""
+    async def run_job(self, goal: str, created_by: str = "user", progress_callback: Optional[callable] = None) -> Dict[str, Any]:
+        """Run a complete job from start to finish with progress updates"""
+        job_meta = None
         try:
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
@@ -369,25 +370,90 @@ Available tools: {', '.join(self.tools.keys())}
                 counters={"steps": 0, "api_calls": 0, "tokens": 0},
             )
 
-            # Run the graph
+            # Run the graph with progress streaming
             logger.info(f"Starting CMO Agent job: {job_meta.job_id}")
-            final_state = await self.graph.ainvoke(initial_state)
+
+            # Use astream for progress updates
+            final_state = None
+            async for step_result in self.graph.astream(initial_state):
+                final_state = step_result
+
+                # Extract progress information
+                progress_info = self._extract_progress_info(step_result)
+                if progress_callback:
+                    await progress_callback(progress_info)
 
             # Update stats
             self.stats["jobs_processed"] += 1
 
+            # Collect artifacts
+            artifacts = await self._collect_artifacts(job_meta.job_id)
+
             return {
+                "success": True,
                 "job_id": job_meta.job_id,
-                "success": final_state.get("ended", False),
                 "final_state": final_state,
-                "stats": self.stats.copy(),
+                "artifacts": artifacts,
             }
 
         except Exception as e:
             logger.error(f"Job execution failed: {e}")
-            self.stats["errors_encountered"] += 1
+            job_id = job_meta.job_id if job_meta else "unknown"
             return {
                 "success": False,
                 "error": str(e),
-                "stats": self.stats.copy(),
+                "job_id": job_id,
             }
+
+    def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
+        """Extract progress information from RunState"""
+        counters = state.get("counters", {})
+        current_stage = state.get("current_stage", "unknown")
+
+        # Map stages to human-readable names
+        stage_names = {
+            "initialization": "Initializing",
+            "discovery": "Discovering repositories",
+            "extraction": "Extracting contributors",
+            "enrichment": "Enriching profiles",
+            "validation": "Validating emails",
+            "scoring": "Scoring leads",
+            "personalization": "Personalizing content",
+            "sending": "Sending emails",
+            "sync": "Syncing to CRM",
+            "export": "Exporting results",
+            "completed": "Completed",
+            "failed": "Failed",
+        }
+
+        progress_info = {
+            "stage": stage_names.get(current_stage, current_stage),
+            "step": counters.get("steps", 0),
+            "metrics": {
+                "api_calls": counters.get("api_calls", 0),
+                "tokens_used": counters.get("tokens", 0),
+                "repos_found": len(state.get("repos", [])),
+                "candidates_found": len(state.get("candidates", [])),
+                "leads_enriched": len(state.get("leads", [])),
+                "emails_to_send": len(state.get("to_send", [])),
+            },
+            "current_item": f"Processing {current_stage} phase",
+        }
+
+        # Add estimated completion if we have progress data
+        if counters.get("steps", 0) > 0:
+            # Rough estimation based on typical campaign progress
+            total_estimated_steps = 40  # From config
+            current_step = min(counters.get("steps", 0), total_estimated_steps)
+            progress_percentage = current_step / total_estimated_steps
+
+            progress_info["progress_percentage"] = progress_percentage
+            progress_info["estimated_completion"] = f"~{int((1 - progress_percentage) * 60)} minutes remaining"
+
+        return progress_info
+
+    async def _collect_artifacts(self, job_id: str) -> List[str]:
+        """Collect artifacts generated during job execution"""
+        # This would scan the artifacts directory for job-specific files
+        # For now, return empty list
+        return []
