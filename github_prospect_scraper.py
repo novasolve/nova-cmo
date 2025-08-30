@@ -234,7 +234,6 @@ class GitHubScraper:
 
         # Initialize JobTracker
         self.job_tracker = JobTracker(self.output_dir or "lead_intelligence/data")
-        self.current_job = None
 
         # Dedup configuration
         dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
@@ -1750,20 +1749,29 @@ class GitHubScraper:
         })
         
     def scrape(self):
-        """Main scraping logic"""
+        """Main scraping logic with job tracking"""
+        # Start job tracking
+        search_query = self._build_icp_query()
+        job = self.job_tracker.start_job(
+            search_query=search_query,
+            config=self.config,
+            icp_config=self.icp_config,
+            github_token=self.token
+        )
+
+        print(f"🚀 Started job: {job.job_id}")
+        print(f"🔎 Query: {search_query[:100]}...")
+        print(f"📊 Window: {job.window_days}d | Max repos: {job.max_repos} | Max leads: {job.max_leads}")
+
         # Initialize CSV file for incremental writing
         if self.output_path:
             self._init_csv_file()
-        # Config summary (useful when called via wrapper)
-        try:
-            max_people = (self.config.get('limits') or {}).get('max_people')
-            max_repos = (self.config.get('limits') or {}).get('max_repos')
-            print(f"🔎 Search window: {self.config.get('filters', {}).get('activity_days', 90)} days | Max repos: {max_repos} | Max leads: {max_people}")
-        except Exception:
-            pass
-            
+
         repos = self.search_repos()
         print(f"📦 Repos returned: {len(repos)}")
+
+        # Update job stats
+        job.stats.total_repos_processed = len(repos)
 
         # Check if concurrent processing is enabled
         concurrency_enabled = self.config.get('concurrency', {}).get('enabled', False)
@@ -1777,8 +1785,12 @@ class GitHubScraper:
 
             # Process results
             total_prospects = 0
+            successful_repos = 0
+            cache_stats = self.concurrent_processor.get_cache_stats()
+
             for result in processing_results:
                 if result.success:
+                    successful_repos += 1
                     # Convert dicts back to Prospect objects
                     for prospect_dict in result.prospects:
                         # Create a temporary Prospect object from dict
@@ -1789,8 +1801,14 @@ class GitHubScraper:
                         total_prospects += 1
                 else:
                     print(f"❌ Failed to process {result.repo_full_name}: {result.error}")
+                    job.stats.errors.append(f"Failed to process {result.repo_full_name}: {result.error}")
 
-            print(f"📊 Concurrent processing complete: {total_prospects} prospects from {len(processing_results)} repos")
+            # Update job stats
+            job.stats.raw_prospects_found = total_prospects
+            job.stats.cache_hits = cache_stats.get('cache_files', 0)
+            job.stats.cache_misses = len(processing_results) - cache_stats.get('cache_files', 0)
+
+            print(f"📊 Concurrent processing complete: {total_prospects} prospects from {successful_repos}/{len(processing_results)} repos")
 
         else:
             # Use traditional sequential processing
@@ -1860,14 +1878,51 @@ class GitHubScraper:
                 time.sleep(self.config.get('delay', 1))
 
             repo_pbar.close()
+
+            # Update job stats for sequential processing
+            job.stats.raw_prospects_found = len(self.all_prospects)
+            job.stats.contactable_prospects = self.leads_with_email_count
         
+        # Calculate final job statistics
+        self._update_final_job_stats(job)
+
         # Print prospects summary at the end
         self.print_prospects_summary()
-        
+
         # Export split CSVs if directory is provided and we're not in URL print-only mode
         if self.output_dir:
-            self.export_attio_csvs(self.output_dir)
-        
+            exported_files = self.export_attio_csvs(self.output_dir)
+            for file_type, file_path in exported_files.items():
+                job.output_files[file_type] = file_path
+
+        # Save main prospects file if output path specified
+        if self.output_path:
+            job.output_files['prospects_csv'] = self.output_path
+
+        # End job and print summary
+        completed_job = self.job_tracker.end_job(success=True)
+        print("\n" + "="*80)
+        print(self.job_tracker.get_job_summary())
+        print("="*80)
+
+    def _update_final_job_stats(self, job):
+        """Update final job statistics after processing"""
+        prospects = self.all_prospects
+
+        # Basic counts
+        job.stats.prospects_after_dedupe = len(prospects)
+        job.stats.contactable_prospects = sum(1 for p in prospects if p.contactability_score >= 50)
+        job.stats.maintainer_prospects = sum(1 for p in prospects if p.is_maintainer)
+        job.stats.org_member_prospects = sum(1 for p in prospects if p.is_org_member)
+
+        # Tier distribution
+        tier_counts = {'A': 0, 'B': 0, 'C': 0, 'REJECT': 0}
+        for prospect in prospects:
+            tier = getattr(prospect, 'prospect_tier', 'unknown')
+            if tier in tier_counts:
+                tier_counts[tier] += 1
+        job.stats.prospects_by_tier = tier_counts
+
     def export_csv(self, output_path: str):
         """Export prospects to CSV"""
         if not self.all_prospects:
@@ -1918,8 +1973,10 @@ class GitHubScraper:
             for prospect in self.all_prospects:
                 writer.writerow(prospect.to_dict())
 
-    def export_attio_csvs(self, output_dir: str):
-        """Export People, Repos, Membership, and Signals CSVs matching Attio headers."""
+    def export_attio_csvs(self, output_dir: str) -> Dict[str, str]:
+        """Export People, Repos, Membership, and Signals CSVs matching Attio headers.
+        Returns dict of file_type -> file_path mappings.
+        """
         os.makedirs(output_dir or '.', exist_ok=True)
         # Each object into its own folder under the provided output_dir
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
