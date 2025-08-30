@@ -26,6 +26,31 @@ retries:
   max_attempts: 3
   backoff_multiplier: 2.0
   jitter: true
+  max_backoff_seconds: 300 # 5 minutes max
+  rate_limit_retry_after: 60 # Wait 60s after rate limit
+
+# Error handling configuration
+error_handling:
+  retryable_errors:
+    - ConnectionError
+    - TimeoutError
+    - httpx.ConnectTimeout
+    - httpx.ReadTimeout
+    - httpx.PoolTimeout
+    - aiohttp.ClientConnectorError
+  rate_limit_errors:
+    - RateLimitError
+    - TooManyRequests
+    - GitHubRateLimitError
+    - CircuitBreakerOpenError
+  permanent_errors:
+    - AuthenticationError
+    - AuthorizationError
+    - NotFoundError
+    - ValidationError
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 300 # 5 minutes
 
 # Default ICP (Ideal Customer Profile)
 default_icp:
@@ -96,6 +121,8 @@ job_config:
     time_interval: 300 # Every 5 minutes
     step_interval: 50 # Every 50 steps
     volume_interval: 1000 # Every 1000 leads
+    enabled: true
+    adaptive: true # Use adaptive checkpointing based on job progress
 
 # Monitoring and metrics
 monitoring:
