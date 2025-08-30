@@ -184,7 +184,7 @@ class IdentityDeduper:
         scored_prospects.sort(key=lambda x: x[0], reverse=True)
         return scored_prospects[0][1]
 
-    def _merge_prospect_data(self, prospects: List[Dict[str, Any]], base_prospect: Dict[str, Any]]) -> Dict[str, Any]:
+    def _merge_prospect_data(self, prospects, base_prospect):
         """Merge data from multiple prospects, keeping the best information"""
 
         merged = base_prospect.copy()

@@ -82,6 +82,12 @@ class Prospect:
     risk_factors: Optional[List[str]] = None
     priority_signals: Optional[List[str]] = None
     cohort: Optional[Dict[str, Any]] = None
+
+    # Compliance (new fields)
+    compliance_risk_level: str = 'unknown'
+    compliance_blocked: bool = False
+    compliance_risk_factors: Optional[List[str]] = None
+    geo_location: Optional[str] = None
     
     # URLs
     github_user_url: Optional[str] = None
@@ -439,6 +445,10 @@ class GitHubScraper:
                 'gravatar_id', 'suspended_at',
                 # Plan information
                 'plan_name', 'plan_space', 'plan_collaborators', 'plan_private_repos',
+                # Scoring and tiering
+                'prospect_score', 'prospect_tier', 'scoring_components', 'risk_factors', 'priority_signals', 'cohort',
+                # Compliance
+                'compliance_risk_level', 'compliance_blocked', 'compliance_risk_factors', 'geo_location',
                 # Additional flags
                 'two_factor_authentication', 'has_organization_projects',
                 'has_repository_projects'
@@ -1397,6 +1407,14 @@ class GitHubScraper:
         prospect.priority_signals = scoring_result.priority_signals
         prospect.cohort = scoring_result.cohort
 
+        # Update prospect with compliance results
+        if scoring_result.compliance_result:
+            compliance = scoring_result.compliance_result
+            prospect.compliance_risk_level = compliance.risk_level
+            prospect.compliance_blocked = self.prospect_scorer.compliance_checker.should_block_prospect(compliance)
+            prospect.compliance_risk_factors = compliance.risk_factors
+            prospect.geo_location = compliance.geo_location
+
         # Apply tier-based filtering - reject low-quality prospects
         if scoring_result.tier == 'REJECT':
             return None  # Don't include rejected prospects
@@ -1990,6 +2008,10 @@ class GitHubScraper:
             'gravatar_id', 'suspended_at',
             # Plan information
             'plan_name', 'plan_space', 'plan_collaborators', 'plan_private_repos',
+            # Scoring and tiering
+            'prospect_score', 'prospect_tier', 'scoring_components', 'risk_factors', 'priority_signals', 'cohort',
+            # Compliance
+            'compliance_risk_level', 'compliance_blocked', 'compliance_risk_factors', 'geo_location',
             # Additional flags
             'two_factor_authentication', 'has_organization_projects',
             'has_repository_projects'

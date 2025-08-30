@@ -95,6 +95,12 @@ company_whitelist:
   - MistralAI
   - xAI
 
+# Compliance settings
+blocked_companies: []
+blocked_email_domains: []
+prohibited_bio_terms: []
+prohibited_repo_terms: []
+
 # Quality filters
 university_penalty: true
 academic_domains:
@@ -119,4 +125,3 @@ tier_thresholds:
   B: 55
   C: 40
   REJECT: 0
-
