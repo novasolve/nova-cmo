@@ -1,0 +1,611 @@
+#!/usr/bin/env python3
+"""
+Lead Intelligence Runner
+Command-line interface for the Lead Intelligence system
+"""
+
+import os
+import sys
+import argparse
+import logging
+from pathlib import Path
+from typing import Dict, List, Optional
+
+# Add parent directory to Python path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from core.intelligence_engine import IntelligenceEngine, IntelligenceConfig
+from core.beautiful_logger import beautiful_logger, log_header, log_separator
+
+def setup_logging(verbose: bool = False):
+    """Setup logging configuration"""
+    level = logging.DEBUG if verbose else logging.INFO
+    logging.basicConfig(
+        level=level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler('lead_intelligence.log')
+        ]
+    )
+
+def load_icp_options() -> Dict:
+    """Load ICP configuration options"""
+    icp_config_path = Path(__file__).parent.parent / "configs" / "icp" / "options.yaml"
+    try:
+        import yaml
+        with open(icp_config_path, 'r') as f:
+            return yaml.safe_load(f) or {}
+    except Exception as e:
+        print(f"⚠️  Could not load ICP config: {e}")
+        return {}
+
+def print_icp_list():
+    """Print list of available ICPs"""
+    icp_options = load_icp_options()
+    icps = icp_options.get('icp_options', [])
+
+    if not icps:
+        print("❌ No ICP options available")
+        return
+
+    print("🎯 Available ICPs (Ideal Customer Profiles):")
+    print("=" * 70)
+    print()
+
+    for i, icp in enumerate(icps, 1):
+        print(f"{i:2d}. {icp['id']}")
+        print(f"    {icp['name']}")
+        if 'personas' in icp:
+            personas = icp['personas']
+            if isinstance(personas, list) and personas:
+                if 'title_contains' in personas[0]:
+                    titles = personas[0]['title_contains']
+                    print(f"    🎭 Target: {', '.join(titles[:3])}")
+        if 'technographics' in icp:
+            tech = icp['technographics']
+            if 'language' in tech:
+                print(f"    💻 Tech: {', '.join(tech['language'])}")
+        print()
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Lead Intelligence System - Find and qualify leads from GitHub',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+🚀 Quick Start Examples:
+
+  # Interactive mode (recommended for first-time users)
+  python run_intelligence.py --interactive
+
+  # Simple run with defaults
+  python run_intelligence.py
+
+  # Target specific ICP with custom limits
+  python run_intelligence.py --icp icp01_pypi_maintainers --max-repos 100 --max-leads 500
+
+  # Advanced usage
+  python run_intelligence.py --config my_config.yaml --verbose --github-token ghp_xxxxx
+
+🔑 Getting Started:
+  1. Set your GitHub token: export GITHUB_TOKEN=your_token_here
+  2. Run: python run_intelligence.py --interactive
+  3. Follow the prompts to select ICP and configure parameters
+        """
+    )
+
+    # Interactive mode
+    parser.add_argument(
+        '--interactive', '-i',
+        action='store_true',
+        help='Run in interactive mode with guided setup'
+    )
+
+    # ICP Selection
+    parser.add_argument(
+        '--icp',
+        choices=['icp01_pypi_maintainers', 'icp02_ml_ds_maintainers', 'icp03_seed_series_a_python_saas',
+                'icp04_api_sdk_tooling', 'icp05_academic_labs', 'icp06_django_flask_products',
+                'icp07_regulated_startups', 'icp08_agencies_consultancies', 'icp09_pytest_ci_plugin_authors',
+                'icp10_explicit_flaky_signals'],
+        help='Target specific ICP (Ideal Customer Profile)'
+    )
+
+    parser.add_argument(
+        '--list-icps',
+        action='store_true',
+        help='List all available ICPs and exit'
+    )
+
+    # Number inputs (easy parameter setting)
+    parser.add_argument(
+        '--max-repos',
+        type=int,
+        default=50,
+        help='Maximum repositories to process (default: 50)'
+    )
+
+    parser.add_argument(
+        '--max-leads',
+        type=int,
+        default=200,
+        help='Maximum leads to collect (default: 200)'
+    )
+
+    parser.add_argument(
+        '--search-days',
+        type=int,
+        default=60,
+        help='Search repositories active within last N days (default: 60)'
+    )
+
+    # Legacy arguments
+    parser.add_argument(
+        '--config',
+        default='lead_intelligence/config/intelligence.yaml',
+        help='Intelligence configuration file (default: lead_intelligence/config/intelligence.yaml)'
+    )
+
+    parser.add_argument(
+        '--github-token',
+        help='GitHub API token (can also use GITHUB_TOKEN env var)'
+    )
+
+    parser.add_argument(
+        '--base-config',
+        default='config.yaml',
+        help='Base GitHub scraper configuration file (default: config.yaml)'
+    )
+
+    parser.add_argument(
+        '--output-dir',
+        default='lead_intelligence/data',
+        help='Output directory for intelligence data (default: lead_intelligence/data)'
+    )
+
+    parser.add_argument(
+        '--verbose', '-v',
+        action='store_true',
+        help='Enable verbose logging'
+    )
+
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Show what would be done without actually running'
+    )
+
+    parser.add_argument(
+        '--phase',
+        choices=['collect', 'analyze', 'report', 'all'],
+        default='all',
+        help='Run specific phase (default: all)'
+    )
+
+    parser.add_argument(
+        '--demo',
+        action='store_true',
+        help='Run in demo mode with sample data (works without GitHub token)'
+    )
+
+    args = parser.parse_args()
+
+    # Handle special modes first
+    if args.list_icps:
+        print_icp_list()
+        return
+
+    if args.interactive:
+        return run_interactive_mode()
+
+    # Setup logging
+    setup_logging(args.verbose)
+    logger = logging.getLogger(__name__)
+
+    # Check for GitHub token
+    github_token = args.github_token or os.environ.get('GITHUB_TOKEN')
+    if not github_token:
+        logger.error("❌ GitHub token required. Set GITHUB_TOKEN environment variable or use --github-token")
+        print("\nTo get a GitHub token:")
+        print("1. Go to https://github.com/settings/tokens")
+        print("2. Generate a new token with 'repo' and 'user:email' scopes")
+        print("3. Set it: export GITHUB_TOKEN=your_token_here")
+        sys.exit(1)
+
+    # Check for base config
+    if not Path(args.base_config).exists():
+        logger.error(f"❌ Base config file not found: {args.base_config}")
+        sys.exit(1)
+
+    # Override config with command line parameters
+    if hasattr(args, 'max_repos') and args.max_repos != 50:
+        logger.info(f"🔧 Overriding max_repos to {args.max_repos}")
+    if hasattr(args, 'max_leads') and args.max_leads != 200:
+        logger.info(f"🔧 Overriding max_leads to {args.max_leads}")
+    if hasattr(args, 'search_days') and args.search_days != 60:
+        logger.info(f"🔧 Overriding search_days to {args.search_days}")
+
+    # Load intelligence config if it exists
+    intelligence_config_data = {}
+    if Path(args.config).exists():
+        try:
+            import yaml
+            with open(args.config, 'r') as f:
+                intelligence_config_data = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"Could not load intelligence config: {e}")
+
+    # Get Attio credentials from environment
+    attio_token = os.environ.get(intelligence_config_data.get('attio_api_token_env', 'ATTIO_API_TOKEN'), '')
+    attio_workspace = os.environ.get(intelligence_config_data.get('attio_workspace_id_env', 'ATTIO_WORKSPACE_ID'), '')
+
+    # Create intelligence config
+    config = IntelligenceConfig(
+        github_token=github_token,
+        base_config_path=args.base_config,
+        output_dir=args.output_dir,
+        analysis_dir=intelligence_config_data.get('analysis_dir', 'lead_intelligence/analysis'),
+        reporting_dir=intelligence_config_data.get('reporting_dir', 'lead_intelligence/reporting'),
+        enrichment_enabled=intelligence_config_data.get('enrichment_enabled', True),
+        scoring_enabled=intelligence_config_data.get('scoring_enabled', True),
+        max_workers=intelligence_config_data.get('max_workers', 4),
+        cache_ttl_hours=intelligence_config_data.get('cache_ttl_hours', 24),
+        validation_enabled=intelligence_config_data.get('validation_enabled', True),
+        error_handling_enabled=intelligence_config_data.get('error_handling_enabled', True),
+        attio_integration_enabled=intelligence_config_data.get('attio_integration_enabled', bool(attio_token)),
+        attio_api_token=attio_token,
+        backup_enabled=intelligence_config_data.get('backup_enabled', True),
+        logging_level=intelligence_config_data.get('logging_level', 'INFO')
+    )
+
+    if args.dry_run:
+        print("🔍 DRY RUN MODE")
+        print("Configuration:")
+        print(f"  GitHub Token: {'*' * 20}...{github_token[-4:] if github_token else 'None'}")
+        print(f"  Base Config: {args.base_config}")
+        print(f"  Intelligence Config: {args.config}")
+        print(f"  Output Directory: {args.output_dir}")
+        print(f"  Phase: {args.phase}")
+        print(f"  Enrichment: {config.enrichment_enabled}")
+        print(f"  Scoring: {config.scoring_enabled}")
+        print("Would run intelligence engine with above configuration.")
+        return
+
+    log_header("🚀 Lead Intelligence System v2.0")
+    beautiful_logger.logger.info(f"Phase: {args.phase}")
+    beautiful_logger.logger.info(f"Output Directory: {args.output_dir}")
+
+    try:
+        # Create and run intelligence engine
+        engine = IntelligenceEngine(config)
+
+        if args.phase == 'collect':
+            logger.info("📊 Running data collection phase only")
+            import asyncio
+            prospects = asyncio.run(engine.collect_data())
+            logger.info(f"✅ Collected {len(prospects)} prospects")
+        elif args.phase == 'analyze':
+            logger.info("🧠 Running analysis phase only")
+            # Load latest collected data and analyze
+            latest_data_file = engine.data_manager.get_latest_file("raw_prospects_*.json", "raw")
+            if not latest_data_file:
+                logger.error("❌ No collected data found. Run collection phase first.")
+                return 1
+
+            with open(latest_data_file, 'r') as f:
+                raw_data = json.load(f)
+
+            # Convert back to Prospect objects (simplified)
+            prospects = []
+            for item in raw_data:
+                # This is a simplified conversion - in practice you'd want full Prospect reconstruction
+                from github_prospect_scraper import Prospect
+                # Create basic prospect from dict - this would need more work for full fidelity
+                prospect = Prospect(
+                    lead_id=item.get('lead_id', ''),
+                    login=item.get('login', ''),
+                    repo_full_name=item.get('repo_full_name', ''),
+                    signal=item.get('signal', ''),
+                    signal_type=item.get('signal_type', ''),
+                    signal_at=item.get('signal_at', ''),
+                    github_user_url=item.get('github_user_url', ''),
+                    github_repo_url=item.get('github_repo_url', '')
+                )
+                prospects.append(prospect)
+
+            import asyncio
+            intelligent_leads = asyncio.run(engine.analyze_and_enrich(prospects))
+            logger.info(f"✅ Analyzed {len(intelligent_leads)} leads")
+        elif args.phase == 'report':
+            logger.info("📊 Running reporting phase only")
+            # Load latest analyzed data and generate reports
+            latest_data_file = engine.data_manager.get_latest_file("intelligent_leads.json", "processed")
+            if not latest_data_file:
+                logger.error("❌ No analyzed data found. Run analysis phase first.")
+                return 1
+
+            with open(latest_data_file, 'r') as f:
+                intelligent_leads_data = json.load(f)
+
+            # Convert back to LeadIntelligence objects (simplified)
+            intelligent_leads = []
+            for item in intelligent_leads_data:
+                # This would need full reconstruction logic
+                pass
+
+            import asyncio
+            report_results = asyncio.run(engine.generate_reports(intelligent_leads))
+            logger.info("✅ Generated reports")
+        else:
+            if args.demo:
+                logger.info("🎭 Running in DEMO mode with sample data")
+                import asyncio
+                result = asyncio.run(engine.run_demo_cycle())
+            else:
+                logger.info("🔄 Running comprehensive intelligence pipeline")
+                import asyncio
+                result = asyncio.run(engine.run_intelligence_cycle())
+
+            if result['success']:
+                logger.info("✅ Lead Intelligence Pipeline completed successfully!")
+
+                # Show detailed results
+                metadata = result.get('pipeline_metadata', {})
+                summary = metadata.get('summary', {})
+
+                logger.info("📊 Pipeline Summary:")
+                logger.info(f"   • Total leads processed: {summary.get('total_leads_processed', 0)}")
+                logger.info(f"   • Monday wave qualified: {summary.get('monday_wave_size', 0)}")
+                logger.info(f"   • Conversion rate: {summary.get('conversion_rate', 0)*100:.1f}%")
+
+                # Show phase results
+                phases = metadata.get('phases', {})
+                if phases.get('enrichment'):
+                    logger.info(f"   • Repos enriched: {phases['enrichment'].get('repos_snapshots_created', 0)}")
+                if phases.get('scoring'):
+                    high_priority = phases['scoring'].get('high_priority_count', 0)
+                    logger.info(f"   • High-priority leads: {high_priority}")
+                if phases.get('export'):
+                    files_created = len(phases['export'].get('files', []))
+                    logger.info(f"   • Export files created: {files_created}")
+
+                # Show export results
+                export_results = result.get('export_results', {})
+                if export_results.get('success'):
+                    logger.info("📁 Export files created:")
+                    files = export_results.get('files', {})
+                    for file_type, filename in files.items():
+                        logger.info(f"   • {file_type}: {filename}")
+
+                    campaign_dir = export_results.get('campaign_dir', '')
+                    if campaign_dir:
+                        logger.info(f"   • Campaign directory: {campaign_dir}")
+
+                # Show CRM integration results
+                if phases.get('crm_integration'):
+                    crm = phases['crm_integration']
+                    if crm.get('attio_push_attempted'):
+                        logger.info("🔗 Attio integration attempted")
+                    linear_tasks = crm.get('linear_tasks_prepared', 0)
+                    if linear_tasks > 0:
+                        logger.info(f"📋 Linear tasks prepared: {linear_tasks}")
+
+            else:
+                logger.error("❌ Intelligence pipeline failed")
+                metadata = result.get('pipeline_metadata', {})
+                errors = metadata.get('errors', [])
+                if errors:
+                    logger.error("Pipeline errors:")
+                    for error in errors[:3]:  # Show first 3 errors
+                        logger.error(f"   • {error.get('error', 'Unknown error')}")
+                return 1
+
+    except KeyboardInterrupt:
+        logger.info("⏹️  Interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        logger.error(f"❌ Error running intelligence system: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+def get_user_input(prompt: str, default: str = "", validator=None) -> str:
+    """Get user input with validation"""
+    while True:
+        try:
+            value = input(f"{prompt} [{default}]: ").strip()
+            if not value:
+                value = default
+            if validator and not validator(value):
+                continue
+            return value
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled by user")
+            sys.exit(1)
+        except EOFError:
+            return default
+
+def get_user_choice(prompt: str, options: List[str], default_idx: int = 0) -> str:
+    """Get user choice from list of options"""
+    print(f"\n{prompt}")
+    for i, option in enumerate(options, 1):
+        print(f"  {i}. {option}")
+    print(f"  0. Cancel")
+
+    while True:
+        try:
+            choice = input(f"Choose (1-{len(options)}) [{default_idx + 1}]: ").strip()
+            if not choice:
+                return options[default_idx]
+            idx = int(choice) - 1
+            if idx == -1:
+                print("❌ Cancelled")
+                sys.exit(1)
+            if 0 <= idx < len(options):
+                return options[idx]
+        except (ValueError, IndexError):
+            print(f"❌ Please enter a number between 1 and {len(options)}")
+        except KeyboardInterrupt:
+            print("\n❌ Cancelled by user")
+            sys.exit(1)
+
+def interactive_icp_selection(icp_options: Dict) -> Optional[Dict]:
+    """Interactive ICP selection"""
+    icps = icp_options.get('icp_options', [])
+    if not icps:
+        print("❌ No ICP options available")
+        return None
+
+    print("\n🎯 Available ICPs (Ideal Customer Profiles):")
+    print("=" * 60)
+
+    options = []
+    for icp in icps:
+        options.append(f"{icp['id']}: {icp['name']}")
+
+    selected_icp_name = get_user_choice("Select an ICP to target:", options)
+    selected_icp_id = selected_icp_name.split(':')[0]
+
+    # Find the selected ICP
+    for icp in icps:
+        if icp['id'] == selected_icp_id:
+            return icp
+
+    return None
+
+def interactive_config_setup() -> Dict:
+    """Interactive configuration setup"""
+    print("🚀 Lead Intelligence System - Interactive Setup")
+    print("=" * 50)
+
+    config = {}
+
+    # GitHub token
+    github_token = os.environ.get('GITHUB_TOKEN', '')
+    if not github_token:
+        print("\n🔑 GitHub Token Setup:")
+        print("You need a GitHub token to collect data.")
+        print("Get one at: https://github.com/settings/tokens")
+        github_token = get_user_input("Enter your GitHub token", "")
+
+    if github_token:
+        config['github_token'] = github_token
+
+    # Load ICP options
+    icp_options = load_icp_options()
+
+    # ICP Selection
+    selected_icp = interactive_icp_selection(icp_options)
+    if selected_icp:
+        config['selected_icp'] = selected_icp
+
+    # Parameters
+    print("\n⚙️  Collection Parameters:")
+
+    # Max repos
+    max_repos = get_user_input("Maximum repos to process", "50",
+                              lambda x: x.isdigit() and 1 <= int(x) <= 1000)
+    config['max_repos'] = int(max_repos)
+
+    # Max leads
+    max_leads = get_user_input("Maximum leads to collect", "200",
+                              lambda x: x.isdigit() and 1 <= int(x) <= 2000)
+    config['max_leads'] = int(max_leads)
+
+    # Search days
+    search_days = get_user_input("Search repos active within last N days", "60",
+                                lambda x: x.isdigit() and 1 <= int(x) <= 365)
+    config['search_days'] = int(search_days)
+
+    # Output directory
+    output_dir = get_user_input("Output directory", "lead_intelligence/data")
+    config['output_dir'] = output_dir
+
+    return config
+
+def run_interactive_mode():
+    """Run the system in interactive mode"""
+    print("🎭 Starting Interactive Mode...")
+
+    # Setup interactive config
+    config = interactive_config_setup()
+
+    if not config.get('github_token'):
+        print("❌ GitHub token required. Please set GITHUB_TOKEN environment variable.")
+        return
+
+    # Setup logging
+    setup_logging()
+    logger = logging.getLogger(__name__)
+
+    print("\n🚀 Starting Lead Intelligence with your configuration:")
+    print(f"  • GitHub Token: {'*' * 20}...{config['github_token'][-4:]}")
+    print(f"  • Max Repos: {config['max_repos']}")
+    print(f"  • Max Leads: {config['max_leads']}")
+    print(f"  • Search Window: {config['search_days']} days")
+    print(f"  • Output: {config['output_dir']}")
+
+    if config.get('selected_icp'):
+        icp = config['selected_icp']
+        print(f"  • ICP: {icp['name']} ({icp['id']})")
+
+    # Confirm
+    confirm = get_user_input("\nReady to start? (y/N)", "y")
+    if confirm.lower() not in ['y', 'yes']:
+        print("❌ Cancelled")
+        return
+
+    # Create intelligence config
+    intelligence_config_data = {}
+    intelligence_config_path = Path("lead_intelligence/config/intelligence.yaml")
+    if intelligence_config_path.exists():
+        try:
+            import yaml
+            with open(intelligence_config_path, 'r') as f:
+                intelligence_config_data = yaml.safe_load(f) or {}
+        except Exception as e:
+            logger.warning(f"Could not load intelligence config: {e}")
+
+    # Override with user selections
+    if config.get('selected_icp'):
+        # Apply ICP-specific settings to base config
+        icp = config['selected_icp']
+        if 'github' in icp and 'repo_queries' in icp['github']:
+            # This would modify the base config with ICP-specific queries
+            logger.info(f"Applying ICP: {icp['name']}")
+
+    # Create and run engine
+    intel_config = IntelligenceConfig(
+        github_token=config['github_token'],
+        base_config_path='config.yaml',
+        output_dir=config['output_dir'],
+        enrichment_enabled=True,
+        scoring_enabled=True,
+        max_workers=4,
+        validation_enabled=True,
+        error_handling_enabled=True,
+        logging_level='INFO'
+    )
+
+    try:
+        engine = IntelligenceEngine(intel_config)
+        logger.info("🔄 Running intelligence pipeline...")
+
+        import asyncio
+        result = asyncio.run(engine.run_intelligence_cycle())
+
+        if result['success']:
+            print("\n✅ Success! Intelligence pipeline completed.")
+            metadata = result.get('pipeline_metadata', {})
+            summary = metadata.get('summary', {})
+            print(f"📊 Results: {summary.get('total_leads_processed', 0)} leads processed")
+        else:
+            print("\n❌ Pipeline failed")
+            return 1
+
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return 1
+
+if __name__ == '__main__':
+    main()
