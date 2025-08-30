@@ -101,15 +101,15 @@ class ExecutionEngine:
         logger.info("Starting CMO Agent Execution Engine...")
 
         try:
-                    # Start worker pool
-        await self.worker_pool.start(self.agent)
+            # Start worker pool
+            await self.worker_pool.start(self.agent)
 
-        # Start metrics logger
-        self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=60)
-        asyncio.create_task(self.metrics_logger.start_logging())
+            # Start metrics logger
+            self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=60)
+            asyncio.create_task(self.metrics_logger.start_logging())
 
-        # Start job processing loop
-        await self._run_main_loop()
+            # Start job processing loop
+            await self._run_main_loop()
 
         except Exception as e:
             logger.error(f"Execution engine error: {e}")
