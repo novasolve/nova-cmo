@@ -541,6 +541,14 @@ class IntelligenceEngine:
                 priority_score = lead.get('priority_score', 0)
                 risk_score = lead.get('deliverability_risk', 1)
 
+                # Ensure numeric types for comparison
+                try:
+                    priority_score = float(priority_score) if priority_score is not None else 0.0
+                    risk_score = float(risk_score) if risk_score is not None else 1.0
+                except (ValueError, TypeError):
+                    priority_score = 0.0
+                    risk_score = 1.0
+
                 # Quality gate: priority > 0.4 AND risk < 0.5
                 if priority_score > 0.4 and risk_score < 0.5:
                     qualified_leads.append(lead)
