@@ -12,7 +12,7 @@ import json
 import hashlib
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Any
 import copy
 import requests
 from requests.adapters import HTTPAdapter
@@ -24,6 +24,11 @@ from urllib.parse import urlparse
 from tqdm import tqdm
 import sqlite3
 
+# Import core modules
+from lead_intelligence.core.prospect_scorer import ProspectScorer
+from lead_intelligence.core.concurrent_processor import ConcurrentProcessor, ProcessingResult
+from lead_intelligence.core.job_metadata import JobTracker, JobStats
+
 
 @dataclass
 class Prospect:
@@ -33,7 +38,7 @@ class Prospect:
     login: str
     id: Optional[int]  # GitHub user ID
     node_id: Optional[str]  # GitHub GraphQL node ID
-    
+
     # Personal info
     name: Optional[str]
     company: Optional[str]
@@ -42,76 +47,98 @@ class Prospect:
     location: Optional[str]
     bio: Optional[str]
     pronouns: Optional[str]  # he/him, she/her, etc.
-    
+
     # Repository context
     repo_full_name: str
     repo_description: Optional[str]
     signal: str
-    signal_type: str  # 'pr' or 'commit'
+    signal_type: str  # 'pr', 'commit', 'core_contributor', etc.
     signal_at: str
     topics: str
     language: str
     stars: int
     forks: Optional[int]
     watchers: Optional[int]
+
+    # Maintainer status (new fields)
+    is_maintainer: bool = False
+    is_org_member: bool = False
+    is_codeowner: bool = False
+    permission_level: str = 'read'
+    commit_count_90d: Optional[int] = None
+
+    # Contact enrichment (new fields)
+    contactability_score: int = 0
+    email_type: str = 'unknown'
+    is_disposable_email: bool = False
+    corporate_domain: Optional[str] = None
+    linkedin_query: Optional[str] = None
+
+    # Scoring and tiering (new fields)
+    prospect_score: int = 0
+    prospect_tier: str = 'unknown'
+    scoring_components: Optional[Dict[str, int]] = None
+    risk_factors: Optional[List[str]] = None
+    priority_signals: Optional[List[str]] = None
+    cohort: Optional[Dict[str, Any]] = None
     
     # URLs
-    github_user_url: str
-    github_repo_url: str
-    avatar_url: Optional[str]
-    html_url: Optional[str]
-    api_url: Optional[str]
-    followers_url: Optional[str]
-    following_url: Optional[str]
-    gists_url: Optional[str]
-    starred_url: Optional[str]
-    subscriptions_url: Optional[str]
-    organizations_url: Optional[str]
-    repos_url: Optional[str]
-    events_url: Optional[str]
-    received_events_url: Optional[str]
-    
+    github_user_url: Optional[str] = None
+    github_repo_url: Optional[str] = None
+    avatar_url: Optional[str] = None
+    html_url: Optional[str] = None
+    api_url: Optional[str] = None
+    followers_url: Optional[str] = None
+    following_url: Optional[str] = None
+    gists_url: Optional[str] = None
+    starred_url: Optional[str] = None
+    subscriptions_url: Optional[str] = None
+    organizations_url: Optional[str] = None
+    repos_url: Optional[str] = None
+    events_url: Optional[str] = None
+    received_events_url: Optional[str] = None
+
     # Social/Professional
-    twitter_username: Optional[str]
-    blog: Optional[str]
-    linkedin_username: Optional[str]  # Extracted from blog if linkedin URL
-    hireable: Optional[bool]
-    
+    twitter_username: Optional[str] = None
+    blog: Optional[str] = None
+    linkedin_username: Optional[str] = None  # Extracted from blog if linkedin URL
+    hireable: Optional[bool] = None
+
     # GitHub Statistics
-    public_repos: Optional[int]
-    public_gists: Optional[int]
-    followers: Optional[int]
-    following: Optional[int]
-    total_private_repos: Optional[int]
-    owned_private_repos: Optional[int]
-    private_gists: Optional[int]
-    disk_usage: Optional[int]
-    collaborators: Optional[int]
-    
+    public_repos: Optional[int] = None
+    public_gists: Optional[int] = None
+    followers: Optional[int] = None
+    following: Optional[int] = None
+    total_private_repos: Optional[int] = None
+    owned_private_repos: Optional[int] = None
+    private_gists: Optional[int] = None
+    disk_usage: Optional[int] = None
+    collaborators: Optional[int] = None
+
     # Contribution data (requires additional API calls)
-    contributions_last_year: Optional[int]
-    total_contributions: Optional[int]
-    longest_streak: Optional[int]
-    current_streak: Optional[int]
-    
+    contributions_last_year: Optional[int] = None
+    total_contributions: Optional[int] = None
+    longest_streak: Optional[int] = None
+    current_streak: Optional[int] = None
+
     # Account metadata
-    created_at: Optional[str]
-    updated_at: Optional[str]
-    type: Optional[str]  # User type
-    site_admin: Optional[bool]
-    gravatar_id: Optional[str]
-    suspended_at: Optional[str]
-    
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    type: Optional[str] = None  # User type
+    site_admin: Optional[bool] = None
+    gravatar_id: Optional[str] = None
+    suspended_at: Optional[str] = None
+
     # Plan information
-    plan_name: Optional[str]
-    plan_space: Optional[int]
-    plan_collaborators: Optional[int]
-    plan_private_repos: Optional[int]
+    plan_name: Optional[str] = None
+    plan_space: Optional[int] = None
+    plan_collaborators: Optional[int] = None
+    plan_private_repos: Optional[int] = None
     
     # Additional flags
-    two_factor_authentication: Optional[bool]
-    has_organization_projects: Optional[bool]
-    has_repository_projects: Optional[bool]
+    two_factor_authentication: Optional[bool] = None
+    has_organization_projects: Optional[bool] = None
+    has_repository_projects: Optional[bool] = None
     
     def has_email(self) -> bool:
         """Check if prospect has any email"""
@@ -146,11 +173,24 @@ class TimeoutSession(requests.Session):
 class GitHubScraper:
     """Scrapes GitHub for prospect data"""
     
-    def __init__(self, token: str, config: dict, output_path: str = None, output_dir: Optional[str] = None):
+    def __init__(self, token: str, config: dict, output_path: str = None, output_dir: Optional[str] = None, icp_config_path: Optional[str] = None):
         self.token = token
         self.config = config
         self.output_path = output_path
         self.output_dir = output_dir
+
+        # Load ICP configuration if provided
+        self.icp_config = {}
+        if icp_config_path:
+            try:
+                with open(icp_config_path, 'r') as f:
+                    self.icp_config = yaml.safe_load(f) or {}
+                # Add ICP config to main config for backward compatibility
+                self.config['icp'] = self.icp_config
+            except Exception as e:
+                print(f"⚠️  Failed to load ICP config from {icp_config_path}: {e}")
+                print("Continuing without ICP filters...")
+
         # HTTP timeout (secs)
         try:
             self.timeout_secs = int(((self.config.get('http') or {}).get('timeout_secs')) or 15)
@@ -181,6 +221,21 @@ class GitHubScraper:
         self.user_cache: Dict[str, Dict] = {}
         self.contrib_cache: Dict[str, Dict] = {}
         self.org_cache: Dict[str, Dict] = {}
+        # Initialize ProspectScorer
+        self.prospect_scorer = ProspectScorer(icp_config_path)
+
+        # Initialize ConcurrentProcessor
+        concurrency_config = self.config.get('concurrency', {})
+        self.concurrent_processor = ConcurrentProcessor(
+            max_workers=concurrency_config.get('max_workers', 4),
+            requests_per_hour=concurrency_config.get('requests_per_hour', 5000),
+            cache_dir=concurrency_config.get('cache_dir', '.cache')
+        )
+
+        # Initialize JobTracker
+        self.job_tracker = JobTracker(self.output_dir or "lead_intelligence/data")
+        self.current_job = None
+
         # Dedup configuration
         dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
         self.dedup_enabled: bool = bool(dedup_cfg.get('enabled', True))
@@ -232,7 +287,7 @@ class GitHubScraper:
             cur = self._dedup_conn.cursor()
             cur.execute(
                 "INSERT OR IGNORE INTO seen_people(login, first_seen) VALUES(?, ?)",
-                (login, datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'))
+                (login, to_utc_iso8601(utc_now()))
             )
             self._dedup_conn.commit()
         except Exception:
@@ -353,15 +408,19 @@ class GitHubScraper:
                 # Core identification
                 'lead_id', 'login', 'id', 'node_id',
                 # Personal info
-                'name', 'company', 'email_public_commit', 'email_profile', 
+                'name', 'company', 'email_public_commit', 'email_profile',
                 'location', 'bio', 'pronouns',
                 # Repository context
-                'repo_full_name', 'repo_description', 'signal', 'signal_type', 
+                'repo_full_name', 'repo_description', 'signal', 'signal_type',
                 'signal_at', 'topics', 'language', 'stars', 'forks', 'watchers',
+                # Maintainer status
+                'is_maintainer', 'is_org_member', 'is_codeowner', 'permission_level', 'commit_count_90d',
+                # Contact enrichment
+                'contactability_score', 'email_type', 'is_disposable_email', 'corporate_domain', 'linkedin_query',
                 # URLs
-                'github_user_url', 'github_repo_url', 'avatar_url', 'html_url', 
-                'api_url', 'followers_url', 'following_url', 'gists_url', 
-                'starred_url', 'subscriptions_url', 'organizations_url', 
+                'github_user_url', 'github_repo_url', 'avatar_url', 'html_url',
+                'api_url', 'followers_url', 'following_url', 'gists_url',
+                'starred_url', 'subscriptions_url', 'organizations_url',
                 'repos_url', 'events_url', 'received_events_url',
                 # Social/Professional
                 'twitter_username', 'blog', 'linkedin_username', 'hireable',
@@ -370,15 +429,15 @@ class GitHubScraper:
                 'total_private_repos', 'owned_private_repos', 'private_gists',
                 'disk_usage', 'collaborators',
                 # Contribution data
-                'contributions_last_year', 'total_contributions', 
+                'contributions_last_year', 'total_contributions',
                 'longest_streak', 'current_streak',
                 # Account metadata
-                'created_at', 'updated_at', 'type', 'site_admin', 
+                'created_at', 'updated_at', 'type', 'site_admin',
                 'gravatar_id', 'suspended_at',
                 # Plan information
                 'plan_name', 'plan_space', 'plan_collaborators', 'plan_private_repos',
                 # Additional flags
-                'two_factor_authentication', 'has_organization_projects', 
+                'two_factor_authentication', 'has_organization_projects',
                 'has_repository_projects'
             ]
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fieldnames)
@@ -406,15 +465,67 @@ class GitHubScraper:
                 pass
             self._dedup_conn = None
         
+    def _build_icp_query(self) -> str:
+        """Build GitHub search query incorporating ICP filters"""
+        base_query = self.config['search']['query']
+
+        # Add ICP-specific filters if available
+        icp_config = self.config.get('icp', {})
+
+        # Include topics
+        if icp_config.get('include_topics'):
+            topic_filters = ' OR '.join([f'topic:{topic}' for topic in icp_config['include_topics']])
+            base_query += f' ({topic_filters})'
+
+        # Language filters
+        if icp_config.get('languages'):
+            lang_filters = ' OR '.join([f'language:{lang}' for lang in icp_config['languages']])
+            base_query += f' ({lang_filters})'
+
+        # Stars filter
+        if icp_config.get('min_stars'):
+            base_query += f' stars:>={icp_config["min_stars"]}'
+
+        # Window filter (recent activity)
+        if icp_config.get('window_days'):
+            from datetime import datetime, timedelta
+            cutoff_date = (datetime.now() - timedelta(days=icp_config['window_days'])).strftime('%Y-%m-%d')
+            base_query += f' pushed:>={cutoff_date}'
+
+        # Exclude archived repos
+        base_query += ' archived:false fork:false'
+
+        # Exclude common off-ICP topics
+        if icp_config.get('exclude_topics'):
+            exclude_filters = ' '.join([f'-topic:{topic}' for topic in icp_config['exclude_topics']])
+            base_query += f' {exclude_filters}'
+
+        # Exclude common off-ICP repo name patterns
+        exclude_patterns = [
+            'vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf', 'chromego',
+            'hiddify', 'awesome', 'tutorial', 'examples', 'docs', 'template',
+            'starter', 'playground', 'course', 'book', 'sample', 'dotfiles'
+        ]
+        name_excludes = ' '.join([f'-in:name {pattern}' for pattern in exclude_patterns])
+        base_query += f' {name_excludes}'
+
+        # Prefer organizations over users if configured
+        # Note: GitHub search doesn't have direct org vs user filtering
+        # We'll handle this in post-processing instead
+
+        return base_query
+
     def search_repos(self) -> List[Dict]:
-        """Search GitHub repos based on config criteria"""
+        """Search GitHub repos based on config criteria with ICP filtering"""
         repos = []
-        query = self.config['search']['query']
+
+        # Build query with ICP filters
+        query = self._build_icp_query()
         sort = self.config['search'].get('sort', 'updated')
         order = self.config['search'].get('order', 'desc')
         per_page = min(self.config['search'].get('per_page', 30), 100)
         max_repos = self.config['limits']['max_repos']
-        
+
         page = 1
         est_pages = max(1, (max_repos + per_page - 1) // per_page)
         pages_pbar = tqdm(total=est_pages, desc="Searching repos", unit="page", leave=False)
@@ -427,13 +538,13 @@ class GitHubScraper:
                 'per_page': per_page,
                 'page': page
             }
-            
+
             timeout_secs = int(os.environ.get('HTTP_TIMEOUT_SECS', '10') or '10')
             response = self.session.get(url, headers=self.headers, params=params, timeout=timeout_secs)
-            
+
             if self._rate_limit_wait(response):
                 continue
-                
+
             if response.status_code != 200:
                 try:
                     err = response.json()
@@ -457,21 +568,75 @@ class GitHubScraper:
                         time.sleep(self.config.get('delay', 1))
                         continue
                 break
-                
+
             data = response.json() or {}
             items = data.get('items', []) or []
-            repos.extend(items)
+
+            # Apply ICP-based filtering on results
+            filtered_items = self._filter_repos_by_icp(items)
+            repos.extend(filtered_items)
+
             pages_pbar.update(1)
             pages_pbar.set_postfix_str(f"fetched={len(repos)}")
-            
+
             if len(data.get('items', [])) < per_page:
                 break
-                
+
             page += 1
             time.sleep(self.config.get('delay', 1))  # Be nice to GitHub
-        
+
         pages_pbar.close()
         return repos[:max_repos]
+
+    def _filter_repos_by_icp(self, repos: List[Dict]) -> List[Dict]:
+        """Apply ICP-based filtering to repository results"""
+        filtered = []
+        icp_config = self.config.get('icp', {})
+
+        for repo in repos:
+            # Skip if doesn't match ICP criteria
+            if not self._passes_icp_filters(repo, icp_config):
+                continue
+
+            filtered.append(repo)
+
+        return filtered
+
+    def _passes_icp_filters(self, repo: Dict, icp_config: Dict) -> bool:
+        """Check if repository passes ICP filters"""
+        # Check stars threshold
+        if icp_config.get('min_stars') and repo.get('stargazers_count', 0) < icp_config['min_stars']:
+            return False
+
+        # Check if archived
+        if repo.get('archived', False):
+            return False
+
+        # Check if fork (unless explicitly allowed)
+        if repo.get('fork', False) and not icp_config.get('include_forks', False):
+            return False
+
+        # Check topics against exclude list
+        topics = repo.get('topics', [])
+        exclude_topics = icp_config.get('exclude_topics', [])
+        if any(topic in exclude_topics for topic in topics):
+            return False
+
+        # Check repo name against exclude patterns
+        name = repo.get('name', '').lower()
+        exclude_patterns = ['vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf']
+        if any(pattern in name for pattern in exclude_patterns):
+            return False
+
+        # Check owner type preference
+        if icp_config.get('prefer_orgs'):
+            owner = repo.get('owner', {})
+            if owner.get('type') != 'Organization':
+                # Allow some user-owned repos if they're high-quality
+                if repo.get('stargazers_count', 0) < 500:
+                    return False
+
+        return True
         
     def get_pr_authors(self, repo: Dict) -> List[Dict]:
         """Get recent PR authors for a repo"""
@@ -519,10 +684,10 @@ class GitHubScraper:
         commit_authors = []
         owner = repo['owner']['login']
         repo_name = repo['name']
-        
+
         # Calculate date range
         days_back = self.config['filters'].get('activity_days', 90)
-        since = (datetime.now() - timedelta(days=days_back)).isoformat()
+        since = days_ago(days_back)
         
         url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
         params = {
@@ -626,6 +791,221 @@ class GitHubScraper:
         except Exception:
             self.contrib_cache[username] = {}
             return {}
+
+    def check_maintainer_status(self, repo_full_name: str, username: str) -> Dict[str, bool]:
+        """Check if user is a maintainer/collaborator with permissions on the repo"""
+        result = {
+            'is_maintainer': False,
+            'is_org_member': False,
+            'permission_level': 'read',
+            'is_codeowner': False
+        }
+
+        if not (self.token and self.token.strip()):
+            return result
+
+        try:
+            # Check collaborator permissions
+            collab_url = f"https://api.github.com/repos/{repo_full_name}/collaborators/{username}/permission"
+            response = self.session.get(collab_url, headers=self.headers, timeout=10)
+
+            if response.status_code == 200:
+                data = response.json()
+                permission = data.get('permission', 'read')
+                result['permission_level'] = permission
+                result['is_maintainer'] = permission in ['admin', 'maintain', 'write']
+
+            # Check CODEOWNERS file
+            result['is_codeowner'] = self._check_codeowners(repo_full_name, username)
+
+            # Check organization membership
+            owner_org = repo_full_name.split('/')[0]
+            result['is_org_member'] = self._check_org_membership(owner_org, username)
+
+        except Exception as e:
+            # Silently handle permission errors (user might not have access)
+            pass
+
+        return result
+
+    def _check_codeowners(self, repo_full_name: str, username: str) -> bool:
+        """Check if user is listed in CODEOWNERS file"""
+        try:
+            # Try common CODEOWNERS file locations
+            codeowners_paths = ['CODEOWNERS', '.github/CODEOWNERS', 'docs/CODEOWNERS']
+
+            for path in codeowners_paths:
+                url = f"https://api.github.com/repos/{repo_full_name}/contents/{path}"
+                response = self.session.get(url, headers=self.headers, timeout=10)
+
+                if response.status_code == 200:
+                    import base64
+                    data = response.json()
+                    content = base64.b64decode(data['content']).decode('utf-8')
+
+                    # Parse CODEOWNERS format
+                    for line in content.split('\n'):
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            # Remove comments from line
+                            line = line.split('#')[0].strip()
+                            if line:
+                                parts = line.split()
+                                if parts:
+                                    pattern = parts[0]
+                                    owners = parts[1:]
+                                    if username in owners or f'@{username}' in owners:
+                                        return True
+        except Exception:
+            pass
+
+        return False
+
+    def _check_org_membership(self, org_name: str, username: str) -> bool:
+        """Check if user is a member of the organization"""
+        try:
+            # Check if org_name looks like an organization (not a user)
+            org_url = f"https://api.github.com/orgs/{org_name}"
+            org_response = self.session.get(org_url, headers=self.headers, timeout=10)
+
+            if org_response.status_code != 200:
+                return False  # Not an org or doesn't exist
+
+            # Check membership
+            membership_url = f"https://api.github.com/orgs/{org_name}/members/{username}"
+            membership_response = self.session.get(membership_url, headers=self.headers, timeout=10)
+
+            return membership_response.status_code == 204  # 204 means member, 404 means not
+
+        except Exception:
+            return False
+
+    def get_maintainer_contributors(self, repo: Dict, max_contributors: int = 10) -> List[Dict]:
+        """Get maintainers and core contributors for a repo based on recent activity"""
+        contributors = []
+        owner = repo['owner']['login']
+        repo_name = repo['name']
+        repo_full_name = repo['full_name']
+
+        try:
+            # Get recent contributors via commits API (more reliable than contributors endpoint)
+            commits_url = f"https://api.github.com/repos/{repo_full_name}/commits"
+            params = {
+                'per_page': min(max_contributors * 3, 100),  # Get more to filter
+                'since': days_ago(90)
+            }
+
+            response = self.session.get(commits_url, headers=self.headers, params=params, timeout=10)
+
+            if self._rate_limit_wait(response):
+                response = self.session.get(commits_url, headers=self.headers, params=params, timeout=10)
+
+            if response.status_code == 200:
+                commits = response.json()
+                author_counts = {}
+
+                # Count commits by author
+                for commit in commits:
+                    if commit.get('author') and commit['author']['type'] == 'User':
+                        author_login = commit['author']['login']
+                        author_counts[author_login] = author_counts.get(author_login, 0) + 1
+
+                # Sort by commit count and get top contributors
+                sorted_authors = sorted(author_counts.items(), key=lambda x: x[1], reverse=True)
+
+                for login, commit_count in sorted_authors[:max_contributors]:
+                    # Get maintainer status for this user
+                    maintainer_info = self.check_maintainer_status(repo_full_name, login)
+
+                    # Get user details
+                    user_details = self.get_user_details(login)
+
+                    contributor_data = {
+                        'user': {
+                            'login': login,
+                            'type': 'User',
+                            'id': user_details.get('id')
+                        },
+                        'signal': f"Core contributor: {commit_count} commits in last 90 days",
+                        'signal_type': 'core_contributor',
+                        'signal_at': to_utc_iso8601(utc_now()),
+                        'commit_count_90d': commit_count,
+                        'maintainer_status': maintainer_info,
+                        'url': f"https://github.com/{repo_full_name}/commits?author={login}"
+                    }
+
+                    contributors.append(contributor_data)
+
+        except Exception as e:
+            # Fallback to basic PR/commit authors if contributor analysis fails
+            pass
+
+        return contributors
+
+    def process_repo_concurrent(self, repo: Dict) -> ProcessingResult:
+        """Process a single repository for concurrent processing"""
+        repo_full_name = repo['full_name']
+        start_time = time.time()
+
+        try:
+            prospects = []
+
+            # First, try to get maintainers and core contributors (higher quality)
+            maintainer_authors = self.get_maintainer_contributors(repo, max_contributors=8)
+
+            if maintainer_authors:
+                for author_data in maintainer_authors:
+                    prospect = self.create_prospect(author_data, repo)
+                    if prospect:
+                        prospects.append(prospect)
+
+            # Fallback to PR authors if we need more prospects
+            if len(maintainer_authors) < 3:
+                pr_authors = self.get_pr_authors(repo)
+
+                if pr_authors:
+                    for author_data in pr_authors:
+                        # Skip if we already processed this user as maintainer
+                        login = author_data['user']['login']
+                        if any(p.login == login for p in prospects):
+                            continue
+
+                        prospect = self.create_prospect(author_data, repo)
+                        if prospect:
+                            prospects.append(prospect)
+
+            # Get commit authors as last resort
+            commit_authors = self.get_commit_authors(repo)
+
+            if commit_authors:
+                for author_data in commit_authors:
+                    # Skip if we already processed this user
+                    login = author_data['user']['login']
+                    if any(p.login == login for p in prospects):
+                        continue
+
+                    prospect = self.create_prospect(author_data, repo)
+                    if prospect:
+                        prospects.append(prospect)
+
+            # Convert prospects to dicts for serialization
+            prospect_dicts = [p.to_dict() for p in prospects if p]
+
+            return ProcessingResult(
+                repo_full_name=repo_full_name,
+                success=True,
+                prospects=prospect_dicts,
+                processing_time=time.time() - start_time
+            )
+
+        except Exception as e:
+            return ProcessingResult(
+                repo_full_name=repo_full_name,
+                success=False,
+                prospects=[],
+                error=str(e),
+                processing_time=time.time() - start_time
+            )
     
     def parse_github_url(self, url: str) -> Dict:
         """Parse GitHub URL to extract user/repo information"""
@@ -816,7 +1196,15 @@ class GitHubScraper:
         
         # Get full user details
         user_details = self.get_user_details(user['login'])
-        
+
+        # Get maintainer status information
+        maintainer_status = author_data.get('maintainer_status', {})
+        is_maintainer = maintainer_status.get('is_maintainer', False)
+        is_org_member = maintainer_status.get('is_org_member', False)
+        is_codeowner = maintainer_status.get('is_codeowner', False)
+        permission_level = maintainer_status.get('permission_level', 'read')
+        commit_count_90d = author_data.get('commit_count_90d')
+
         # Extract emails
         email_commit = author_data.get('email')
         email_profile = user_details.get('email')
@@ -831,6 +1219,39 @@ class GitHubScraper:
         blog_url = user_details.get('blog', '')
         if blog_url and 'linkedin.com/in/' in blog_url:
             linkedin_username = blog_url.split('linkedin.com/in/')[-1].split('/')[0].split('?')[0]
+
+        # Enhanced contact enrichment
+        best_email = self._choose_main_email(user_details.get('email'), email_commit)
+
+        # Calculate contactability score
+        contactability_score = 0
+        if best_email:
+            contactability_score += 30
+            if user_details.get('email'):  # Profile email preferred
+                contactability_score += 10
+        if linkedin_username:
+            contactability_score += 30
+
+        # Extract corporate domain
+        corporate_domain = self._extract_corporate_domain(best_email, blog_url, user_details.get('company'))
+
+        # Determine email type
+        email_type = 'unknown'
+        if best_email:
+            email_type = self._determine_email_type(best_email)
+
+        # Check for disposable email
+        is_disposable = False
+        if best_email:
+            is_disposable = self._is_disposable_email(best_email)
+
+        # Generate LinkedIn query for future resolution
+        linkedin_query = None
+        if not linkedin_username and user_details.get('name'):
+            # Create a search query for LinkedIn lookup in Phase 2
+            name = user_details['name']
+            company = user_details.get('company', '')
+            linkedin_query = f"{name} {company} site:linkedin.com/in/".strip()
         
         # Extract pronouns (often in bio or name field)
         pronouns = None
@@ -857,7 +1278,7 @@ class GitHubScraper:
             login=user['login'],
             id=user_details.get('id'),
             node_id=user_details.get('node_id'),
-            
+
             # Personal info
             name=user_details.get('name'),
             company=user_details.get('company'),
@@ -866,7 +1287,7 @@ class GitHubScraper:
             location=user_details.get('location'),
             bio=user_details.get('bio'),
             pronouns=pronouns,
-            
+
             # Repository context
             repo_full_name=repo['full_name'],
             repo_description=repo.get('description'),
@@ -878,7 +1299,21 @@ class GitHubScraper:
             stars=repo.get('stargazers_count', 0),
             forks=repo.get('forks_count'),
             watchers=repo.get('watchers_count'),
-            
+
+            # Maintainer status
+            is_maintainer=is_maintainer,
+            is_org_member=is_org_member,
+            is_codeowner=is_codeowner,
+            permission_level=permission_level,
+            commit_count_90d=commit_count_90d,
+
+            # Contact enrichment
+            contactability_score=contactability_score,
+            email_type=email_type,
+            is_disposable_email=is_disposable,
+            corporate_domain=corporate_domain,
+            linkedin_query=linkedin_query,
+
             # URLs
             github_user_url=f"https://github.com/{user['login']}",
             github_repo_url=f"https://github.com/{repo['full_name']}",
@@ -894,13 +1329,13 @@ class GitHubScraper:
             repos_url=user_details.get('repos_url'),
             events_url=user_details.get('events_url'),
             received_events_url=user_details.get('received_events_url'),
-            
+
             # Social/Professional
             twitter_username=user_details.get('twitter_username'),
             blog=user_details.get('blog'),
             linkedin_username=linkedin_username,
             hireable=user_details.get('hireable'),
-            
+
             # GitHub Statistics
             public_repos=user_details.get('public_repos'),
             public_gists=user_details.get('public_gists'),
@@ -911,13 +1346,13 @@ class GitHubScraper:
             private_gists=user_details.get('private_gists'),
             disk_usage=user_details.get('disk_usage'),
             collaborators=user_details.get('collaborators'),
-            
+
             # Contribution data
             contributions_last_year=contributions_last_year,
             total_contributions=total_contributions,
             longest_streak=None,
             current_streak=None,
-            
+
             # Account metadata
             created_at=user_details.get('created_at'),
             updated_at=user_details.get('updated_at'),
@@ -925,13 +1360,13 @@ class GitHubScraper:
             site_admin=user_details.get('site_admin'),
             gravatar_id=user_details.get('gravatar_id'),
             suspended_at=user_details.get('suspended_at'),
-            
+
             # Plan information
             plan_name=user_details.get('plan', {}).get('name') if user_details.get('plan') else None,
             plan_space=user_details.get('plan', {}).get('space') if user_details.get('plan') else None,
             plan_collaborators=user_details.get('plan', {}).get('collaborators') if user_details.get('plan') else None,
             plan_private_repos=user_details.get('plan', {}).get('private_repos') if user_details.get('plan') else None,
-            
+
             # Additional flags
             two_factor_authentication=user_details.get('two_factor_authentication'),
             has_organization_projects=user_details.get('has_organization_projects'),
@@ -947,6 +1382,22 @@ class GitHubScraper:
         if self.output_path:
             self._write_prospect_to_csv(prospect)
         
+        # Score the prospect before saving
+        prospect_dict = prospect.to_dict()
+        scoring_result = self.prospect_scorer.score_prospect(prospect_dict, repo)
+
+        # Update prospect with scoring results
+        prospect.prospect_score = scoring_result.total_score
+        prospect.prospect_tier = scoring_result.tier
+        prospect.scoring_components = scoring_result.component_scores
+        prospect.risk_factors = scoring_result.risk_factors
+        prospect.priority_signals = scoring_result.priority_signals
+        prospect.cohort = scoring_result.cohort
+
+        # Apply tier-based filtering - reject low-quality prospects
+        if scoring_result.tier == 'REJECT':
+            return None  # Don't include rejected prospects
+
         # Build Attio object rows
         self._upsert_person_record(user_details, user['login'], email_commit, repo)
         self._upsert_repo_record(repo)
@@ -957,7 +1408,7 @@ class GitHubScraper:
             self._update_person_with_signal(user['login'], repo, author_data)
         except Exception:
             pass
-        
+
         # Mark login as seen in dedup DB
         self._dedup_mark(user['login'])
             
@@ -1313,50 +1764,102 @@ class GitHubScraper:
             
         repos = self.search_repos()
         print(f"📦 Repos returned: {len(repos)}")
-        
-        # Use tqdm for progress tracking
-        repo_pbar = tqdm(repos, desc="Processing repos", unit="repo")
-        
-        for repo in repo_pbar:
-            repo_pbar.set_description(f"Processing {repo['full_name']}")
-            
-            # Get PR authors
-            if self.config['limits']['per_repo_prs'] > 0:
-                pr_authors = self.get_pr_authors(repo)
-                
-                if pr_authors:
-                    pr_pbar = tqdm(pr_authors, desc="  PR authors", unit="author", leave=False)
-                    for author_data in pr_pbar:
+
+        # Check if concurrent processing is enabled
+        concurrency_enabled = self.config.get('concurrency', {}).get('enabled', False)
+
+        if concurrency_enabled and len(repos) > 1:
+            # Use concurrent processing
+            print(f"🚀 Processing {len(repos)} repos concurrently with {self.concurrent_processor.max_workers} workers")
+            processing_results = self.concurrent_processor.process_repositories_concurrent(
+                repos, self.process_repo_concurrent
+            )
+
+            # Process results
+            total_prospects = 0
+            for result in processing_results:
+                if result.success:
+                    # Convert dicts back to Prospect objects
+                    for prospect_dict in result.prospects:
+                        # Create a temporary Prospect object from dict
+                        prospect = Prospect(**prospect_dict)
+                        self.all_prospects.append(prospect)
+                        if prospect.has_email():
+                            self.leads_with_email_count += 1
+                        total_prospects += 1
+                else:
+                    print(f"❌ Failed to process {result.repo_full_name}: {result.error}")
+
+            print(f"📊 Concurrent processing complete: {total_prospects} prospects from {len(processing_results)} repos")
+
+        else:
+            # Use traditional sequential processing
+            print(f"🔄 Processing {len(repos)} repos sequentially")
+
+            # Use tqdm for progress tracking
+            repo_pbar = tqdm(repos, desc="Processing repos", unit="repo")
+
+            for repo in repo_pbar:
+                repo_pbar.set_description(f"Processing {repo['full_name']}")
+
+                # First, try to get maintainers and core contributors (higher quality)
+                maintainer_authors = self.get_maintainer_contributors(repo, max_contributors=8)
+
+                if maintainer_authors:
+                    maintainer_pbar = tqdm(maintainer_authors, desc="  Core contributors", unit="author", leave=False)
+                    for author_data in maintainer_pbar:
                         prospect = self.create_prospect(author_data, repo)
                         if prospect:
                             self.all_prospects.append(prospect)
-                            pr_pbar.set_description(f"  Added {prospect.login}")
-                        
-            # Get commit authors
-            if self.config['limits']['per_repo_commits'] > 0:
-                commit_authors = self.get_commit_authors(repo)
-                
-                if commit_authors:
-                    commit_pbar = tqdm(commit_authors, desc="  Commit authors", unit="author", leave=False)
-                    for author_data in commit_pbar:
-                        prospect = self.create_prospect(author_data, repo)
-                        if prospect:
-                            self.all_prospects.append(prospect)
-                            commit_pbar.set_description(f"  Added {prospect.login}")
-                        
-            # Update main progress bar with current stats (leads = with email)
-            repo_pbar.set_postfix(prospects=len(self.all_prospects), leads=self.leads_with_email_count)
-                        
-            # Check if we've hit our leads (people with email) limit
-            if self.leads_with_email_count >= self.config['limits']['max_people']:
-                repo_pbar.set_description(f"Reached max leads limit ({self.config['limits']['max_people']})")
-                print(f"✅ Stopping early: collected {self.leads_with_email_count} leads (target {self.config['limits']['max_people']})")
-                break
-                
-            # Be nice to GitHub
-            time.sleep(self.config.get('delay', 1))
-        
-        repo_pbar.close()
+                            maintainer_pbar.set_description(f"  Added {prospect.login}")
+
+                # Fallback to PR authors if we need more prospects
+                if self.config['limits']['per_repo_prs'] > 0 and len(maintainer_authors) < 3:
+                    pr_authors = self.get_pr_authors(repo)
+
+                    if pr_authors:
+                        pr_pbar = tqdm(pr_authors, desc="  PR authors", unit="author", leave=False)
+                        for author_data in pr_pbar:
+                            # Skip if we already processed this user as maintainer
+                            login = author_data['user']['login']
+                            if any(p.login == login for p in self.all_prospects):
+                                continue
+
+                            prospect = self.create_prospect(author_data, repo)
+                            if prospect:
+                                self.all_prospects.append(prospect)
+                                pr_pbar.set_description(f"  Added {prospect.login}")
+
+                # Get commit authors as last resort
+                if self.config['limits']['per_repo_commits'] > 0:
+                    commit_authors = self.get_commit_authors(repo)
+
+                    if commit_authors:
+                        commit_pbar = tqdm(commit_authors, desc="  Commit authors", unit="author", leave=False)
+                        for author_data in commit_pbar:
+                            # Skip if we already processed this user
+                            login = author_data['user']['login']
+                            if any(p.login == login for p in self.all_prospects):
+                                continue
+
+                            prospect = self.create_prospect(author_data, repo)
+                            if prospect:
+                                self.all_prospects.append(prospect)
+                                commit_pbar.set_description(f"  Added {prospect.login}")
+
+                # Update main progress bar with current stats (leads = with email)
+                repo_pbar.set_postfix(prospects=len(self.all_prospects), leads=self.leads_with_email_count)
+
+                # Check if we've hit our leads (people with email) limit
+                if self.leads_with_email_count >= self.config['limits']['max_people']:
+                    repo_pbar.set_description(f"Reached max leads limit ({self.config['limits']['max_people']})")
+                    print(f"✅ Stopping early: collected {self.leads_with_email_count} leads (target {self.config['limits']['max_people']})")
+                    break
+
+                # Be nice to GitHub
+                time.sleep(self.config.get('delay', 1))
+
+            repo_pbar.close()
         
         # Print prospects summary at the end
         self.print_prospects_summary()
@@ -1375,15 +1878,19 @@ class GitHubScraper:
             # Core identification
             'lead_id', 'login', 'id', 'node_id',
             # Personal info
-            'name', 'company', 'email_public_commit', 'email_profile', 
+            'name', 'company', 'email_public_commit', 'email_profile',
             'location', 'bio', 'pronouns',
             # Repository context
-            'repo_full_name', 'repo_description', 'signal', 'signal_type', 
+            'repo_full_name', 'repo_description', 'signal', 'signal_type',
             'signal_at', 'topics', 'language', 'stars', 'forks', 'watchers',
+            # Maintainer status
+            'is_maintainer', 'is_org_member', 'is_codeowner', 'permission_level', 'commit_count_90d',
+            # Contact enrichment
+            'contactability_score', 'email_type', 'is_disposable_email', 'corporate_domain', 'linkedin_query',
             # URLs
-            'github_user_url', 'github_repo_url', 'avatar_url', 'html_url', 
-            'api_url', 'followers_url', 'following_url', 'gists_url', 
-            'starred_url', 'subscriptions_url', 'organizations_url', 
+            'github_user_url', 'github_repo_url', 'avatar_url', 'html_url',
+            'api_url', 'followers_url', 'following_url', 'gists_url',
+            'starred_url', 'subscriptions_url', 'organizations_url',
             'repos_url', 'events_url', 'received_events_url',
             # Social/Professional
             'twitter_username', 'blog', 'linkedin_username', 'hireable',
@@ -1392,15 +1899,15 @@ class GitHubScraper:
             'total_private_repos', 'owned_private_repos', 'private_gists',
             'disk_usage', 'collaborators',
             # Contribution data
-            'contributions_last_year', 'total_contributions', 
+            'contributions_last_year', 'total_contributions',
             'longest_streak', 'current_streak',
             # Account metadata
-            'created_at', 'updated_at', 'type', 'site_admin', 
+            'created_at', 'updated_at', 'type', 'site_admin',
             'gravatar_id', 'suspended_at',
             # Plan information
             'plan_name', 'plan_space', 'plan_collaborators', 'plan_private_repos',
             # Additional flags
-            'two_factor_authentication', 'has_organization_projects', 
+            'two_factor_authentication', 'has_organization_projects',
             'has_repository_projects'
         ]
         

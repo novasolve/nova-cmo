@@ -501,3 +501,4 @@ class SmartICPMatcher:
             actions.append(f"Tailor messaging for {icp.firmographics['size']} company profile")
 
         return actions
+

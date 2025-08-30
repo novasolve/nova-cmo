@@ -9,7 +9,7 @@ import json
 import time
 import logging
 from typing import Dict, List, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import requests
 from urllib.parse import urlparse
@@ -149,7 +149,9 @@ class RepoEnricher:
             commit_date = datetime.fromisoformat(
                 latest_commit['commit']['author']['date'].replace('Z', '+00:00')
             )
-            last_commit_age_days = (datetime.now() - commit_date).days
+            # Make current datetime timezone-aware to match commit_date
+            now = datetime.now(timezone.utc)
+            last_commit_age_days = (now - commit_date).days
 
         return {
             'commits_30d': commits_30d,

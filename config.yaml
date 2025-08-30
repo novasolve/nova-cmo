@@ -232,6 +232,12 @@ target_segments:
     score_multiplier: 1.1
     why: "Churn from NumPy/Pandas/Torch causes frequent test breakage"
 
+concurrency:
+  enabled: true
+  max_workers: 8
+  requests_per_hour: 4800  # Stay under 5000/hour limit
+  cache_dir: ".cache"
+
 dedupe:
   on: ["repo_full_name", "owner_login"]
   keep: "highest_score"

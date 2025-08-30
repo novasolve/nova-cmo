@@ -42,9 +42,9 @@ url: ## Quick URL scraping (usage: make url URL=@username)
 	./scrape_url.sh "$(URL)"
 
 # Lead Intelligence
-intelligence: install ## Run complete lead intelligence cycle (installs deps first)
-	@echo "🚀 Running Lead Intelligence System..."
-	python lead_intelligence/scripts/run_intelligence.py
+intelligence: install ## Run complete lead intelligence cycle (US + English only)
+	@echo "🚀 Running Lead Intelligence System (US + English profiles only)..."
+	python lead_intelligence/scripts/run_intelligence.py --us-only --english-only
 
 intelligence-demo: install ## Run intelligence system in demo mode (installs deps first)
 	@echo "🎭 Running Lead Intelligence System (Demo Mode)..."
@@ -128,3 +128,7 @@ clean: ## Clean up files
 clean-intelligence: ## Clean up intelligence data only
 	rm -rf lead_intelligence/data/
 	@echo "✅ Intelligence data cleaned up"
+
+# Catch-all target to prevent "make: *** No rule to make target" errors
+%:
+	@:
