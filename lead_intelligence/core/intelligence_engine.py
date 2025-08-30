@@ -1495,6 +1495,8 @@ class IntelligenceEngine:
             # Company domain inference
             if prospect.company:
                 enrichment['company_normalized'] = prospect.company.strip().lstrip('@').lower()
+            elif prospect.company is not None:
+                enrichment['company_normalized'] = prospect.company.lstrip('@').lower()
 
             # Technology stack inference
             if prospect.language:
@@ -1601,9 +1603,14 @@ class IntelligenceEngine:
         for lead in leads:
             if lead.prospect.company:
                 company = lead.prospect.company.strip().lstrip('@').lower()
-                if company not in companies:
-                    companies[company] = []
-                companies[company].append({
+            elif lead.prospect.company is not None:
+                company = lead.prospect.company.lstrip('@').lower()
+            else:
+                continue
+
+            if company not in companies:
+                companies[company] = []
+            companies[company].append({
                     'login': lead.prospect.login,
                     'score': lead.intelligence_score,
                     'email': lead.prospect.get_best_email()
