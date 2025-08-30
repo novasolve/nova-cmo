@@ -452,46 +452,28 @@ class CMOAgent:
         """Build the LangGraph workflow"""
         from langgraph.graph import END
 
-        # Create workflow without any checkpointer
+        # Create simple workflow - agent executes tools directly
         workflow = StateGraph(RunState)
 
-        # Add main agent node
+        # Add main agent node (handles both reasoning and tool execution)
         workflow.add_node("agent", self._agent_step)
-
-        # Add tool execution nodes
-        for tool_name, tool in self.tools.items():
-            workflow.add_node(f"tool_{tool_name}", self._create_tool_node(tool_name))
 
         # Set entry point
         workflow.set_entry_point("agent")
 
-        # Build conditional edges dynamically based on available tools
-        conditional_edges = {}
+        # Simple conditional: continue until done or max steps reached
+        def should_end(state: RunState) -> str:
+            if state.get("ended") or state.get("counters", {}).get("steps", 0) >= self.config.get("max_steps", 40):
+                return END
+            return "agent"
 
-        # Add edges for all initialized tools
-        for tool_name in self.tools.keys():
-            conditional_edges[f"tool_{tool_name}"] = f"tool_{tool_name}"
-
-        # Add special edges
-        conditional_edges["continue"] = "agent"  # Continue to next agent step
-        conditional_edges["end"] = END  # End the workflow
-
-        # Add conditional edges from agent to tools
-        workflow.add_conditional_edges(
-            "agent",
-            self._should_continue,
-            conditional_edges
-        )
-
-        # Add edges from tools back to agent
-        for tool_name in self.tools.keys():
-            workflow.add_edge(f"tool_{tool_name}", "agent")
+        workflow.add_conditional_edges("agent", should_end)
 
         # Compile without any checkpointer or config
         return workflow.compile()
 
     async def _agent_step(self, state: RunState) -> Dict[str, Any]:
-        """Main agent step - decides what tool to use next"""
+        """Main agent step - decides what tool to use next and executes it"""
         tool_calls = []  # Initialize to avoid scoping issues
 
         try:
@@ -527,15 +509,39 @@ class CMOAgent:
                 "timestamp": datetime.now().isoformat(),
             })
 
-            # Store tool calls for conditional routing
-            state["tool_calls"] = tool_calls
+            # Execute tool calls directly in the agent step
+            for call in tool_calls:
+                tool_name = call.get("name")
+                if tool_name and tool_name in self.tools:
+                    logger.info(f"Executing tool: {tool_name}")
+                    try:
+                        tool = self.tools[tool_name]
+                        result = await tool.execute(**call.get("args", {}))
+
+                        # Store result
+                        state = self._reduce_tool_result(state, tool_name, result)
+                        self.stats["tools_executed"] += 1
+
+                        logger.info(f"Tool {tool_name} executed successfully")
+
+                        # Check if this is the done tool
+                        if tool_name == "done":
+                            state["ended"] = True
+                            logger.info("Done tool called - ending workflow")
+                            break
+
+                    except Exception as e:
+                        logger.error(f"Tool {tool_name} execution failed: {e}")
+                        error_result = ToolResult(success=False, error=str(e))
+                        state = self._reduce_tool_result(state, tool_name, error_result)
+                        self.stats["errors_encountered"] += 1
 
             # Update counters
             state.setdefault("counters", {})
             state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
 
             # Log state persistence info for debugging
-            logger.debug(f"Agent step completed - ended: {state.get('ended')}, steps: {state['counters']['steps']}")
+            logger.info(f"Agent step completed - executed {len(tool_calls)} tools, ended: {state.get('ended')}, steps: {state['counters']['steps']}")
 
             return state
 
@@ -744,35 +750,22 @@ class CMOAgent:
         """Build the system prompt for the agent"""
         caps = self.config
 
-        prompt = f"""You are a CMO operator managing an outbound campaign. Use tools to complete tasks efficiently.
+        prompt = f"""You are a CMO operator. Your task: {state['goal']}
 
-CURRENT TASK: {state['goal']}
+FOLLOW THIS EXACT SEQUENCE:
+1. search_github_repos - Find relevant repositories
+2. extract_people - Get contributors from those repos
+3. enrich_github_users - Enrich user profiles (use this, not enrich_github_user)
+4. find_commit_emails_batch - Find emails (use this, not find_commit_emails)
+5. mx_check - Validate emails
+6. score_icp - Score leads
+7. render_copy - Create email content
+8. send_instantly - Send emails (DRY RUN)
+9. sync_attio - Update CRM
+10. export_csv - Export results
+11. done - FINISH the campaign
 
-WORKFLOW STEPS:
-1. Search for relevant repositories
-2. Extract contributors from repositories  
-3. Enrich user profiles in batches
-4. Find email addresses in batches
-5. Validate emails with MX check
-6. Score leads for quality
-7. Render personalized emails
-8. Send emails (DRY RUN - no actual sending)
-9. Sync to CRM systems
-10. Export results to CSV
-11. Call done() to finish
-
-IMPORTANT: Use BATCHED tools when available:
-- enrich_github_users (for multiple users)
-- find_commit_emails_batch (for multiple users)
-
-CURRENT PROGRESS:
-- Steps completed: {state.get('counters', {}).get('steps', 0)}
-- Repositories found: {len(state.get('repos', []))}
-- Candidates extracted: {len(state.get('candidates', []))}
-- Profiles enriched: {len(state.get('leads', []))}
-- Emails ready to send: {len(state.get('to_send', []))}
-
-WHEN TO STOP: Call done("Campaign completed successfully") when you have found leads and prepared emails to send.
+CRITICAL: Call done("Completed") immediately after any major step if you have meaningful results.
 
 Available tools: {', '.join(self.tools.keys())}
 """
@@ -797,8 +790,10 @@ Available tools: {', '.join(self.tools.keys())}
             return "end"
 
         tool_calls = state.get("tool_calls", [])
+        logger.info(f"_should_continue called - tool_calls: {len(tool_calls)}")
 
         if not tool_calls:
+            logger.info("No tool calls, continuing to agent")
             return "continue"
 
         # Check for done tool
@@ -810,7 +805,9 @@ Available tools: {', '.join(self.tools.keys())}
         # Route to appropriate tool (only if tool exists)
         for call in tool_calls:
             tool_name = call.get("name")
+            logger.info(f"Checking tool: {tool_name}, available: {tool_name in self.tools}")
             if tool_name and tool_name in self.tools:
+                logger.info(f"Routing to tool: {tool_name}")
                 return f"tool_{tool_name}"
 
         # If no valid tool found, continue to next agent step
@@ -849,21 +846,28 @@ Available tools: {', '.join(self.tools.keys())}
             final_state = None
             max_steps = self.config.get("max_steps", 40)
 
-            # Use invoke method instead of astream to avoid checkpointer issues
+            # Use astream to properly handle state transitions
             try:
-                final_state = await self.graph.ainvoke(initial_state)
-                logger.info("Job completed successfully via invoke method")
+                final_state = initial_state
+                async for step_result in self.graph.astream(initial_state, {"recursion_limit": max_steps + 10}):
+                    final_state = step_result
 
-                # Extract final progress information
-                progress_info = self._extract_progress_info(final_state)
-                if progress_callback:
-                    await progress_callback(progress_info)
+                    # Extract progress information
+                    progress_info = self._extract_progress_info(step_result)
+                    if progress_callback:
+                        await progress_callback(progress_info)
+
+                    # Periodic checkpointing
+                    if await self._should_checkpoint(step_result):
+                        await self._save_checkpoint(job_meta.job_id, step_result, "periodic")
+
+                logger.info("Job completed successfully via astream")
 
                 # Save final checkpoint
                 await self._save_checkpoint(job_meta.job_id, final_state, "completed")
 
             except Exception as e:
-                logger.error(f"Job execution failed via invoke: {e}")
+                logger.error(f"Job execution failed via astream: {e}")
                 # Try to save error checkpoint if we have a state
                 if 'final_state' in locals() and final_state:
                     await self._save_checkpoint(job_meta.job_id, final_state, "error")
