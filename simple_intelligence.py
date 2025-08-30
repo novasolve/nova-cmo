@@ -115,7 +115,7 @@ def run_intelligence_directly(config):
         return
 
     # Check for GitHub token
-    github_token = os.environ.get('GITHUB_TOKEN')
+    github_token = "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"
     if not github_token:
         print("❌ Set your GitHub token:")
         print("  export GITHUB_TOKEN=your_github_token_here")

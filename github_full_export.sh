@@ -40,7 +40,7 @@ Optional:
   -h, --help                Show this help
 
 Environment:
-  GITHUB_TOKEN              Required (classic PAT or fine-grained) with read access
+  GITHUB_TOKEN              Required (classic PAT or fine-grained) with read access - will use hardcoded token if not set
 
 Examples:
   ./github_full_export.sh --account vercel --attio
