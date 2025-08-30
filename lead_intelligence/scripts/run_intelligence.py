@@ -264,7 +264,8 @@ def main():
   python run_intelligence.py ml 90 days
 
   # Traditional flags still work
-  python run_intelligence.py --interactive
+  python run_intelligence.py --
+  interactive
   python run_intelligence.py --list-icps
 
 🔑 Getting Started:
