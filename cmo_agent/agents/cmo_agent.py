@@ -178,6 +178,13 @@ class CMOAgent:
         from ..core.state import ErrorHandler
         self.error_handler = ErrorHandler(self.config)
 
+        # Optional artifact management (fallback if module not present)
+        try:
+            from ..core.artifacts import get_artifact_manager
+            self.artifact_manager = get_artifact_manager(self.config)
+        except Exception:
+            self.artifact_manager = None
+
     def request_pause(self, job_id: str):
         """Request to pause a running job"""
         logger.info(f"Pause requested for job {job_id}")
@@ -943,6 +950,45 @@ Available tools: {', '.join(self.tools.keys())}
                 "report": finalization_result.get("report"),
             }
 
+        except Exception as e:
+            # Outer run_job failure handler
+            logger.error(f"Job execution failed: {e}")
+            job_id = job_meta.job_id if job_meta else "unknown"
+
+            # Attempt to checkpoint the latest known state
+            if 'final_state' in locals() and final_state:
+                try:
+                    await self._save_checkpoint(job_id, final_state, "error")
+                except Exception:
+                    pass
+
+            # Attach error to state if available
+            if 'final_state' in locals() and final_state and hasattr(final_state, 'setdefault'):
+                final_state.setdefault("errors", []).append({
+                    "stage": "job_execution",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "timestamp": datetime.now().isoformat(),
+                    "job_id": job_id,
+                    "critical": True,
+                })
+
+            # Finalize to collect partial artifacts
+            try:
+                finalization_result = await self._finalize_job(job_id, final_state if 'final_state' in locals() else None, "failed")
+            except Exception:
+                finalization_result = {"artifacts": [], "report": None}
+
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "job_id": job_id,
+                "final_state": final_state if 'final_state' in locals() else None,
+                "artifacts": finalization_result.get("artifacts", []),
+                "report": finalization_result.get("report"),
+            }
+
     async def resume_job(self, job_id: str, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Resume a paused job from saved state"""
         logger.info(f"Attempting to resume job {job_id}")
@@ -1028,35 +1074,6 @@ Available tools: {', '.join(self.tools.keys())}
                 })
 
             raise
-
-        except Exception as e:
-            logger.error(f"Job execution failed: {e}")
-            job_id = job_meta.job_id if job_meta else "unknown"
-
-            # Add critical error to final state if available
-            if final_state:
-                error_info = {
-                    "stage": "job_execution",
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "timestamp": datetime.now().isoformat(),
-                    "job_id": job_id,
-                    "critical": True,
-                }
-                final_state.setdefault("errors", []).append(error_info)
-
-            # Finalize job even on failure to collect partial results
-            finalization_result = await self._finalize_job(job_id, final_state, "failed")
-
-            return {
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "job_id": job_id,
-                "final_state": final_state,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
-            }
 
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
         """Extract progress information from RunState"""
@@ -1662,6 +1679,6 @@ Available tools: {', '.join(self.tools.keys())}
 
         for milestone in api_milestones:
             if api_calls == milestone:
-            return True
+                return True
 
         return False
