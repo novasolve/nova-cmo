@@ -1,0 +1,127 @@
+# ICP Configuration for LLM Development Tools
+# Targets commercial teams working on AI/ML platforms, observability, and data engineering
+
+version: 1.0
+
+# Core targeting criteria
+include_topics:
+  - llm
+  - mcp
+  - rag
+  - observability
+  - inference
+  - agents
+  - ai-platform
+  - data-engineering
+  - machine-learning
+  - mlops
+  - devops
+  - data-pipeline
+  - data-processing
+  - data-analysis
+
+exclude_topics:
+  - vpn
+  - v2ray
+  - warp
+  - instagram
+  - weibo
+  - ctf
+  - chromego
+  - hiddify
+  - awesome
+  - awesome-list
+  - tutorial
+  - examples
+  - docs
+  - documentation
+  - template
+  - starter
+  - playground
+  - dotfiles
+  - sandbox
+  - course
+  - book
+  - sample
+
+# Technical criteria
+languages:
+  - python
+  - typescript
+  - go
+  - rust
+  - javascript
+
+min_stars: 100
+window_days: 30
+prefer_orgs: true
+
+# Geographic and company targeting
+geo_allow:
+  - US
+  - CA
+  - EU
+  - UK
+  - SG
+  - JP
+  - KR
+  - AU
+  - DE
+  - FR
+  - NL
+
+geo_block:
+  - CN
+  - RU
+  - IR
+  - KP
+
+company_whitelist:
+  - NVIDIA
+  - OpenAI
+  - Anthropic
+  - Snowflake
+  - Databricks
+  - HuggingFace
+  - Cohere
+  - TogetherAI
+  - Replicate
+  - StabilityAI
+  - WeightsAndBiases
+  - CometML
+  - ScaleAI
+  - Adept
+  - InflectionAI
+  - MistralAI
+  - xAI
+
+# Compliance settings
+blocked_companies: []
+blocked_email_domains: []
+prohibited_bio_terms: []
+prohibited_repo_terms: []
+
+# Quality filters
+university_penalty: true
+academic_domains:
+  - .edu
+  - .ac.uk
+  - .ac.jp
+  - .edu.cn
+
+# Scoring weights for prospect evaluation
+scoring_weights:
+  maintainer: 35
+  org_member: 25
+  contactable: 20
+  icp_match: 15
+  stars_velocity: 5
+  university_penalty: -15
+  off_icp_penalty: -40
+
+# Tier thresholds
+tier_thresholds:
+  A: 70
+  B: 55
+  C: 40
+  REJECT: 0
