@@ -120,6 +120,13 @@ class GitHubTool(BaseTool):
         """Make authenticated GitHub API request"""
         import aiohttp
 
+        # Record API call attempt
+        try:
+            from .monitoring import record_api_call
+            record_api_call_attempted = True
+        except ImportError:
+            record_api_call_attempted = False
+
         url = f"{self.base_url}{endpoint}"
         headers = {
             "Authorization": f"Bearer {self.github_token}",
@@ -127,16 +134,30 @@ class GitHubTool(BaseTool):
             "User-Agent": "CMO-Agent/1.0"
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.request(method, url, headers=headers, **kwargs) as response:
-                if response.status == 403:
-                    reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                    reset_datetime = datetime.fromtimestamp(reset_time)
-                    logger.warning(f"GitHub rate limited. Reset at: {reset_datetime}")
-                    raise Exception(f"Rate limited until {reset_datetime}")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.request(method, url, headers=headers, **kwargs) as response:
+                    if response.status == 403:
+                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        reset_datetime = datetime.fromtimestamp(reset_time)
+                        logger.warning(f"GitHub rate limited. Reset at: {reset_datetime}")
+                        if record_api_call_attempted:
+                            record_api_call(False)  # Record failed API call
+                        raise Exception(f"Rate limited until {reset_datetime}")
 
-                response.raise_for_status()
-                return await response.json()
+                    response.raise_for_status()
+                    result = await response.json()
+
+                    # Record successful API call
+                    if record_api_call_attempted:
+                        record_api_call(True)
+
+                    return result
+        except Exception as e:
+            # Record failed API call
+            if record_api_call_attempted:
+                record_api_call(False)
+            raise
 
 
 class InstantlyTool(BaseTool):
