@@ -2,7 +2,7 @@
 # Copy this file and modify for your specific campaigns
 
 # Job limits and caps
-max_steps: 40
+max_steps: 16
 max_repos: 600
 max_people: 3000
 max_api_calls: 10000
