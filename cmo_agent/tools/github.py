@@ -2,13 +2,55 @@
 GitHub discovery and enrichment tools
 """
 import logging
+import sys
+import os
 from typing import List, Dict, Any
+from datetime import datetime, timedelta
+
+# Add current directory to path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 try:
     from .base import GitHubTool, ToolResult
-    from ..core.monitoring import record_api_call, record_error
+    try:
+        from ..core.monitoring import record_api_call, record_error
+    except ImportError:
+        # Monitoring not available
+        record_api_call = lambda: None
+        record_error = lambda *args: None
 except ImportError:
-    from base import GitHubTool, ToolResult
-    # Monitoring not available in standalone mode
+    try:
+        from base import GitHubTool, ToolResult
+        # Monitoring not available in standalone mode
+        record_api_call = lambda: None
+        record_error = lambda *args: None
+    except ImportError:
+        # Create minimal fallback classes
+        class ToolResult:
+            def __init__(self, success: bool, data: Any = None, error: str = None, metadata: Dict = None):
+                self.success = success
+                self.data = data or {}
+                self.error = error
+                self.metadata = metadata or {}
+
+            def to_dict(self) -> Dict[str, Any]:
+                return {
+                    "success": self.success,
+                    "data": self.data,
+                    "error": self.error,
+                    "metadata": self.metadata,
+                }
+
+        class GitHubTool:
+            def __init__(self, name: str, description: str, github_token: str):
+                self.name = name
+                self.description = description
+                self.github_token = github_token
 
 logger = logging.getLogger(__name__)
 
@@ -241,4 +283,150 @@ class FindCommitEmails(GitHubTool):
 
         except Exception as e:
             logger.error(f"Commit email search failed for {login}: {e}")
+            return ToolResult(success=False, error=str(e))
+
+
+class EnrichGitHubUsers(GitHubTool):
+    """Batch enrich GitHub user profiles tool"""
+
+    def __init__(self, github_token: str):
+        super().__init__(
+            name="enrich_github_users",
+            description="Get detailed GitHub user profile information for multiple users",
+            github_token=github_token
+        )
+
+    async def execute(self, logins: List[str], **kwargs) -> ToolResult:
+        """Enrich multiple user profiles"""
+        try:
+            profiles = []
+            batch_size = kwargs.get("batch_size", 10)  # Process in smaller batches to avoid rate limits
+
+            for i in range(0, len(logins), batch_size):
+                batch_logins = logins[i:i + batch_size]
+
+                for login in batch_logins:
+                    try:
+                        # Get user profile
+                        user_data = await self._github_request(f"/users/{login}")
+
+                        profile = {
+                            "login": user_data["login"],
+                            "id": user_data["id"],
+                            "name": user_data.get("name"),
+                            "company": user_data.get("company"),
+                            "location": user_data.get("location"),
+                            "email": user_data.get("email"),  # Profile email as fallback
+                            "bio": user_data.get("bio"),
+                            "blog": user_data.get("blog"),
+                            "twitter_username": user_data.get("twitter_username"),
+                            "public_repos": user_data["public_repos"],
+                            "public_gists": user_data["public_gists"],
+                            "followers": user_data["followers"],
+                            "following": user_data["following"],
+                            "created_at": user_data["created_at"],
+                            "updated_at": user_data["updated_at"],
+                            "html_url": user_data["html_url"],
+                            "api_url": user_data["url"],
+                        }
+                        profiles.append(profile)
+
+                    except Exception as e:
+                        logger.warning(f"Failed to enrich user {login}: {e}")
+                        # Add minimal profile for failed users
+                        profiles.append({
+                            "login": login,
+                            "error": str(e),
+                            "enriched": False
+                        })
+                        continue
+
+            return ToolResult(
+                success=True,
+                data={"profiles": profiles, "count": len(profiles), "requested": len(logins)},
+                metadata={"batch_size": batch_size, "successful": len([p for p in profiles if p.get("enriched") != False])}
+            )
+
+        except Exception as e:
+            logger.error(f"Batch user enrichment failed: {e}")
+            return ToolResult(success=False, error=str(e))
+
+
+class FindCommitEmailsBatch(GitHubTool):
+    """Batch find commit emails for multiple GitHub users tool"""
+
+    def __init__(self, github_token: str):
+        super().__init__(
+            name="find_commit_emails_batch",
+            description="Find email addresses from multiple users' commit history",
+            github_token=github_token
+        )
+
+    async def execute(self, user_repo_pairs: List[Dict[str, Any]], days: int = 90, **kwargs) -> ToolResult:
+        """Find commit emails for multiple users across their repos"""
+        try:
+            user_emails = {}
+            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            batch_size = kwargs.get("batch_size", 5)  # Process fewer users at once
+
+            # Group by user to avoid duplicate work
+            user_to_repos = {}
+            for pair in user_repo_pairs:
+                login = pair["login"]
+                repo_full_name = pair["repo_full_name"]
+                if login not in user_to_repos:
+                    user_to_repos[login] = []
+                user_to_repos[login].append(repo_full_name)
+
+            # Process users in batches
+            logins = list(user_to_repos.keys())
+            for i in range(0, len(logins), batch_size):
+                batch_logins = logins[i:i + batch_size]
+
+                for login in batch_logins:
+                    try:
+                        emails = set()
+                        repos = user_to_repos[login][:5]  # Limit repos per user
+
+                        for repo_full_name in repos:
+                            try:
+                                # Get recent commits from this user in this repo
+                                commits = await self._github_request(
+                                    f"/repos/{repo_full_name}/commits",
+                                    params={
+                                        "author": login,
+                                        "since": cutoff_date,
+                                        "per_page": 10  # Fewer commits per repo
+                                    }
+                                )
+
+                                for commit in commits:
+                                    if commit.get("commit", {}).get("author", {}).get("email"):
+                                        email = commit["commit"]["author"]["email"]
+                                        if "@" in email and not email.endswith("@users.noreply.github.com"):
+                                            emails.add(email)
+
+                            except Exception as e:
+                                logger.warning(f"Failed to get commits for {login} in {repo_full_name}: {e}")
+                                continue
+
+                        user_emails[login] = {
+                            "emails": list(emails),
+                            "count": len(emails),
+                            "repos_searched": len(repos)
+                        }
+
+                    except Exception as e:
+                        logger.warning(f"Failed to find emails for {login}: {e}")
+                        user_emails[login] = {"emails": [], "count": 0, "error": str(e)}
+                        continue
+
+            return ToolResult(
+                success=True,
+                data={"user_emails": user_emails, "total_users": len(logins)},
+                metadata={"days_back": days, "batch_size": batch_size}
+            )
+
+        except Exception as e:
+            logger.error(f"Batch commit email search failed: {e}")
             return ToolResult(success=False, error=str(e))
