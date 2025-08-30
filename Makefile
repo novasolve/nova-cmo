@@ -1,6 +1,12 @@
 # Lead Intelligence System Makefile
 # Usage: make <target>
 
+# Source .env file if it exists
+ifneq (,$(wildcard .env))
+    include .env
+    export
+endif
+
 .PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom
 
 # Default target
@@ -46,29 +52,29 @@ intelligence: install ## Run complete lead intelligence cycle (US + English only
 	@echo "🚀 Running Lead Intelligence System..."
 	@echo "🎯 Available ICPs (Ideal Customer Profiles):"
 	@echo "=============================================="
-	@GITHUB_TOKEN=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 python lead_intelligence/scripts/run_intelligence.py --list-icps || echo "⚠️  Could not load ICP list"
+	@python lead_intelligence/scripts/run_intelligence.py --list-icps || echo "⚠️  Could not load ICP list"
 	@echo ""
 	@echo "📊 Starting intelligence pipeline..."
-	GITHUB_TOKEN=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 python lead_intelligence/scripts/run_intelligence.py --us-only --english-only $(filter-out $@ install,$(MAKECMDGOALS))
+	python lead_intelligence/scripts/run_intelligence.py --us-only --english-only $(filter-out $@ install,$(MAKECMDGOALS))
 
 # Enhanced Data Collection (Phase 1)
 collect: install ## Enhanced data collection for Phase 1
 	@echo "🚀 Running Enhanced Data Collection..."
 	@echo "🎯 Available ICPs (Ideal Customer Profiles):"
 	@echo "=============================================="
-	@GITHUB_TOKEN=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 python lead_intelligence/core/data_collector.py --icp all --config config.yaml --max-repos 50 --max-leads 25
+	@python lead_intelligence/core/data_collector.py --icp all --config config.yaml --max-repos 50 --max-leads 25
 
 collect-pypi: install ## Collect PyPI maintainer prospects
 	@echo "📦 Collecting PyPI Maintainers..."
-	GITHUB_TOKEN=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 python lead_intelligence/core/data_collector.py --icp icp01_pypi_maintainers --config config.yaml --max-repos 50 --max-leads 25
+	python lead_intelligence/core/data_collector.py --icp icp01_pypi_maintainers --config config.yaml --max-repos 50 --max-leads 25
 
 collect-ml: install ## Collect ML/DS maintainer prospects
 	@echo "🧠 Collecting ML/DS Maintainers..."
-	GITHUB_TOKEN=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 python lead_intelligence/core/data_collector.py --icp icp02_ml_ds_maintainers --config config.yaml --max-repos 50 --max-leads 25
+	python lead_intelligence/core/data_collector.py --icp icp02_ml_ds_maintainers --config config.yaml --max-repos 50 --max-leads 25
 
 collect-saas: install ## Collect SaaS company prospects
 	@echo "🚀 Collecting SaaS Company Prospects..."
-	GITHUB_TOKEN=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 python lead_intelligence/core/data_collector.py --icp icp03_seed_series_a_python_saas --config config.yaml --max-repos 30 --max-leads 15
+	python lead_intelligence/core/data_collector.py --icp icp03_seed_series_a_python_saas --config config.yaml --max-repos 30 --max-leads 15
 
 intelligence-demo: install ## Run intelligence system in demo mode (installs deps first)
 	@echo "🎭 Running Lead Intelligence System (Demo Mode)..."
