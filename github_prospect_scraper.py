@@ -496,13 +496,19 @@ class GitHubScraper:
             base_query += f' ({lang_filters})'
 
         # Stars filter
-        if icp_config.get('min_stars'):
-            base_query += f' stars:>={icp_config["min_stars"]}'
+        min_stars = icp_config.get('min_stars')
+        if min_stars:
+            if isinstance(min_stars, str):
+                min_stars = int(min_stars)
+            base_query += f' stars:>={min_stars}'
 
         # Window filter (recent activity)
-        if icp_config.get('window_days'):
+        window_days = icp_config.get('window_days')
+        if window_days:
+            if isinstance(window_days, str):
+                window_days = int(window_days)
             from datetime import datetime, timedelta
-            cutoff_date = (datetime.now() - timedelta(days=icp_config['window_days'])).strftime('%Y-%m-%d')
+            cutoff_date = (datetime.now() - timedelta(days=window_days)).strftime('%Y-%m-%d')
             base_query += f' pushed:>={cutoff_date}'
 
         # Exclude archived repos
@@ -618,7 +624,10 @@ class GitHubScraper:
     def _passes_icp_filters(self, repo: Dict, icp_config: Dict) -> bool:
         """Check if repository passes ICP filters"""
         # Check stars threshold
-        if icp_config.get('min_stars') and repo.get('stargazers_count', 0) < icp_config['min_stars']:
+        min_stars = icp_config.get('min_stars')
+        if min_stars and isinstance(min_stars, str):
+            min_stars = int(min_stars)
+        if min_stars and repo.get('stargazers_count', 0) < min_stars:
             return False
 
         # Check if archived
