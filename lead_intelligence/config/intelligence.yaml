@@ -1,0 +1,138 @@
+# Lead Intelligence Configuration
+version: "2.0.0"
+
+# Core Settings
+# GitHub token is loaded from environment variable
+# Set with: export GITHUB_TOKEN=your_token_here
+github_token: ""
+base_config_path: "config.yaml"
+
+# Output Configuration
+output_dir: "lead_intelligence/data"
+analysis_dir: "lead_intelligence/analysis"
+reporting_dir: "lead_intelligence/reporting"
+
+# Processing Configuration
+enrichment_enabled: true
+scoring_enabled: true
+max_workers: 4
+cache_ttl_hours: 24
+
+# Advanced Features
+validation_enabled: true
+error_handling_enabled: true
+attio_integration_enabled: true
+backup_enabled: true
+logging_level: "INFO"
+
+# Attio Integration (set these environment variables)
+attio_api_token_env: "ATTIO_API_TOKEN"
+attio_workspace_id_env: "ATTIO_WORKSPACE_ID"
+
+# Data Organization
+data_organization:
+  create_backups: true
+  save_metadata: true
+  organize_by_date: true
+  compress_old_data: false
+
+# Quality Assurance
+quality_assurance:
+  strict_validation: true
+  quality_threshold: 0.6
+  auto_clean_invalid: false
+  generate_quality_reports: true
+
+# Intelligence Scoring Weights
+scoring_weights:
+  email_quality: 3.0
+  profile_email_bonus: 1.0
+  follower_engagement: 2.0
+  repository_quality: 2.0
+  company_info: 1.0
+  location_info: 0.5
+  bio_completeness: 0.5
+  recent_activity: 1.5
+
+# Quality Signal Definitions
+quality_signals:
+  has_email: "Prospect has at least one email address"
+  profile_email: "Prospect has GitHub profile email (preferred)"
+  has_company: "Prospect has company information"
+  has_location: "Prospect has location information"
+  detailed_bio: "Prospect has detailed bio (>50 characters)"
+  high_followers: "Prospect has >100 GitHub followers"
+  active_contributor: "Prospect has >20 public repositories"
+  highly_active: "Prospect has >50 contributions in last year"
+
+# Risk Factor Definitions
+risk_factors:
+  no_email: "No email address found"
+  no_company: "No company information"
+  no_location: "No location information"
+  low_followers: "Very few GitHub followers (<5)"
+  low_activity: "Low GitHub activity (<3 public repos)"
+  low_recent_activity: "Low recent activity (<5 contributions/year)"
+
+# Opportunity Signal Definitions
+opportunity_signals:
+  high_recent_activity: "High recent activity (>20 contributions/year)"
+  popular_repository: "Maintains popular repository (>500 stars)"
+  modern_tech_stack: "Works with modern technologies"
+  open_to_opportunities: "Marked as hireable on GitHub"
+
+# Engagement Potential Thresholds
+engagement_thresholds:
+  high: 5.0
+  medium: 3.0
+  low: 1.0
+
+# Enrichment Configuration
+enrichment:
+  linkedin_extraction: true
+  domain_analysis: true
+  company_normalization: true
+  technology_inference: true
+  activity_pattern_analysis: true
+
+# Reporting Configuration
+reporting:
+  generate_summary: true
+  generate_quality_analysis: true
+  generate_opportunity_analysis: true
+  export_formats: ["csv", "json"]
+  top_performers_count: 10
+
+# Public Email Domain List (for domain analysis)
+public_email_domains:
+  - gmail.com
+  - yahoo.com
+  - hotmail.com
+  - outlook.com
+  - aol.com
+  - proton.me
+  - protonmail.com
+  - icloud.com
+  - live.com
+  - msn.com
+  - yandex.com
+  - mail.com
+
+# Technology Stack Categories
+modern_technologies:
+  - python
+  - javascript
+  - typescript
+  - go
+  - rust
+  - kotlin
+  - swift
+  - dart
+  - elixir
+  - clojure
+
+# Data Retention
+retention:
+  raw_data_days: 30
+  processed_data_days: 90
+  reports_days: 365

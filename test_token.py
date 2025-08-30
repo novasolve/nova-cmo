@@ -5,17 +5,38 @@ import os
 import requests
 import json
 
+def get_auth_header(token: str) -> str:
+    """Get the appropriate authorization header based on token format"""
+    token = token.strip()
+
+    # Detect token type and use appropriate authorization method
+    if token.startswith('ghp_'):
+        # Classic personal access token - use token auth
+        return f'token {token}'
+    elif token.startswith('github_token_'):
+        # Fine-grained personal access token - use Bearer auth
+        return f'Bearer {token}'
+    else:
+        # Unknown format - try Bearer first (GitHub supports both for most tokens)
+        return f'Bearer {token}'
+
 def test_github_token():
-    token = os.environ.get('GITHUB_TOKEN')
+    # Get token from environment
+    token = os.environ.get('GITHUB_TOKEN', '')
     if not token:
-        print("❌ GITHUB_TOKEN not set")
+        print("❌ No GITHUB_TOKEN environment variable set!")
+        print("Please run: export GITHUB_TOKEN=your_token_here")
         return
-    
+
     print(f"🔑 Token: {token[:10]}...{token[-4:]}")
     print(f"📏 Token length: {len(token)}")
-    
+
+    # Detect token format and use appropriate auth method
+    auth_header = get_auth_header(token)
+    print(f"🔐 Using auth method: {auth_header.split()[0]}")
+
     headers = {
-        'Authorization': f'Bearer {token}',
+        'Authorization': auth_header,
         'Accept': 'application/vnd.github.v3+json',
         'User-Agent': 'leads-scraper/1.0'
     }
