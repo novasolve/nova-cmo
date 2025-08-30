@@ -163,8 +163,7 @@ class GitHubScraper:
         }
         # Only add auth header if token is provided and valid
         if token and token.strip():
-            # Prefer Bearer for fine-grained and classic tokens; GitHub supports both
-            self.headers['Authorization'] = f'Bearer {token}'
+            self.headers['Authorization'] = self._get_auth_header(token)
         self.prospects: Set[str] = set()  # Track unique lead_ids
         self.all_prospects: List[Prospect] = []
         self.csv_file = None
@@ -200,6 +199,21 @@ class GitHubScraper:
                 print(f"⚠️  Dedup DB init failed at {self.dedup_db_path}: {e}. Continuing without dedup.")
                 self.dedup_enabled = False
                 self._dedup_conn = None
+
+    def _get_auth_header(self, token: str) -> str:
+        """Get the appropriate authorization header based on token format"""
+        token = token.strip()
+
+        # Detect token type and use appropriate authorization method
+        if token.startswith('ghp_'):
+            # Classic personal access token - use token auth
+            return f'token {token}'
+        elif token.startswith('github_token_'):
+            # Fine-grained personal access token - use Bearer auth
+            return f'Bearer {token}'
+        else:
+            # Unknown format - try Bearer first (GitHub supports both for most tokens)
+            return f'Bearer {token}'
 
     def _dedup_seen(self, login: Optional[str]) -> bool:
         if not (self.dedup_enabled and self._dedup_conn and login):
@@ -583,7 +597,7 @@ class GitHubScraper:
             "to": to_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         headers = {
-            "Authorization": f"Bearer {self.token}",
+            "Authorization": self._get_auth_header(self.token),
             "Accept": "application/json",
             "User-Agent": "github-prospect-scraper/1.1"
         }

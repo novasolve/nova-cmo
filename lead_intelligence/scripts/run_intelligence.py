@@ -31,7 +31,7 @@ def setup_logging(verbose: bool = False):
 
 def load_icp_options() -> Dict:
     """Load ICP configuration options"""
-    icp_config_path = Path(__file__).parent.parent / "configs" / "icp" / "options.yaml"
+    icp_config_path = Path(__file__).parent.parent.parent / "configs" / "icp" / "options.yaml"
     try:
         import yaml
         with open(icp_config_path, 'r') as f:
@@ -68,48 +68,215 @@ def print_icp_list():
                 print(f"    💻 Tech: {', '.join(tech['language'])}")
         print()
 
+def parse_simple_args(args_list):
+    """Parse simple natural language style arguments"""
+    config = {
+        'max_repos': 50,
+        'max_leads': 200,
+        'search_days': 60,
+        'icp': None,
+        'interactive': False
+    }
+
+    i = 0
+    while i < len(args_list):
+        arg = args_list[i].lower()
+
+        # Handle number + unit patterns
+        if arg.isdigit():
+            num = int(arg)
+            if i + 1 < len(args_list):
+                next_arg = args_list[i + 1].lower()
+
+                # Handle "50 repos", "100 leads", "30 days" patterns
+                if 'repo' in next_arg:
+                    config['max_repos'] = num
+                    i += 2
+                    continue
+                elif 'lead' in next_arg:
+                    config['max_leads'] = num
+                    i += 2
+                    continue
+                elif 'day' in next_arg:
+                    config['search_days'] = num
+                    i += 2
+                    continue
+
+        # Handle ICP patterns
+        if arg in ['icp', 'target']:
+            if i + 1 < len(args_list):
+                icp_name = args_list[i + 1]
+                # Map common names to ICP IDs
+                icp_mapping = {
+                    'pypi': 'icp01_pypi_maintainers',
+                    'python': 'icp01_pypi_maintainers',
+                    'ml': 'icp02_ml_ds_maintainers',
+                    'ai': 'icp02_ml_ds_maintainers',
+                    'saas': 'icp03_seed_series_a_python_saas',
+                    'api': 'icp04_api_sdk_tooling',
+                    'academic': 'icp05_academic_labs',
+                    'university': 'icp05_academic_labs',
+                    'django': 'icp06_django_flask_products',
+                    'flask': 'icp06_django_flask_products',
+                    'fintech': 'icp07_regulated_startups',
+                    'agency': 'icp08_agencies_consultancies',
+                    'pytest': 'icp09_pytest_ci_plugin_authors',
+                    'flaky': 'icp10_explicit_flaky_signals'
+                }
+
+                # Check if it's a direct ICP ID or mapped name
+                if icp_name.startswith('icp'):
+                    config['icp'] = icp_name
+                else:
+                    config['icp'] = icp_mapping.get(icp_name, icp_name)
+                i += 2
+                continue
+
+        # Handle simple commands
+        if arg in ['interactive', 'i']:
+            config['interactive'] = True
+            i += 1
+            continue
+        elif arg == 'help':
+            return None  # Will show help
+        elif arg == 'list':
+            if i + 1 < len(args_list) and args_list[i + 1].lower() == 'icps':
+                return {'command': 'list_icps'}
+            i += 1
+            continue
+
+        # Handle direct ICP names (like "pypi", "ml", etc.)
+        if arg in ['pypi', 'python', 'ml', 'ai', 'saas', 'api', 'academic', 'university',
+                  'django', 'flask', 'fintech', 'agency', 'pytest', 'flaky']:
+            icp_mapping = {
+                'pypi': 'icp01_pypi_maintainers',
+                'python': 'icp01_pypi_maintainers',
+                'ml': 'icp02_ml_ds_maintainers',
+                'ai': 'icp02_ml_ds_maintainers',
+                'saas': 'icp03_seed_series_a_python_saas',
+                'api': 'icp04_api_sdk_tooling',
+                'academic': 'icp05_academic_labs',
+                'university': 'icp05_academic_labs',
+                'django': 'icp06_django_flask_products',
+                'flask': 'icp06_django_flask_products',
+                'fintech': 'icp07_regulated_startups',
+                'agency': 'icp08_agencies_consultancies',
+                'pytest': 'icp09_pytest_ci_plugin_authors',
+                'flaky': 'icp10_explicit_flaky_signals'
+            }
+            config['icp'] = icp_mapping.get(arg, arg)
+            i += 1
+            continue
+
+        i += 1
+
+    return config
+
+def print_simple_help():
+    """Print simple usage help"""
+    print("🚀 Lead Intelligence System - Super Simple Usage")
+    print("=" * 55)
+    print()
+    print("NATURAL LANGUAGE COMMANDS:")
+    print("  python run_intelligence.py 50 repos 100 leads")
+    print("  python run_intelligence.py pypi 25 repos")
+    print("  python run_intelligence.py ml 90 days")
+    print("  python run_intelligence.py interactive")
+    print("  python run_intelligence.py list icps")
+    print()
+    print("TRADITIONAL FLAGS:")
+    print("  python run_intelligence.py --interactive")
+    print("  python run_intelligence.py --list-icps")
+    print("  python run_intelligence.py --max-repos 100 --icp icp01_pypi_maintainers")
+    print()
+    print("GETTING STARTED:")
+    print("  1. export GITHUB_TOKEN=your_github_token")
+    print("  2. python run_intelligence.py 50 repos pypi")
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='Lead Intelligence System - Find and qualify leads from GitHub',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-🚀 Quick Start Examples:
+    import sys
 
-  # Interactive mode (recommended for first-time users)
-  python run_intelligence.py --interactive
+    # Check if we have simple arguments (no dashes) or help
+    if len(sys.argv) == 1:
+        # No arguments - show help
+        print_simple_help()
+        return
+    elif len(sys.argv) > 1 and not any(arg.startswith('-') for arg in sys.argv[1:]):
+        # Pure simple arguments
+        simple_config = parse_simple_args(sys.argv[1:])
+        if simple_config is None:
+            # Show help for simple case
+            print_simple_help()
+            return
+        elif isinstance(simple_config, dict) and simple_config.get('command') == 'list_icps':
+            print_icp_list()
+            return
+        elif simple_config and simple_config.get('interactive'):
+            return run_interactive_mode()
 
-  # Simple run with defaults
+        # Create args object from simple config
+        args = type('Args', (), {
+            'interactive': False,
+            'list_icps': False,
+            'max_repos': simple_config.get('max_repos', 50),
+            'max_leads': simple_config.get('max_leads', 200),
+            'search_days': simple_config.get('search_days', 60),
+            'icp': simple_config.get('icp'),
+            'config': 'lead_intelligence/config/intelligence.yaml',
+            'github_token': os.environ.get('GITHUB_TOKEN'),
+            'base_config': 'config.yaml',
+            'output_dir': 'lead_intelligence/data',
+            'verbose': False,
+            'dry_run': False,
+            'phase': 'all',
+            'demo': False
+        })()
+    else:
+        # Use argparse for traditional arguments
+        parser = argparse.ArgumentParser(
+            description='Lead Intelligence System - Find and qualify leads from GitHub',
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+🚀 Super Simple Usage:
+
+  # Just run with defaults
   python run_intelligence.py
 
-  # Target specific ICP with custom limits
-  python run_intelligence.py --icp icp01_pypi_maintainers --max-repos 100 --max-leads 500
+  # Natural language style (no dashes!)
+  python run_intelligence.py 50 repos 100 leads 30 days
+  python run_intelligence.py pypi 25 repos
+  python run_intelligence.py ml 90 days
 
-  # Advanced usage
-  python run_intelligence.py --config my_config.yaml --verbose --github-token ghp_xxxxx
+  # Traditional flags still work
+  python run_intelligence.py --interactive
+  python run_intelligence.py --list-icps
 
 🔑 Getting Started:
-  1. Set your GitHub token: export GITHUB_TOKEN=your_token_here
-  2. Run: python run_intelligence.py --interactive
-  3. Follow the prompts to select ICP and configure parameters
-        """
-    )
+  1. Set token: export GITHUB_TOKEN=your_token_here
+  2. Run: python run_intelligence.py 50 repos pypi
+            """
+        )
 
-    # Interactive mode
-    parser.add_argument(
-        '--interactive', '-i',
-        action='store_true',
-        help='Run in interactive mode with guided setup'
-    )
+        parser.add_argument('--interactive', '-i', action='store_true', help='Run in interactive mode')
+        parser.add_argument('--list-icps', action='store_true', help='List all available ICPs')
+        parser.add_argument('--max-repos', type=int, default=50, help='Maximum repos to process')
+        parser.add_argument('--max-leads', type=int, default=200, help='Maximum leads to collect')
+        parser.add_argument('--search-days', type=int, default=60, help='Search repos active within N days')
+        parser.add_argument('--icp', help='Target specific ICP')
+        parser.add_argument('--github-token', help='GitHub API token')
+        parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
+        parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
+        parser.add_argument('--demo', action='store_true', help='Run in demo mode')
 
-    # ICP Selection
-    parser.add_argument(
-        '--icp',
-        choices=['icp01_pypi_maintainers', 'icp02_ml_ds_maintainers', 'icp03_seed_series_a_python_saas',
-                'icp04_api_sdk_tooling', 'icp05_academic_labs', 'icp06_django_flask_products',
-                'icp07_regulated_startups', 'icp08_agencies_consultancies', 'icp09_pytest_ci_plugin_authors',
-                'icp10_explicit_flaky_signals'],
-        help='Target specific ICP (Ideal Customer Profile)'
-    )
+        args = parser.parse_args()
+
+    # Handle special modes
+    if hasattr(args, 'list_icps') and args.list_icps:
+        print_icp_list()
+        return
+
+    if hasattr(args, 'interactive') and args.interactive:
+        return run_interactive_mode()
 
     parser.add_argument(
         '--list-icps',
@@ -188,6 +355,23 @@ def main():
         help='Run in demo mode with sample data (works without GitHub token)'
     )
 
+    # First try to parse simple arguments
+    import sys
+    if len(sys.argv) > 1:
+        simple_config = parse_simple_args(sys.argv[1:])
+        if simple_config is None:
+            # Show help
+            parser.print_help()
+            return
+        elif isinstance(simple_config, dict) and simple_config.get('command') == 'list_icps':
+            print_icp_list()
+            return
+        elif simple_config and simple_config.get('interactive'):
+            return run_interactive_mode()
+    else:
+        simple_config = None
+
+    # Parse with argparse for traditional flags
     args = parser.parse_args()
 
     # Handle special modes first
@@ -216,6 +400,21 @@ def main():
     if not Path(args.base_config).exists():
         logger.error(f"❌ Base config file not found: {args.base_config}")
         sys.exit(1)
+
+    # Merge simple config with args
+    if simple_config:
+        if simple_config.get('max_repos') != 50:
+            args.max_repos = simple_config['max_repos']
+            logger.info(f"🔧 Setting max_repos to {args.max_repos}")
+        if simple_config.get('max_leads') != 200:
+            args.max_leads = simple_config['max_leads']
+            logger.info(f"🔧 Setting max_leads to {args.max_leads}")
+        if simple_config.get('search_days') != 60:
+            args.search_days = simple_config['search_days']
+            logger.info(f"🔧 Setting search_days to {args.search_days}")
+        if simple_config.get('icp'):
+            args.icp = simple_config['icp']
+            logger.info(f"🎯 Targeting ICP: {args.icp}")
 
     # Override config with command line parameters
     if hasattr(args, 'max_repos') and args.max_repos != 50:

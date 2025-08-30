@@ -1,0 +1,37 @@
+ai:
+  cache_enabled: true
+  max_tokens: 2000
+  model: gpt-4o-mini
+  openai_api_key: ''
+  temperature: 0.7
+database:
+  backup_enabled: true
+  backup_schedule: daily
+  optimize_schedule: weekly
+  path: copy_factory/data/copy_factory.db
+features:
+  ab_testing: true
+  ai_copy_generation: true
+  campaign_automation: true
+  content_analysis: true
+  performance_tracking: true
+  smart_icp_matching: true
+limits:
+  max_ai_requests_per_hour: 100
+  max_cache_size_mb: 500
+  max_database_size_mb: 1000
+  max_prospects_per_campaign: 1000
+performance:
+  ab_test_enabled: true
+  auto_optimization: true
+  metrics_retention_days: 90
+  tracking_enabled: true
+security:
+  api_key_rotation_days: 30
+  audit_log_enabled: true
+  encrypt_sensitive_data: false
+storage:
+  backend: database
+  cache_enabled: true
+  cache_ttl_hours: 24
+  json_data_dir: copy_factory/data
