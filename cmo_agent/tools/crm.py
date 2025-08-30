@@ -2,12 +2,53 @@
 CRM and ticketing tools
 """
 import logging
+import sys
+import os
 import json
 from typing import Dict, Any, List
+
+# Add current directory to path for imports
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
+if current_dir not in sys.path:
+    sys.path.insert(0, current_dir)
+
 try:
     from .base import AttioTool, LinearTool, ToolResult
 except ImportError:
-    from base import AttioTool, LinearTool, ToolResult
+    try:
+        from base import AttioTool, LinearTool, ToolResult
+    except ImportError:
+        # Create minimal fallback classes
+        class ToolResult:
+            def __init__(self, success: bool, data: Any = None, error: str = None, metadata: Dict = None):
+                self.success = success
+                self.data = data or {}
+                self.error = error
+                self.metadata = metadata or {}
+
+            def to_dict(self) -> Dict[str, Any]:
+                return {
+                    "success": self.success,
+                    "data": self.data,
+                    "error": self.error,
+                    "metadata": self.metadata,
+                }
+
+        class AttioTool:
+            def __init__(self, name: str, description: str, api_key: str, workspace_id: str):
+                self.name = name
+                self.description = description
+                self.api_key = api_key
+                self.workspace_id = workspace_id
+
+        class LinearTool:
+            def __init__(self, name: str, description: str, api_key: str):
+                self.name = name
+                self.description = description
+                self.api_key = api_key
 
 logger = logging.getLogger(__name__)
 
