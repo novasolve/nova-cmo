@@ -186,6 +186,19 @@ class GitHubScraper:
         self.config = config
         self.output_path = output_path
         self.output_dir = output_dir
+        
+        # Initialize token rotation support
+        self.tokens = [token] if token else []
+        self.current_token_index = 0
+        
+        # Add backup tokens from environment
+        for i in range(2, 10):
+            backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
+            if backup_token and backup_token not in self.tokens:
+                self.tokens.append(backup_token)
+        
+        if len(self.tokens) > 1:
+            print(f"🔑 Token rotation enabled with {len(self.tokens)} tokens")
 
         # Load ICP configuration if provided
         self.icp_config = {}
@@ -360,8 +373,15 @@ class GitHubScraper:
             if 'rate limit' in response.text.lower() or reset_time:
                 wait_time = reset_time - int(time.time()) + 5
                 if wait_time > 0:
-                    print(f"🚫 GitHub rate limit exceeded! Waiting {wait_time} seconds ({wait_time/60:.1f} minutes)...")
-                    print(f"💡 Tip: Use multiple tokens or implement caching to avoid rate limits")
+                    print(f"🚫 GitHub rate limit exceeded! Token: {self.token[:20]}...")
+                    print(f"   Would need to wait {wait_time} seconds ({wait_time/60:.1f} minutes)")
+                    
+                    # Try rotating to a backup token
+                    if self._try_rotate_token():
+                        return True  # Successfully rotated, retry the request
+                    
+                    # No backup tokens available, wait
+                    print(f"⏱️  No backup tokens available. Waiting {wait_time/60:.1f} minutes...")
                     time.sleep(wait_time)
                     return True
         return False
@@ -389,6 +409,37 @@ class GitHubScraper:
                 
             return core.get('remaining', 0), search.get('remaining', 0)
         return None, None
+    
+    def _try_rotate_token(self) -> bool:
+        """Try to rotate to a backup token with available rate limit"""
+        if len(self.tokens) <= 1:
+            return False
+        
+        print("🔄 Attempting to rotate to backup token...")
+        
+        # Try each token
+        for i, token in enumerate(self.tokens):
+            if token == self.token:
+                continue  # Skip current token
+            
+            # Test the token's rate limit
+            test_headers = self._get_headers(token)
+            test_resp = self.session.get('https://api.github.com/rate_limit', headers=test_headers, timeout=10)
+            
+            if test_resp.status_code == 200:
+                data = test_resp.json()
+                core_remaining = data.get('resources', {}).get('core', {}).get('remaining', 0)
+                
+                if core_remaining > 100:  # Need at least 100 calls
+                    print(f"✅ Switching to backup token {i+1} with {core_remaining} API calls remaining")
+                    self.token = token
+                    self.headers = test_headers
+                    return True
+                else:
+                    print(f"   Token {i+1}: Only {core_remaining} calls remaining (need >100)")
+        
+        print("❌ No backup tokens have sufficient rate limit available")
+        return False
 
     def _normalize_domain(self, value: Optional[str]) -> Optional[str]:
         """Extract and normalize a domain from an email or URL string."""
