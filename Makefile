@@ -42,31 +42,65 @@ url: ## Quick URL scraping (usage: make url URL=@username)
 	./scrape_url.sh "$(URL)"
 
 # Lead Intelligence
-intelligence: ## Run complete lead intelligence cycle
+intelligence: install ## Run complete lead intelligence cycle (installs deps first)
 	@echo "🚀 Running Lead Intelligence System..."
 	python lead_intelligence/scripts/run_intelligence.py
 
-intelligence-demo: ## Run intelligence system in demo mode (no GitHub token needed)
+intelligence-demo: install ## Run intelligence system in demo mode (installs deps first)
 	@echo "🎭 Running Lead Intelligence System (Demo Mode)..."
 	python lead_intelligence/scripts/run_intelligence.py --demo
 
-intelligence-pipeline: ## Run the complete intelligence pipeline (same as make intelligence)
+intelligence-pipeline: install ## Run the complete intelligence pipeline (installs deps first)
 	@echo "🚀 Running Complete Lead Intelligence Pipeline..."
 	python lead_intelligence/scripts/run_intelligence.py
 
-intelligence-dashboard: ## Generate intelligence dashboard
+# Simple natural language targets
+intelligence-simple: install ## Run with simple defaults (25 repos, 50 leads)
+	@echo "🚀 Running Simple Intelligence (25 repos, 50 leads)..."
+	python simple_intelligence.py 25 repos 50 leads
+
+intelligence-quick: install ## Run quick scan (10 repos, 30 days)
+	@echo "⚡ Running Quick Intelligence Scan..."
+	python simple_intelligence.py 10 repos 30 days
+
+intelligence-pypi: install ## Target PyPI maintainers (50 repos, 100 leads)
+	@echo "📦 Targeting PyPI Maintainers..."
+	python simple_intelligence.py pypi 50 repos 100 leads
+
+intelligence-ml: install ## Target ML/AI maintainers (75 repos, 150 leads)
+	@echo "🧠 Targeting ML/AI Maintainers..."
+	python simple_intelligence.py ml 75 repos 150 leads
+
+intelligence-saas: install ## Target SaaS companies (40 repos, 80 leads)
+	@echo "🚀 Targeting SaaS Companies..."
+	python simple_intelligence.py saas 40 repos 80 leads
+
+# Super simple natural language commands
+simple: ## Run simple interface (25 repos, 50 leads)
+	@echo "🚀 Running Simple Intelligence..."
+	python simple_intelligence.py 25 repos 50 leads
+
+quick: ## Run quick scan (10 repos, 30 days)
+	@echo "⚡ Running Quick Intelligence Scan..."
+	python simple_intelligence.py 10 repos 30 days
+
+icps: ## List all available ICPs
+	@echo "🎯 Available ICPs..."
+	python simple_intelligence.py list icps
+
+intelligence-dashboard: install ## Generate intelligence dashboard
 	@echo "📊 Generating Intelligence Dashboard..."
 	python lead_intelligence/reporting/dashboard.py
 
-intelligence-analyze: ## Run intelligence analysis on existing data
+intelligence-analyze: install ## Run intelligence analysis on existing data
 	@echo "🧠 Running Intelligence Analysis..."
 	python lead_intelligence/scripts/run_intelligence.py --phase analyze
 
-intelligence-collect: ## Run intelligence data collection only
+intelligence-collect: install ## Run intelligence data collection only
 	@echo "📥 Running Intelligence Data Collection..."
 	python lead_intelligence/scripts/run_intelligence.py --phase collect
 
-intelligence-test: ## Test the intelligence system
+intelligence-test: install ## Test the intelligence system
 	@echo "🧪 Testing Lead Intelligence System..."
 	python lead_intelligence/scripts/test_intelligence.py
 

@@ -64,7 +64,7 @@ class Repo:
 
 class GitHubRepoScraper:
     """Scrapes GitHub repositories based on search criteria"""
-    
+
     def __init__(self, token: str, config: dict, output_path: str = None):
         self.token = token
         self.config = config
@@ -76,13 +76,27 @@ class GitHubRepoScraper:
         }
         # Only add auth header if token is provided and valid
         if token and token.strip():
-            # Prefer Bearer for fine-grained and classic tokens; GitHub supports both
-            self.headers['Authorization'] = f'Bearer {token}'
+            self.headers['Authorization'] = self._get_auth_header(token)
         self.repos: Set[str] = set()  # Track unique repo full names
         self.all_repos: List[Repo] = []
         self.csv_file = None
         self.csv_writer = None
         self.csv_initialized = False
+
+    def _get_auth_header(self, token: str) -> str:
+        """Get the appropriate authorization header based on token format"""
+        token = token.strip()
+
+        # Detect token type and use appropriate authorization method
+        if token.startswith('ghp_'):
+            # Classic personal access token - use token auth
+            return f'token {token}'
+        elif token.startswith('github_token_'):
+            # Fine-grained personal access token - use Bearer auth
+            return f'Bearer {token}'
+        else:
+            # Unknown format - try Bearer first (GitHub supports both for most tokens)
+            return f'Bearer {token}'
         
     def _create_session(self):
         """Create session with retry logic"""
