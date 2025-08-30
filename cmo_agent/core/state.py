@@ -3,6 +3,32 @@ RunState - Typed state management for CMO Agent
 """
 from typing import TypedDict, List, Dict, Optional, Any
 from datetime import datetime
+from pathlib import Path
+import json
+import hashlib
+import time
+
+
+STATE_VERSION = 1
+
+
+class ErrorEntry(TypedDict, total=False):
+    stage: str
+    tool: Optional[str]
+    payload: Dict[str, Any]
+    error: str
+    timestamp: str
+    retry_count: Optional[int]
+    category: Optional[str]  # retryable | rate_limit | permanent
+
+
+class CheckpointMeta(TypedDict, total=False):
+    id: str
+    created_at: str
+    stage: Optional[str]
+    type: str  # periodic | error | final | manual
+    reason: Optional[str]
+    path: str
 
 
 class RunState(TypedDict, total=False):
@@ -13,6 +39,9 @@ class RunState(TypedDict, total=False):
     goal: str
     created_at: str
     created_by: str
+
+    # Versioning
+    state_version: int
 
     # ICP (Ideal Customer Profile) criteria
     icp: Dict[str, Any]  # keywords, languages, stars, activity window
@@ -31,11 +60,12 @@ class RunState(TypedDict, total=False):
     reports: Dict[str, Any]  # instantly/attio/linear/export reports
 
     # Error handling
-    errors: List[Dict[str, Any]]  # {stage, payload, error, timestamp}
+    errors: List[ErrorEntry]  # structured errors
 
     # Monitoring & metrics
     counters: Dict[str, int]  # {steps, api_calls, tokens}
     checkpoints: List[str]  # artifact ids / CSV paths
+    checkpoints_meta: List[CheckpointMeta]
 
     # Configuration
     config: Dict[str, Any]  # caps, pacing, retries
@@ -44,6 +74,10 @@ class RunState(TypedDict, total=False):
     ended: bool
     current_stage: str
     history: List[Dict[str, Any]]  # conversation history
+
+    # Idempotency & privacy
+    idempotency_keys: Dict[str, str]
+    privacy: Dict[str, Any]
 
 
 class JobMetadata:
@@ -127,6 +161,134 @@ DEFAULT_CONFIG = {
         "artifacts": "./artifacts",
     },
 }
+
+
+def migrate_run_state(state: Dict[str, Any]) -> RunState:
+    """Migrate an incoming state dict to the current schema with sane defaults.
+
+    This function is idempotent and can be safely called at load boundaries.
+    """
+    # Base copy
+    migrated: RunState = {**state}  # type: ignore
+
+    # Versioning
+    if "state_version" not in migrated:
+        migrated["state_version"] = STATE_VERSION
+
+    # Collections & structures
+    migrated.setdefault("repos", [])
+    migrated.setdefault("candidates", [])
+    migrated.setdefault("leads", [])
+    migrated.setdefault("to_send", [])
+    migrated.setdefault("reports", {})
+    migrated.setdefault("errors", [])
+    migrated.setdefault("counters", {})
+    migrated.setdefault("checkpoints", [])
+    migrated.setdefault("checkpoints_meta", [])
+    migrated.setdefault("config", DEFAULT_CONFIG)
+    migrated.setdefault("ended", False)
+    migrated.setdefault("current_stage", "initialization")
+    migrated.setdefault("history", [])
+    migrated.setdefault("idempotency_keys", {})
+    migrated.setdefault("privacy", {"redact_pii": True, "pii_fields": ["email", "phone"]})
+
+    # Ensure error entries are shaped
+    normalized_errors: List[ErrorEntry] = []
+    for err in migrated.get("errors", []):
+        if isinstance(err, dict):
+            normalized_errors.append(ErrorEntry(
+                stage=err.get("stage", migrated.get("current_stage", "unknown")),
+                tool=err.get("tool"),
+                payload=err.get("payload", {}),
+                error=str(err.get("error", "")),
+                timestamp=err.get("timestamp", datetime.now().isoformat()),
+                retry_count=err.get("retry_count"),
+                category=err.get("category"),
+            ))
+        else:
+            normalized_errors.append(ErrorEntry(
+                stage=migrated.get("current_stage", "unknown"),
+                payload={},
+                error=str(err),
+                timestamp=datetime.now().isoformat(),
+            ))
+    migrated["errors"] = normalized_errors
+
+    return migrated
+
+
+def _get_checkpoint_dir(state: RunState, checkpoint_dir: Optional[str] = None) -> Path:
+    if checkpoint_dir:
+        return Path(checkpoint_dir)
+    config_dirs = (state.get("config") or {}).get("directories", {})  # type: ignore
+    return Path(config_dirs.get("checkpoints", DEFAULT_CONFIG["directories"]["checkpoints"]))
+
+
+def save_checkpoint(job_id: str, state: RunState, *, checkpoint_dir: Optional[str] = None, type: str = "periodic", reason: str = "") -> str:
+    """Persist a JSON checkpoint and update state metadata.
+
+    Returns the file path written.
+    """
+    directory = _get_checkpoint_dir(state, checkpoint_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+
+    checkpoint_id = f"{job_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{type}"
+    file_path = directory / f"{checkpoint_id}.json"
+
+    # Always migrate before writing so schema is stable
+    state_to_write = migrate_run_state(state)
+
+    with open(file_path, "w") as f:
+        json.dump(state_to_write, f, indent=2, default=str)
+
+    # Update lists (immutably expected by callers; we still return path)
+    state.setdefault("checkpoints", [])
+    state["checkpoints"].append(str(file_path))  # type: ignore
+
+    state.setdefault("checkpoints_meta", [])
+    state["checkpoints_meta"].append(CheckpointMeta(  # type: ignore
+        id=checkpoint_id,
+        created_at=datetime.now().isoformat(),
+        stage=state.get("current_stage"),
+        type=type,
+        reason=reason,
+        path=str(file_path),
+    ))
+
+    return str(file_path)
+
+
+def load_latest_checkpoint(job_id: str, *, checkpoint_dir: Optional[str] = None) -> Optional[RunState]:
+    """Load the latest checkpoint for a job, if one exists.
+
+    Prefers `checkpoints_meta` ordering; falls back to scanning the directory.
+    """
+    base_dir = Path(checkpoint_dir) if checkpoint_dir else Path(DEFAULT_CONFIG["directories"]["checkpoints"]) 
+
+    if not base_dir.exists():
+        return None
+
+    # Find all files for this job
+    candidates = sorted(base_dir.glob(f"{job_id}-*.json"), reverse=True)
+    for fp in candidates:
+        try:
+            with open(fp, "r") as f:
+                loaded = json.load(f)
+            return migrate_run_state(loaded)
+        except Exception:
+            continue
+    return None
+
+
+def make_idempotency_key(job_id: str, stage: str, target_identifier: str, payload: Dict[str, Any]) -> str:
+    """Create a stable idempotency fingerprint.
+
+    hash(job_id, stage, target_identifier, payload_hash)
+    """
+    payload_str = json.dumps(payload or {}, separators=(",", ":"), sort_keys=True)
+    payload_hash = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+    material = "|".join([job_id, stage, target_identifier, payload_hash])
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 class RetryConfig:
