@@ -688,7 +688,8 @@ def main():
     args = parser.parse_args()
 
     # Get GitHub token (hardcoded)
-    github_token = args.github_token or "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"
+    # Get token from environment first, then args
+    github_token = os.environ.get('GITHUB_TOKEN') or args.github_token or ''
 
     # Parse ICP keys
     icp_keys = []
