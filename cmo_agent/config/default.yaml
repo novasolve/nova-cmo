@@ -79,6 +79,15 @@ campaign_defaults:
 export_dir: "./exports"
 checkpoint_every: 200 # Save CSV every N leads
 
+# Artifact management configuration
+artifacts:
+  cleanup_interval_seconds: 3600 # 1 hour
+  retention_days: 30
+  max_per_job: 20
+  compress_large_datasets: true
+  auto_cleanup: true
+  storage_backend: filesystem # filesystem, s3, etc.
+
 # Logging
 log_level: "INFO"
 log_file: "./logs/cmo_agent.log"
@@ -97,8 +106,14 @@ queue:
   storage_dir: "./data/jobs" # For persistent queue
   max_retries: 3
   retry_delay: 5 # seconds
-  priority_levels: 3
+  priority_levels: 5
   max_queue_size: 1000
+  enable_prioritization: true
+  enable_scheduling: true
+  enable_tagging: true
+  default_priority: "normal" # low, normal, high, urgent, critical
+  priority_boost_on_retry: true
+  worker_tag_matching: true
 
 # Persistence configuration
 persistence:
