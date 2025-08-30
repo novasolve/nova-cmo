@@ -3,6 +3,7 @@ RunState - Typed state management for CMO Agent
 """
 from typing import TypedDict, List, Dict, Optional, Any
 from datetime import datetime
+import time
 
 
 class RunState(TypedDict, total=False):
@@ -34,8 +35,8 @@ class RunState(TypedDict, total=False):
     errors: List[Dict[str, Any]]  # {stage, payload, error, timestamp}
 
     # Monitoring & metrics
-    counters: Dict[str, int]  # {steps, api_calls, tokens}
-    checkpoints: List[str]  # artifact ids / CSV paths
+    counters: Dict[str, int]  # {steps, api_calls, tokens, errors, tool_errors, no_tool_call_streak}
+    checkpoints: List[Dict[str, Any]]  # saved checkpoints metadata
 
     # Configuration
     config: Dict[str, Any]  # caps, pacing, retries
@@ -44,6 +45,9 @@ class RunState(TypedDict, total=False):
     ended: bool
     current_stage: str
     history: List[Dict[str, Any]]  # conversation history
+    tool_results: Dict[str, Any]  # last results per tool
+    completed_at: str
+    progress: Dict[str, Any]
 
 
 class JobMetadata:
@@ -126,6 +130,8 @@ DEFAULT_CONFIG = {
         "logs": "./logs",
         "artifacts": "./artifacts",
     },
+    # Safeguards
+    "no_tool_call_limit": 3,
 }
 
 
