@@ -16,9 +16,9 @@ from dotenv import load_dotenv
 parent_dir = str(Path(__file__).parent.parent)
 sys.path.insert(0, parent_dir)
 
-# Import modules with proper path handling
-from agents.cmo_agent import CMOAgent
-from core.state import DEFAULT_CONFIG
+# Import modules with proper package path
+from cmo_agent.agents.cmo_agent import CMOAgent
+from cmo_agent.core.state import DEFAULT_CONFIG
 
 # Load environment variables
 load_dotenv()
