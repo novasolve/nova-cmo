@@ -3,6 +3,7 @@
 Check which tools are available in the CMO Agent
 """
 import sys
+import os
 from pathlib import Path
 
 # Add parent directory to path
@@ -18,28 +19,29 @@ def check_available_tools():
     print("🔧 CMO Agent Tool Availability Check")
     print("=" * 50)
 
-    # Check configuration without initializing the full agent
+    # Load defaults and consider environment overrides for presence checks
     config = DEFAULT_CONFIG.copy()
 
     # Simulate tool initialization (same logic as CMOAgent._initialize_tools)
     available_tools = []
 
     # GitHub tools
-    if config.get("GITHUB_TOKEN"):
+    if os.getenv("GITHUB_TOKEN") or config.get("GITHUB_TOKEN"):
         available_tools.extend(["search_github_repos", "extract_people", "enrich_github_user", "find_commit_emails"])
 
     # Hygiene tools (always available)
     available_tools.extend(["mx_check", "score_icp"])
 
     # Personalization tools
-    if config.get("INSTANTLY_API_KEY"):
+    if os.getenv("INSTANTLY_API_KEY") or config.get("INSTANTLY_API_KEY"):
         available_tools.extend(["render_copy", "send_instantly"])
 
-    # CRM tools
-    if config.get("ATTIO_API_KEY") and config.get("ATTIO_WORKSPACE_ID"):
+    # CRM tools (Attio)
+    has_attio_token = os.getenv("ATTIO_ACCESS_TOKEN") or config.get("ATTIO_ACCESS_TOKEN") or os.getenv("ATTIO_API_KEY") or config.get("ATTIO_API_KEY")
+    if has_attio_token and (os.getenv("ATTIO_WORKSPACE_ID") or config.get("ATTIO_WORKSPACE_ID")):
         available_tools.append("sync_attio")
 
-    if config.get("LINEAR_API_KEY"):
+    if os.getenv("LINEAR_API_KEY") or config.get("LINEAR_API_KEY"):
         available_tools.append("sync_linear")
 
     # Export tools (always available)
@@ -75,13 +77,13 @@ def check_available_tools():
             print(f"📂 {category}:")
             for tool in tools:
                 status = "✅ Available"
-                if tool in ["render_copy", "send_instantly"] and not config.get("INSTANTLY_API_KEY"):
+                if tool in ["render_copy", "send_instantly"] and not (os.getenv("INSTANTLY_API_KEY") or config.get("INSTANTLY_API_KEY")):
                     status = "❌ Missing INSTANTLY_API_KEY"
-                elif tool in ["sync_attio"] and (not config.get("ATTIO_API_KEY") or not config.get("ATTIO_WORKSPACE_ID")):
-                    status = "❌ Missing ATTIO_API_KEY/WORKSPACE_ID"
-                elif tool in ["sync_linear"] and not config.get("LINEAR_API_KEY"):
+                elif tool in ["sync_attio"] and not (has_attio_token and (os.getenv("ATTIO_WORKSPACE_ID") or config.get("ATTIO_WORKSPACE_ID"))):
+                    status = "❌ Missing ATTIO_ACCESS_TOKEN (or ATTIO_API_KEY) / ATTIO_WORKSPACE_ID"
+                elif tool in ["sync_linear"] and not (os.getenv("LINEAR_API_KEY") or config.get("LINEAR_API_KEY")):
                     status = "❌ Missing LINEAR_API_KEY"
-                elif tool in ["search_github_repos", "extract_people", "enrich_github_user", "find_commit_emails"] and not config.get("GITHUB_TOKEN"):
+                elif tool in ["search_github_repos", "extract_people", "enrich_github_user", "find_commit_emails"] and not (os.getenv("GITHUB_TOKEN") or config.get("GITHUB_TOKEN")):
                     status = "❌ Missing GITHUB_TOKEN"
 
                 print(f"   • {tool}: {status}")
@@ -91,7 +93,7 @@ def check_available_tools():
     print("   export GITHUB_TOKEN=your_github_token")
     print("   export OPENAI_API_KEY=your_openai_key")
     print("   export INSTANTLY_API_KEY=your_instantly_key")
-    print("   export ATTIO_API_KEY=your_attio_key")
+    print("   export ATTIO_ACCESS_TOKEN=your_attio_access_token")
     print("   export ATTIO_WORKSPACE_ID=your_workspace_id")
     print("   export LINEAR_API_KEY=your_linear_key")
 
