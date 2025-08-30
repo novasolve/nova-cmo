@@ -1,0 +1,25 @@
+{
+  "timestamp": "2025-08-30T05:37:56.874129",
+  "quality_metrics": {
+    "email_coverage": 1.0,
+    "company_coverage": 0.6666666666666666,
+    "location_coverage": 1.0,
+    "high_score_percentage": 1.0
+  },
+  "signal_frequency": {
+    "has_email": 3,
+    "has_location": 3,
+    "detailed_bio": 3,
+    "active_contributor": 3,
+    "highly_active": 3,
+    "profile_email": 2,
+    "has_company": 2,
+    "high_followers": 2
+  },
+  "score_distribution": {
+    "0-1": 0,
+    "1-3": 0,
+    "3-5": 0,
+    "5+": 3
+  }
+}

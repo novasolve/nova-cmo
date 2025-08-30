@@ -16,11 +16,8 @@ search:
   # - We do NOT put pushed:> in the query; we filter by activity_days below to keep it dynamic.
   type: repositories
   query: >
-    language:python stars:80..1200 is:public archived:false
-    -topic:awesome -in:name awesome -in:description awesome -in:readme awesome
-    -in:name template -in:description template -in:name starter -in:description starter
-    -in:name docs -in:description docs -in:readme tutorial
-    (help-wanted-issues:>0 OR good-first-issues:>0)
+    language:python stars:100..500 is:public archived:false
+    created:>2023-01-01 pushed:>2024-01-01
   sort: updated # 'stars', 'forks', 'updated', 'help-wanted-issues'
   order: desc
   per_page: 50
