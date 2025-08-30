@@ -28,6 +28,7 @@ import sqlite3
 from lead_intelligence.core.prospect_scorer import ProspectScorer
 from lead_intelligence.core.concurrent_processor import ConcurrentProcessor, ProcessingResult
 from lead_intelligence.core.job_metadata import JobTracker, JobStats
+from lead_intelligence.core.identity_deduper import IdentityDeduper
 
 
 @dataclass
@@ -234,6 +235,9 @@ class GitHubScraper:
 
         # Initialize JobTracker
         self.job_tracker = JobTracker(self.output_dir or "lead_intelligence/data")
+
+        # Initialize IdentityDeduper
+        self.identity_deduper = IdentityDeduper()
 
         # Dedup configuration
         dedup_cfg = (self.config.get('dedup') or {}) if isinstance(self.config, dict) else {}
@@ -1883,6 +1887,31 @@ class GitHubScraper:
             job.stats.raw_prospects_found = len(self.all_prospects)
             job.stats.contactable_prospects = self.leads_with_email_count
         
+        # Perform identity deduplication
+        if self.all_prospects:
+            print(f"\n🔄 Deduplicating {len(self.all_prospects)} prospects...")
+            prospect_dicts = [p.to_dict() for p in self.all_prospects]
+            deduplicated_dicts = self.identity_deduper.deduplicate_prospects(prospect_dicts)
+
+            # Convert back to Prospect objects
+            deduplicated_prospects = []
+            for prospect_dict in deduplicated_dicts:
+                try:
+                    prospect = Prospect(**prospect_dict)
+                    deduplicated_prospects.append(prospect)
+                except Exception as e:
+                    print(f"⚠️  Error converting deduplicated prospect: {e}")
+                    continue
+
+            self.all_prospects = deduplicated_prospects
+
+            # Update job stats with deduplication info
+            dedupe_stats = self.identity_deduper.get_merge_stats()
+            job.stats.raw_prospects_found = dedupe_stats['total_prospects_processed']
+            job.stats.prospects_after_dedupe = dedupe_stats['unique_prospects_after_merge']
+
+            print(f"✅ Deduplication complete: {job.stats.raw_prospects_found} → {job.stats.prospects_after_dedupe} unique prospects")
+
         # Calculate final job statistics
         self._update_final_job_stats(job)
 
@@ -2078,12 +2107,22 @@ class GitHubScraper:
         
         # Signals.csv
         signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
-        with open(os.path.join(signals_dir, 'Signals.csv'), 'w', newline='', encoding='utf-8') as f:
+        signals_file = os.path.join(signals_dir, 'Signals.csv')
+        with open(signals_file, 'w', newline='', encoding='utf-8') as f:
             w = csv.DictWriter(f, fieldnames=signal_headers)
             w.writeheader()
             for row in self.signal_records.values():
                 out_row = {k: row.get(k) for k in signal_headers}
                 w.writerow(out_row)
+
+        # Return file paths for job tracking
+        return {
+            'people_csv': os.path.join(people_dir, 'People.csv'),
+            'repos_csv': os.path.join(repos_dir, 'Repos.csv'),
+            'memberships_csv': os.path.join(memberships_dir, 'Membership.csv'),
+            'signals_csv': signals_file,
+            'export_dir': attio_dir
+        }
 
     def export_attio_csvs_flat(self, attio_dir: str):
         """Export Attio CSVs directly into the provided directory (no subfolders)."""
