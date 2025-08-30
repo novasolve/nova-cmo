@@ -91,4 +91,10 @@ DEFAULT_CONFIG = {
         "backoff_multiplier": 2.0,
         "jitter": True,
     },
+    "directories": {
+        "exports": "./exports",
+        "checkpoints": "./checkpoints",
+        "logs": "./logs",
+        "artifacts": "./artifacts",
+    },
 }
