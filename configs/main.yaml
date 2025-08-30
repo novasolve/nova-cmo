@@ -7,7 +7,7 @@ search:
   query: >
     language:python stars:50..2000 is:public archived:false
     in:readme pytest
-    pushed:>={date:60}
+    pushed:>{date:60}
   sort: updated
   order: desc
   per_page: 50
