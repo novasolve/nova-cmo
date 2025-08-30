@@ -29,6 +29,7 @@ from lead_intelligence.core.prospect_scorer import ProspectScorer
 from lead_intelligence.core.concurrent_processor import ConcurrentProcessor, ProcessingResult
 from lead_intelligence.core.job_metadata import JobTracker, JobStats
 from lead_intelligence.core.identity_deduper import IdentityDeduper
+from lead_intelligence.core.timezone_utils import days_ago
 
 
 @dataclass
@@ -275,9 +276,13 @@ class GitHubScraper:
         elif token.startswith('github_token_'):
             # Fine-grained personal access token - use Bearer auth
             return f'Bearer {token}'
+        elif token.startswith('ghs_'):
+            # GitHub App installation access token - use token auth
+            return f'token {token}'
         else:
-            # Unknown format - try Bearer first (GitHub supports both for most tokens)
-            return f'Bearer {token}'
+            # For unknown formats, default to token auth (more compatible)
+            # This handles both old-style tokens and new formats
+            return f'token {token}'
 
     def _dedup_seen(self, login: Optional[str]) -> bool:
         if not (self.dedup_enabled and self._dedup_conn and login):
@@ -392,6 +397,65 @@ class GitHubScraper:
         if domain.startswith('live.') or domain.endswith('.live.com'):
             return True
         return False
+
+    def _extract_corporate_domain(self, email: Optional[str], blog_url: Optional[str], company: Optional[str]) -> Optional[str]:
+        """Extract corporate domain from email, blog URL, or company name."""
+        # Try email first (most reliable)
+        if email and '@' in email:
+            domain = email.split('@')[1].lower()
+            if not self._is_public_email_domain(domain):
+                return domain
+
+        # Try blog URL
+        if blog_url:
+            domain = self._normalize_domain(blog_url)
+            if domain and not self._is_public_email_domain(domain):
+                return domain
+
+        # Try to extract from company name (last resort)
+        if company and isinstance(company, str):
+            company = company.strip().lower()
+            # Remove common prefixes/suffixes
+            company = re.sub(r'^(the\s+|\s+inc\.?$|\s+llc\.?$|\s+corp\.?$|\s+ltd\.?$)', '', company)
+            # Try to create a domain-like string
+            if company and len(company.split()) == 1:
+                return f"{company}.com"
+
+        return None
+
+    def _determine_email_type(self, email: str) -> str:
+        """Determine if email is work, personal, or unknown."""
+        if not email or '@' not in email:
+            return 'unknown'
+
+        domain = email.split('@')[1].lower()
+
+        # Check if it's a public email provider
+        if self._is_public_email_domain(domain):
+            return 'personal'
+
+        # Check for common work email patterns
+        work_indicators = ['.com', '.org', '.net', '.io', '.dev', '.co']
+        if any(indicator in domain for indicator in work_indicators):
+            return 'work'
+
+        return 'unknown'
+
+    def _is_disposable_email(self, email: str) -> bool:
+        """Check if email is from a disposable/temporary email service."""
+        if not email or '@' not in email:
+            return False
+
+        domain = email.split('@')[1].lower()
+
+        # Common disposable email domains
+        disposable_domains = {
+            '10minutemail.com', 'guerrillamail.com', 'mailinator.com', 'temp-mail.org',
+            'throwaway.email', 'yopmail.com', 'maildrop.cc', 'tempail.com', 'mohmal.com',
+            'getnada.com', 'mailcatch.com', 'fakeinbox.com', 'mail-temporaire.fr'
+        }
+
+        return domain in disposable_domains
 
     def _choose_main_email(self, email_profile: Optional[str], email_public_commit: Optional[str]) -> Optional[str]:
         """Select a main email preferring work domains over personal.
@@ -539,14 +603,14 @@ class GitHubScraper:
             exclude_filters = ' '.join([f'-topic:{topic}' for topic in icp_config['exclude_topics']])
             base_query += f' {exclude_filters}'
 
-        # Exclude common off-ICP repo name patterns
-        exclude_patterns = [
-            'vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf', 'chromego',
-            'hiddify', 'awesome', 'tutorial', 'examples', 'docs', 'template',
-            'starter', 'playground', 'course', 'book', 'sample', 'dotfiles'
-        ]
-        name_excludes = ' '.join([f'-in:name {pattern}' for pattern in exclude_patterns])
-        base_query += f' {name_excludes}'
+        # Exclude common off-ICP repo name patterns (disabled for broader search)
+        # exclude_patterns = [
+        #     'vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf', 'chromego',
+        #     'hiddify', 'awesome', 'tutorial', 'examples', 'docs', 'template',
+        #     'starter', 'playground', 'course', 'book', 'sample', 'dotfiles'
+        # ]
+        # name_excludes = ' '.join([f'-in:name {pattern}' for pattern in exclude_patterns])
+        # base_query += f' {name_excludes}'
 
         # Prefer organizations over users if configured
         # Note: GitHub search doesn't have direct org vs user filtering
@@ -702,15 +766,30 @@ class GitHubScraper:
         min_stars = icp_config.get('min_stars')
         if min_stars and isinstance(min_stars, str):
             min_stars = int(min_stars)
-        if min_stars and repo.get('stargazers_count', 0) < min_stars:
-            return False
+        if min_stars:
+            stars_count = repo.get('stargazers_count', 0)
+            if stars_count is None:
+                stars_count = 0
+            elif isinstance(stars_count, str):
+                stars_count = int(stars_count) if stars_count.isdigit() else 0
+            if stars_count < min_stars:
+                return False
 
         # Check if archived
-        if repo.get('archived', False):
+        archived = repo.get('archived', False)
+        if isinstance(archived, str):
+            archived = archived.lower() in ('true', '1', 'yes')
+        if archived:
             return False
 
         # Check if fork (unless explicitly allowed)
-        if repo.get('fork', False) and not icp_config.get('include_forks', False):
+        fork = repo.get('fork', False)
+        if isinstance(fork, str):
+            fork = fork.lower() in ('true', '1', 'yes')
+        include_forks = icp_config.get('include_forks', False)
+        if isinstance(include_forks, str):
+            include_forks = include_forks.lower() in ('true', '1', 'yes')
+        if fork and not include_forks:
             return False
 
         # Check topics against exclude list
@@ -719,18 +798,23 @@ class GitHubScraper:
         if any(topic in exclude_topics for topic in topics):
             return False
 
-        # Check repo name against exclude patterns
-        name = repo.get('name', '').lower()
-        exclude_patterns = ['vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf']
-        if any(pattern in name for pattern in exclude_patterns):
-            return False
+        # Check repo name against exclude patterns (disabled for broader search)
+        # name = repo.get('name', '').lower()
+        # exclude_patterns = ['vpn', 'v2ray', 'warp', 'instagram', 'weibo', 'ctf']
+        # if any(pattern in name for pattern in exclude_patterns):
+        #     return False
 
         # Check owner type preference
         if icp_config.get('prefer_orgs'):
             owner = repo.get('owner', {})
             if owner.get('type') != 'Organization':
                 # Allow some user-owned repos if they're high-quality
-                if repo.get('stargazers_count', 0) < 500:
+                stars_count = repo.get('stargazers_count', 0)
+                if stars_count is None:
+                    stars_count = 0
+                elif isinstance(stars_count, str):
+                    stars_count = int(stars_count) if stars_count.isdigit() else 0
+                if stars_count < 500:
                     return False
 
         return True
@@ -1346,13 +1430,13 @@ class GitHubScraper:
         linkedin_query = None
         if not linkedin_username and user_details.get('name'):
             # Create a search query for LinkedIn lookup in Phase 2
-            name = user_details['name']
-            company = user_details.get('company', '')
+            name = user_details.get('name', '') or ''
+            company = user_details.get('company', '') or ''
             linkedin_query = f"{name} {company} site:linkedin.com/in/".strip()
         
         # Extract pronouns (often in bio or name field)
         pronouns = None
-        if user_details.get('bio'):
+        if user_details.get('bio') and isinstance(user_details['bio'], str):
             bio_lower = user_details['bio'].lower()
             if 'he/him' in bio_lower:
                 pronouns = 'he/him'
@@ -1393,9 +1477,9 @@ class GitHubScraper:
             signal_at=author_data['signal_at'],
             topics=','.join(repo.get('topics', [])),
             language=repo.get('language', ''),
-            stars=repo.get('stargazers_count', 0),
-            forks=repo.get('forks_count'),
-            watchers=repo.get('watchers_count'),
+            stars=int(repo.get('stargazers_count', 0) or 0),
+            forks=int(repo.get('forks_count', 0) or 0),
+            watchers=int(repo.get('watchers_count', 0) or 0),
 
             # Maintainer status
             is_maintainer=is_maintainer,
@@ -1762,10 +1846,10 @@ class GitHubScraper:
             'has_issues': details.get('has_issues', repo.get('has_issues')),
             'has_discussions': details.get('has_discussions'),
             'company_domain': company_domain,
-            'stars': repo.get('stargazers_count', 0),
-            'watchers': repo.get('watchers_count', 0),
-            'subscribers': details.get('subscribers_count'),
-            'forks': repo.get('forks_count'),
+            'stars': int(repo.get('stargazers_count', 0) or 0),
+            'watchers': int(repo.get('watchers_count', 0) or 0),
+            'subscribers': int(details.get('subscribers_count', 0) or 0),
+            'forks': int(repo.get('forks_count', 0) or 0),
             'open_issues': repo.get('open_issues_count'),
             'open_prs': open_prs,
             'releases_count': releases_count,
@@ -2042,7 +2126,7 @@ class GitHubScraper:
 
         # Basic counts
         job.stats.prospects_after_dedupe = len(prospects)
-        job.stats.contactable_prospects = sum(1 for p in prospects if p.contactability_score >= 50)
+        job.stats.contactable_prospects = sum(1 for p in prospects if p.contactability_score and p.contactability_score >= 50)
         job.stats.maintainer_prospects = sum(1 for p in prospects if p.is_maintainer)
         job.stats.org_member_prospects = sum(1 for p in prospects if p.is_org_member)
 
