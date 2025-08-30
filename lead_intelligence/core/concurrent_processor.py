@@ -28,7 +28,7 @@ class ProcessingResult:
 class ConcurrentProcessor:
     """Processes repositories concurrently with rate limiting and caching"""
 
-    def __init__(self, max_workers: int = 4, requests_per_hour: int = 5000, cache_dir: str = ".cache"):
+    def __init__(self, max_workers: int = 4, requests_per_hour: int = 2000, cache_dir: str = ".cache"):
         self.max_workers = max_workers
         self.requests_per_hour = requests_per_hour
         self.cache_dir = Path(cache_dir)
@@ -37,6 +37,10 @@ class ConcurrentProcessor:
         # Rate limiting
         self.request_times: List[float] = []
         self.min_request_interval = 3600 / requests_per_hour  # seconds between requests
+
+        # GitHub rate limit tracking
+        self.github_rate_limit_remaining = 5000
+        self.github_rate_limit_reset = None
 
         # Cache settings
         self.cache_ttl_hours = 2  # Cache results for 2 hours
@@ -82,20 +86,29 @@ class ConcurrentProcessor:
         """Enforce rate limiting by waiting if necessary"""
         current_time = time.time()
 
+        # Check GitHub rate limit first (if available)
+        if self.github_rate_limit_reset and self.github_rate_limit_remaining <= 50:
+            reset_time = self.github_rate_limit_reset
+            wait_time = reset_time - current_time
+            if wait_time > 0:
+                print(f"🛑 GitHub rate limit low ({self.github_rate_limit_remaining} remaining). Waiting {wait_time:.0f} seconds...")
+                time.sleep(wait_time)
+                # Reset after waiting
+                self.github_rate_limit_remaining = 5000
+                self.github_rate_limit_reset = None
+
         # Remove old request times
         cutoff_time = current_time - 3600  # Last hour
         self.request_times = [t for t in self.request_times if t > cutoff_time]
 
-        # Check if we need to wait
+        # Check if we need to wait based on our own rate limiting
         if len(self.request_times) >= self.requests_per_hour:
             # Wait until we can make another request
             oldest_request = min(self.request_times)
             wait_time = 3600 - (current_time - oldest_request)
             if wait_time > 0:
+                print(f"⏱️  Local rate limit reached. Waiting {wait_time:.0f} seconds...")
                 time.sleep(wait_time)
-
-        # Record this request
-        self.request_times.append(current_time)
 
         # Also enforce minimum interval between requests
         if len(self.request_times) > 1:
@@ -103,6 +116,24 @@ class ConcurrentProcessor:
             if time_since_last < self.min_request_interval:
                 sleep_time = self.min_request_interval - time_since_last
                 time.sleep(sleep_time)
+
+        # Record this request
+        self.request_times.append(current_time)
+
+    def update_github_rate_limit(self, response):
+        """Update GitHub rate limit information from response headers"""
+        if hasattr(response, 'headers'):
+            if 'X-RateLimit-Remaining' in response.headers:
+                try:
+                    self.github_rate_limit_remaining = int(response.headers['X-RateLimit-Remaining'])
+                except ValueError:
+                    pass
+
+            if 'X-RateLimit-Reset' in response.headers:
+                try:
+                    self.github_rate_limit_reset = int(response.headers['X-RateLimit-Reset'])
+                except ValueError:
+                    pass
 
     def process_repositories_concurrent(
         self,
@@ -124,7 +155,7 @@ class ConcurrentProcessor:
         to_process = []
 
         for repo in repositories:
-            repo_full_name = repo['full_name']
+            repo_full_name = repo.get('full_name') or 'unknown/unknown'
             cache_key = self._get_cache_key(repo_full_name, params)
             cache_path = self._get_cache_path(cache_key)
 
@@ -156,35 +187,43 @@ class ConcurrentProcessor:
                     future = executor.submit(self._process_single_repo, repo, processing_func, params)
                     future_to_repo[future] = repo
 
-                for future in as_completed(future_to_repo):
-                    repo = future_to_repo[future]
-                    try:
-                        result = future.result()
-                        results.append(result)
-                        cache_misses += 1
+                try:
+                    for future in as_completed(future_to_repo):
+                        repo = future_to_repo[future]
+                        try:
+                            result = future.result()
+                            results.append(result)
+                            cache_misses += 1
 
-                        # Cache successful results
-                        if result.success:
-                            cache_key = self._get_cache_key(result.repo_full_name, params)
-                            cache_path = self._get_cache_path(cache_key)
-                            cache_data = {
-                                'success': result.success,
-                                'prospects': result.prospects,
-                                'error': result.error,
-                                'processing_time': result.processing_time,
-                                'cached_at': time.time()
-                            }
-                            self._save_cache(cache_path, cache_data)
+                            # Cache successful results
+                            if result.success:
+                                cache_key = self._get_cache_key(result.repo_full_name, params)
+                                cache_path = self._get_cache_path(cache_key)
+                                cache_data = {
+                                    'success': result.success,
+                                    'prospects': result.prospects,
+                                    'error': result.error,
+                                    'processing_time': result.processing_time,
+                                    'cached_at': time.time()
+                                }
+                                self._save_cache(cache_path, cache_data)
 
-                    except Exception as e:
-                        error_result = ProcessingResult(
-                            repo_full_name=repo['full_name'],
-                            success=False,
-                            prospects=[],
-                            error=str(e),
-                            processing_time=0.0
-                        )
-                        results.append(error_result)
+                        except Exception as e:
+                            error_result = ProcessingResult(
+                                repo_full_name=repo.get('full_name') or 'unknown/unknown',
+                                success=False,
+                                prospects=[],
+                                error=str(e),
+                                processing_time=0.0
+                            )
+                            results.append(error_result)
+                except KeyboardInterrupt:
+                    print("\n⚠️  Keyboard interrupt detected. Cancelling pending tasks...")
+                    # Cancel all pending futures
+                    for future in future_to_repo:
+                        future.cancel()
+                    executor.shutdown(wait=False)
+                    raise
 
         # Combine cached and fresh results
         all_results = cached_results + results
@@ -208,7 +247,7 @@ class ConcurrentProcessor:
             return result
         except Exception as e:
             return ProcessingResult(
-                repo_full_name=repo['full_name'],
+                repo_full_name=repo.get('full_name') or 'unknown/unknown',
                 success=False,
                 prospects=[],
                 error=str(e),

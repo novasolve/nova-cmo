@@ -211,10 +211,10 @@ Return as JSON:
         }
 
         # Analyze based on available data
-        if prospect.stars and prospect.stars > 100:
+        if prospect.stars is not None and prospect.stars > 100:
             analysis['project_maturity'] = 'mature'
 
-        if prospect.forks and prospect.forks > 10:
+        if prospect.forks is not None and prospect.forks > 10:
             analysis['collaboration_signals'].append('active forking')
 
         return analysis
@@ -269,13 +269,13 @@ Return as JSON:
         pain_points = []
 
         # Based on repository and activity patterns
-        if prospect.contributions_last_year and prospect.contributions_last_year < 10:
+        if prospect.contributions_last_year is not None and prospect.contributions_last_year < 10:
             pain_points.append("Low contribution activity - may indicate maintenance challenges")
 
-        if prospect.followers and prospect.followers < 5:
+        if prospect.followers is not None and prospect.followers < 5:
             pain_points.append("Low profile visibility - networking or marketing challenges")
 
-        if prospect.public_repos and prospect.public_repos > 50:
+        if prospect.public_repos is not None and prospect.public_repos > 50:
             pain_points.append("Managing many repositories - organization and maintenance overhead")
 
         # Based on topics indicating problem areas
