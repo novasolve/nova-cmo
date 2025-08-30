@@ -41,12 +41,22 @@ class ProspectScorer:
             'off_icp_penalty': -40
         })
 
+        # Ensure scoring weights are integers (YAML can load them as strings)
+        for key in self.scoring_weights:
+            if isinstance(self.scoring_weights[key], str):
+                self.scoring_weights[key] = int(self.scoring_weights[key])
+
         self.tier_thresholds = self.icp_config.get('tier_thresholds', {
             'A': 70,
             'B': 55,
             'C': 40,
             'REJECT': 0
         })
+
+        # Ensure tier thresholds are integers (YAML can load them as strings)
+        for key in self.tier_thresholds:
+            if isinstance(self.tier_thresholds[key], str):
+                self.tier_thresholds[key] = int(self.tier_thresholds[key])
 
         # Initialize compliance checker
         self.compliance_checker = ComplianceChecker(self.icp_config)
