@@ -89,7 +89,7 @@ class JobWorker:
                 await asyncio.sleep(5)  # Backoff on errors
 
     async def _process_job(self, job: Job):
-        """Process a single job"""
+        """Process a single job with pause/resume support"""
         start_time = datetime.now()
 
         try:
@@ -101,6 +101,12 @@ class JobWorker:
 
             # Calculate duration
             duration = (datetime.now() - start_time).total_seconds()
+
+            # Check if job was paused
+            if result.get('paused'):
+                # Job was paused, don't mark as completed
+                job.update_progress(stage="paused", current_item="Job paused by user request")
+                return result
 
             # Update final progress
             job.update_progress(
@@ -120,6 +126,8 @@ class JobWorker:
             # Store final state
             if result.get('final_state'):
                 job.run_state = result['final_state']
+
+            return result
 
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
