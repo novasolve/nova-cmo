@@ -33,6 +33,27 @@ class RepoEnricher:
         })
 
         self.rate_limiter = {'last_request': 0, 'min_delay': 1.0}
+        self._last_auth_error = None
+        
+        # Test authentication on initialization
+        self._verify_authentication()
+
+    def _verify_authentication(self):
+        """Verify GitHub authentication is working"""
+        test_url = "https://api.github.com/user"
+        try:
+            response = self.session.get(test_url, timeout=10)
+            if response.status_code == 401:
+                logger.error("GitHub authentication failed during initialization!")
+                logger.error(f"Auth header: {self.session.headers.get('Authorization', 'None')[:30]}...")
+                logger.error("Please check your GitHub token is valid and has the required scopes.")
+            elif response.status_code == 200:
+                user_data = response.json()
+                logger.info(f"✓ GitHub authentication successful. Authenticated as: {user_data.get('login', 'unknown')}")
+            else:
+                logger.warning(f"Unexpected response during auth verification: {response.status_code}")
+        except Exception as e:
+            logger.warning(f"Could not verify GitHub authentication: {e}")
 
     def _get_auth_header(self, token: str) -> str:
         """Get the appropriate authorization header based on token format"""
@@ -45,9 +66,13 @@ class RepoEnricher:
         elif token.startswith('github_token_'):
             # Fine-grained personal access token - use Bearer auth
             return f'Bearer {token}'
+        elif token.startswith('ghs_'):
+            # GitHub App installation access token - use token auth
+            return f'token {token}'
         else:
-            # Unknown format - try Bearer first (GitHub supports both for most tokens)
-            return f'Bearer {token}'
+            # For unknown formats, default to token auth (more compatible)
+            # This handles both old-style tokens and new formats
+            return f'token {token}'
 
     def _rate_limit_wait(self):
         """Implement rate limiting"""
@@ -58,13 +83,29 @@ class RepoEnricher:
         self.rate_limiter['last_request'] = time.time()
 
     def _make_request(self, url: str, params: Optional[Dict] = None) -> Optional[Dict]:
-        """Make rate-limited GitHub API request"""
+        """Make rate-limited GitHub API request with enhanced error handling"""
         self._rate_limit_wait()
 
         try:
             response = self.session.get(url, params=params, timeout=30)
+            
+            # Check for authentication errors specifically
+            if response.status_code == 401:
+                logger.error(f"Authentication failed for {url}. Status: {response.status_code}")
+                logger.error(f"Response: {response.text[:200]}")
+                logger.debug(f"Using auth header format: {self.session.headers.get('Authorization', 'None')[:20]}...")
+                
             response.raise_for_status()
             return response.json()
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 401:
+                self._last_auth_error = "Invalid or expired GitHub token"
+                logger.error(f"GitHub API authentication failed. Please check your token.")
+                logger.error(f"Token format detected: {self.session.headers.get('Authorization', '').split()[0] if self.session.headers.get('Authorization') else 'None'}")
+            else:
+                logger.warning(f"HTTP error for {url}: {e}")
+            return None
         except requests.exceptions.RequestException as e:
             logger.warning(f"Request failed for {url}: {e}")
             return None
@@ -88,7 +129,12 @@ class RepoEnricher:
         # Basic repo data
         repo_data = self._get_repo_basic_data(repo_full_name)
         if not repo_data:
-            return self._empty_enrichment(repo_full_name)
+            # Check if it's an auth error vs other errors
+            if hasattr(self, '_last_auth_error') and self._last_auth_error:
+                error_msg = f"Authentication failed: {self._last_auth_error}"
+            else:
+                error_msg = f"Failed to fetch repository data for {repo_full_name}"
+            return self._empty_enrichment(repo_full_name, error_msg)
 
         # Enhanced metadata
         enriched = {
@@ -308,7 +354,7 @@ class RepoEnricher:
 
         return issue_signals
 
-    def _empty_enrichment(self, repo_full_name: str) -> Dict[str, Any]:
+    def _empty_enrichment(self, repo_full_name: str, error_msg: str = 'Failed to fetch repo data') -> Dict[str, Any]:
         """Return empty enrichment structure for failed requests"""
         return {
             'repo': repo_full_name,
@@ -325,5 +371,6 @@ class RepoEnricher:
             'issues': {'open': 0, 'labels_present': []},
             'enrichment_timestamp': datetime.now().isoformat(),
             'cache_used': False,
-            'error': 'Failed to fetch repo data'
+            'error': error_msg,
+            'enrichment_status': 'failed'
         }

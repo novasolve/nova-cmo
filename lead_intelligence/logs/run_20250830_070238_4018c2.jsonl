@@ -1,0 +1,9 @@
+{"ts": "2025-08-30T14:02:38Z", "lvl": "INFO", "msg": "🚀 Starting data collection", "run_id": "20250830_070238_4018c2", "icps": ["icp01_pypi_maintainers"], "limits": {"max_repos": 50, "max_leads": 25, "per_repo_events": 25}}
+{"ts": "2025-08-30T14:02:38Z", "lvl": "INFO", "msg": "🎯 Collecting for ICP: icp01_pypi_maintainers"}
+{"ts": "2025-08-30T14:02:38Z", "lvl": "INFO", "msg": "🔍 Searching with query: language:Python stars:50..2000 archived:false pushed:>=2025-07-01 in:readme pytest -is:fork..."}
+{"ts": "2025-08-30T14:02:42Z", "lvl": "INFO", "msg": "📦 Processed repo Fr1ngg/remnawave-bedolaga-telegram-bot: 26 events", "repo": "Fr1ngg/remnawave-bedolaga-telegram-bot", "events_processed": 26, "leads_emitted": 1}
+{"ts": "2025-08-30T14:02:42Z", "lvl": "INFO", "msg": "📦 Processed repo Ichinga-Samuel/aiomql: 26 events", "repo": "Ichinga-Samuel/aiomql", "events_processed": 26, "leads_emitted": 3}
+{"ts": "2025-08-30T14:02:43Z", "lvl": "INFO", "msg": "📦 Processed repo eval-protocol/python-sdk: 26 events", "repo": "eval-protocol/python-sdk", "events_processed": 26, "leads_emitted": 7}
+{"ts": "2025-08-30T14:02:44Z", "lvl": "INFO", "msg": "📦 Processed repo codypiersall/pynng: 26 events", "repo": "codypiersall/pynng", "events_processed": 26, "leads_emitted": 24}
+{"ts": "2025-08-30T14:02:44Z", "lvl": "INFO", "msg": "Lead cap reached", "event": "early_stop", "reason": "max_leads", "leads_emitted": 25}
+{"ts": "2025-08-30T14:02:44Z", "lvl": "INFO", "msg": "✅ Data collection complete", "run_id": "20250830_070238_4018c2", "repos_scanned": 5, "leads_emitted": 25, "dedup_dropped": 76}
