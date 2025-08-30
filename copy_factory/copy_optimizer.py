@@ -555,3 +555,4 @@ Apply optimizations based on successful patterns:
                 self.logger.warning(f"Error loading performance data from {file}: {e}")
 
         return historical_data
+
