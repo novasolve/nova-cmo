@@ -181,6 +181,12 @@ class CMOAgent:
         # Artifact management
         from ..core.artifacts import get_artifact_manager
         self.artifact_manager = get_artifact_manager(self.config)
+        # Optional artifact management (fallback if module not present)
+        try:
+            from ..core.artifacts import get_artifact_manager
+            self.artifact_manager = get_artifact_manager(self.config)
+        except Exception:
+            self.artifact_manager = None
 
     def request_pause(self, job_id: str):
         """Request to pause a running job"""
@@ -865,22 +871,26 @@ Available tools: {', '.join(self.tools.keys())}
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
 
-            # Initialize state
+            # Initialize state (include P0 fields)
+            from cmo_agent.core.state import STATE_VERSION
             initial_state = RunState(
                 **job_meta.to_dict(),
+                state_version=STATE_VERSION,
                 icp=self.config.get("default_icp", {}),
                 config=self.config,
                 current_stage="initialization",
                 counters={"steps": 0, "api_calls": 0, "tokens": 0, "errors": 0, "tool_errors": 0},
-                ended=False,  # Explicitly initialize ended flag
-                repos=[],     # Initialize empty lists
+                ended=False,
+                repos=[],
                 candidates=[],
                 leads=[],
                 to_send=[],
                 reports={},
-                errors=[],    # Initialize empty errors list
+                errors=[],
                 checkpoints=[],
-                tool_results={},
+                checkpoints_meta=[],
+                idempotency_keys={},
+                privacy={"redact_pii": True, "pii_fields": ["email", "phone"]},
             )
 
             # Run the graph with progress streaming
@@ -943,6 +953,45 @@ Available tools: {', '.join(self.tools.keys())}
                 "success": True,
                 "job_id": job_meta.job_id,
                 "final_state": final_state,
+                "artifacts": finalization_result.get("artifacts", []),
+                "report": finalization_result.get("report"),
+            }
+
+        except Exception as e:
+            # Outer run_job failure handler
+            logger.error(f"Job execution failed: {e}")
+            job_id = job_meta.job_id if job_meta else "unknown"
+
+            # Attempt to checkpoint the latest known state
+            if 'final_state' in locals() and final_state:
+                try:
+                    await self._save_checkpoint(job_id, final_state, "error")
+                except Exception:
+                    pass
+
+            # Attach error to state if available
+            if 'final_state' in locals() and final_state and hasattr(final_state, 'setdefault'):
+                final_state.setdefault("errors", []).append({
+                    "stage": "job_execution",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "timestamp": datetime.now().isoformat(),
+                    "job_id": job_id,
+                    "critical": True,
+                })
+
+            # Finalize to collect partial artifacts
+            try:
+                finalization_result = await self._finalize_job(job_id, final_state if 'final_state' in locals() else None, "failed")
+            except Exception:
+                finalization_result = {"artifacts": [], "report": None}
+
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": type(e).__name__,
+                "job_id": job_id,
+                "final_state": final_state if 'final_state' in locals() else None,
                 "artifacts": finalization_result.get("artifacts", []),
                 "report": finalization_result.get("report"),
             }
@@ -1033,35 +1082,6 @@ Available tools: {', '.join(self.tools.keys())}
 
             raise
 
-        except Exception as e:
-            logger.error(f"Job execution failed: {e}")
-            job_id = job_meta.job_id if job_meta else "unknown"
-
-            # Add critical error to final state if available
-            if final_state:
-                error_info = {
-                    "stage": "job_execution",
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "timestamp": datetime.now().isoformat(),
-                    "job_id": job_id,
-                    "critical": True,
-                }
-                final_state.setdefault("errors", []).append(error_info)
-
-            # Finalize job even on failure to collect partial results
-            finalization_result = await self._finalize_job(job_id, final_state, "failed")
-
-            return {
-                "success": False,
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "job_id": job_id,
-                "final_state": final_state,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
-            }
-
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
         """Extract progress information from RunState"""
         counters = state.get("counters", {})
@@ -1118,46 +1138,22 @@ Available tools: {', '.join(self.tools.keys())}
     async def _save_checkpoint(self, job_id: str, state: RunState, checkpoint_type: str = "periodic"):
         """Save a checkpoint of the current job state"""
         try:
-            import json
-            from pathlib import Path
+            # no local JSON/Path usage; centralized helpers handle IO
 
-            # Create checkpoints directory
-            checkpoints_dir = Path(self.config.get("directories", {}).get("checkpoints", "./checkpoints"))
-            checkpoints_dir.mkdir(exist_ok=True)
+            # Use centralized helpers from core.state
+            from cmo_agent.core.state import migrate_run_state, save_checkpoint
 
-            # Create checkpoint file
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            checkpoint_file = checkpoints_dir / f"{job_id}_{checkpoint_type}_{timestamp}.json"
+            # Ensure state is migrated before persistence
+            migrated_state = migrate_run_state(state)
+            checkpoint_path = save_checkpoint(job_id, migrated_state, type=checkpoint_type, reason=f"agent:{checkpoint_type}")
 
-            # Prepare checkpoint data
-            checkpoint_data = {
-                "job_id": job_id,
-                "checkpoint_type": checkpoint_type,
-                "timestamp": datetime.now().isoformat(),
-                "state": state,
-                "counters": state.get("counters", {}),
-                "progress": state.get("progress", {}),
-            }
-
-            # Save to file
-            with open(checkpoint_file, 'w') as f:
-                json.dump(checkpoint_data, f, indent=2, default=str)
-
-            # Add to state's checkpoints list
-            state.setdefault("checkpoints", []).append({
-                "type": checkpoint_type,
-                "path": str(checkpoint_file),
-                "timestamp": datetime.now().isoformat(),
-                "counters": state.get("counters", {}),
-            })
-
-            logger.info(f"Checkpoint saved: {checkpoint_file}")
+            logger.info(f"Checkpoint saved: {checkpoint_path}")
 
             # Clean up old checkpoints periodically
             if checkpoint_type == "periodic":
                 await self._cleanup_checkpoints(job_id)
 
-            return str(checkpoint_file)
+            return str(checkpoint_path)
 
         except Exception as e:
             logger.error(f"Failed to save checkpoint: {e}")
@@ -1682,6 +1678,6 @@ Available tools: {', '.join(self.tools.keys())}
 
         for milestone in api_milestones:
             if api_calls == milestone:
-            return True
+                return True
 
         return False
