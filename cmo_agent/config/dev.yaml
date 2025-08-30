@@ -1,0 +1,66 @@
+# CMO Agent Default Configuration
+# Copy this file and modify for your specific campaigns
+
+# Job limits and caps
+max_steps: 40
+max_repos: 600
+max_people: 3000
+max_api_calls: 10000
+
+# Rate limits (calls per second)
+rate_limits:
+  github_per_hour: 5000
+  instantly_per_second: 10
+  attio_per_minute: 60
+  linear_per_minute: 30
+
+# Timeouts (seconds)
+timeouts:
+  github_api: 15
+  instantly_api: 30
+  attio_api: 20
+  linear_api: 20
+
+# Retry configuration
+retries:
+  max_attempts: 3
+  backoff_multiplier: 2.0
+  jitter: true
+
+# Default ICP (Ideal Customer Profile)
+default_icp:
+  languages: ["python"]
+  topics: ["ci", "testing", "pytest", "devtools", "llm"]
+  stars_range: "100..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]
+
+# Campaign defaults
+campaign_defaults:
+  subject_template: "Quick fix for {{repo}} CI flakes"
+  body_template: |
+    Hi {{first_name}},
+
+    I noticed {{repo}} has shown recent activity with {{language}} development. Nova is a small GitHub App that only wakes up when CI fails on a PR, pinpoints the cause, and pushes a minimal patch as a PR.
+
+    {{why_now}}
+
+    Zero lock-in, BYO API key, OSS license. Want a one-off trial on a test PR?
+
+    — Sebastian
+    {{unsub_link}}
+
+# Export configuration
+export_dir: "./exports"
+checkpoint_every: 200 # Save CSV every N leads
+
+# Logging
+log_level: "INFO"
+log_file: "./logs/cmo_agent.log"
+
+# Feature flags
+features:
+  dry_run: false
+  enable_langfuse: false
+  enable_background_jobs: true
+  enable_rate_limiting: true
