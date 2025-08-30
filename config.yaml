@@ -1,66 +1,207 @@
-version: 1
+version: 2
 
+# Enhanced configuration for Phase 1: Data Collection
+defaults:
+  lookback_days: 30
+  global_limits:
+    max_repos: 300 # hard cap across all ICPs
+    max_leads: 200 # hard cap across all ICPs
+    per_repo_events: 25
+  dedupe_db: "lead_intelligence/data/dedup.sqlite3"
+  out_dir: "lead_intelligence/data/raw"
+  log_dir: "lead_intelligence/logs"
+  github:
+    per_page: 100
+    timeout_secs: 15
+    retries: 3
+    backoff_base_secs: 2.0
+    jitter: true
+
+# ICP definitions with enhanced search and signal detection
+icps:
+  icp01_pypi_maintainers:
+    label: "PyPI Maintainers – Fast-moving Python"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:50..2000 archived:false pushed:>={date:60} in:readme pytest -is:fork"
+      sort: updated
+      window_days: 60
+    signals:
+      lookback_days: 30
+      include: [pr, commit, release, issue]
+    limits:
+      max_repos: 120
+      per_repo_events: 30
+
+  icp02_ml_ds_maintainers:
+    label: "ML/DS Ecosystem Maintainers"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python (pytorch OR tensorflow OR sklearn) stars:>100 pushed:>={date:90} -archived:true -is:fork"
+    signals:
+      lookback_days: 45
+    limits:
+      max_repos: 150
+      per_repo_events: 20
+
+  icp03_seed_series_a_python_saas:
+    label: "Seed/Series A Python SaaS (Actions-first)"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:10..500 pushed:>={date:30} -is:fork filename:.github/workflows"
+    signals:
+      lookback_days: 14
+    limits:
+      max_repos: 80
+      per_repo_events: 15
+
+  icp04_api_sdk_tooling:
+    label: "API/SDK DevTools Teams"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:25..1000 pushed:>={date:45} (sdk OR api OR client OR library) -is:fork"
+    signals:
+      lookback_days: 21
+    limits:
+      max_repos: 100
+      per_repo_events: 25
+
+  icp05_academic_labs:
+    label: "University/Research Labs Maintaining Python Packages"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:5..800 pushed:>={date:60} (university OR research OR lab OR academic) -is:fork"
+    signals:
+      lookback_days: 60
+    limits:
+      max_repos: 90
+      per_repo_events: 20
+
+  icp06_django_flask_products:
+    label: "Django/Flask Product Teams (E-com/B2C)"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:20..1500 pushed:>={date:30} (django OR flask) -is:fork"
+    signals:
+      lookback_days: 14
+    limits:
+      max_repos: 110
+      per_repo_events: 18
+
+  icp07_regulated_startups:
+    label: "Fintech/Healthtech (Regulated) – Python Backends"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:5..300 pushed:>={date:45} (fintech OR healthtech OR finance OR healthcare) -is:fork"
+    signals:
+      lookback_days: 30
+    limits:
+      max_repos: 70
+      per_repo_events: 22
+
+  icp08_agencies_consultancies:
+    label: "Agencies/Consultancies with Many Client Repos"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:1..100 pushed:>={date:14} (agency OR consultancy OR consulting) -is:fork"
+    signals:
+      lookback_days: 7
+    limits:
+      max_repos: 60
+      per_repo_events: 12
+
+  icp09_pytest_ci_plugin_authors:
+    label: "PyTest/CI Plugin Authors & Tooling Maintainers"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:10..800 pushed:>={date:30} (pytest OR tox OR ci OR plugin) -is:fork"
+    signals:
+      lookback_days: 21
+    limits:
+      max_repos: 85
+      per_repo_events: 28
+
+  icp10_explicit_flaky_signals:
+    label: "Repos with Explicit Flaky/Failing Test Signals"
+    enabled: true
+    search:
+      type: repositories
+      segments:
+        - "language:Python stars:5..600 pushed:>={date:21} (flaky OR nondeterministic OR race) -is:fork"
+    signals:
+      lookback_days: 14
+    limits:
+      max_repos: 75
+      per_repo_events: 35
+
+# Legacy compatibility - will be removed in v3
 github:
-  token_env: GITHUB_TOKEN # set this in your env
+  token: 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
   endpoint: https://api.github.com
   respect_rate_limits: true
-  concurrency: 2 # stay polite, raise carefully if you have high limits
+  concurrency: 2
   retry:
     max_attempts: 3
-    backoff_seconds: 2
+    backoff_seconds: 2.0
 
 search:
-  # Base repository query (segments add to / refine this).
-  # Notes:
-  # - Excludes common non-targets (awesome lists, templates, docs-only, starters).
-  # - We do NOT put pushed:> in the query; we filter by activity_days below to keep it dynamic.
   type: repositories
-  query: >
-    language:python stars:100..500 is:public archived:false
-    created:>2023-01-01 pushed:>2024-01-01
-  sort: updated # 'stars', 'forks', 'updated', 'help-wanted-issues'
+  query: "language:python stars:100..500 is:public archived:false"
+  sort: updated
   order: desc
   per_page: 50
 
 filters:
-  # Temporal/activity + quality thresholds
-  activity_days: 60 # only repos with pushes in the last N days
-  include_forks: false # default search excludes forks, keep explicit
+  activity_days: 60
+  include_forks: false
   exclude_archived: true
   exclude_mirrors: true
-  require_ci: true # must have CI workflows detected
-  require_tests_signal: true # must have pytest/tox/nox/tests folder detected (see enrichment)
+  require_ci: false
+  require_tests_signal: false
   licenses:
-    include: [mit, apache-2.0, bsd-3-clause, bsd-2-clause, mpl-2.0] # avoid sticky licensing
-  min_open_issues: 5
-  min_recent_commits: 5 # last 60–90d, enforced in enrichment
-  min_recent_prs: 3
-  min_contributors_last_90d: 2
+    include: [mit, apache-2.0, bsd-3-clause, bsd-2-clause, mpl-2.0]
+  min_open_issues: 0
+  min_recent_commits: 1
+  min_recent_prs: 0
+  min_contributors_last_90d: 1
   exclude_orgs:
-    - apache
-    - google
-    - microsoft
-    - facebook
-    - pytorch
-    - tensorflow
-    - aws
-    - oracle
-  exclude_repo_name_keywords: # reduce false positives
-    - docs
-    - documentation
-    - examples
-    - tutorial
-    - sample
-    - book
-    - course
-    - template
-    - starter
-    - playground
-    - dotfiles
-    - sandbox
+    [apache, google, microsoft, facebook, pytorch, tensorflow, aws, oracle]
+  exclude_repo_name_keywords:
+    [
+      docs,
+      documentation,
+      examples,
+      tutorial,
+      sample,
+      book,
+      course,
+      template,
+      starter,
+      playground,
+      dotfiles,
+      sandbox,
+    ]
 
 limits:
-  max_repos: 40 # a bit more headroom; still focused
+  max_repos: 40
   per_repo_prs: 20
   per_repo_commits: 20
   per_repo_workflow_runs: 30
@@ -235,7 +376,7 @@ target_segments:
 concurrency:
   enabled: true
   max_workers: 8
-  requests_per_hour: 4800  # Stay under 5000/hour limit
+  requests_per_hour: 4800 # Stay under 5000/hour limit
   cache_dir: ".cache"
 
 dedupe:
