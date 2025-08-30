@@ -18,9 +18,9 @@
 
 ### Non‑Goals (for MVP)
 
-* Multi‑agent debate/critique trees.
-* Auto‑A/B bandits, reply classification, or calendaring threads.
-* Third‑party enrichers (Clay/Apollo) beyond commit/profile emails.
+- Multi‑agent debate/critique trees.
+- Auto‑A/B bandits, reply classification, or calendaring threads.
+- Third‑party enrichers (Clay/Apollo) beyond commit/profile emails.
 
 ---
 
@@ -41,19 +41,19 @@
                                           └─────────────────────────────────────┘
 ```
 
-* **Frontend**: your chat with the agent. Commands become **Jobs**.
-* **Scheduler/Queue**: enqueues jobs; workers pull and run steps; supports backoff/resume.
-* **Runner**: the LangGraph workflow. One node that repeatedly prompts GPT‑5 to choose a **tool** (or `done`).
-* **State Store**: SQLite/Postgres + S3‑style blob for artifacts; Langfuse for traces (optional).
+- **Frontend**: your chat with the agent. Commands become **Jobs**.
+- **Scheduler/Queue**: enqueues jobs; workers pull and run steps; supports backoff/resume.
+- **Runner**: the LangGraph workflow. One node that repeatedly prompts GPT‑5 to choose a **tool** (or `done`).
+- **State Store**: SQLite/Postgres + S3‑style blob for artifacts; Langfuse for traces (optional).
 
 ---
 
 ## 3) Execution Model (Async‑first)
 
-* **Job** = {goal, constraints, env, created\_by}. Example: "Find 2000 Py maintainers active 90d, MX‑check, queue Instantly seq=123, sync Attio list=abc; export CSV."
-* **Worker loop** pulls job → invokes LangGraph **step** → executes the selected **tool** → **reduces** result into `RunState` → persists → repeats until `done` or **step budget** reached.
-* **Streaming progress**: tail structured logs to chat; key milestones push notifications.
-* **Pause/Resume**: at any time; all tool calls are idempotent or guarded with external ids.
+- **Job** = {goal, constraints, env, created_by}. Example: "Find 2000 Py maintainers active 90d, MX‑check, queue Instantly seq=123, sync Attio list=abc; export CSV."
+- **Worker loop** pulls job → invokes LangGraph **step** → executes the selected **tool** → **reduces** result into `RunState` → persists → repeats until `done` or **step budget** reached.
+- **Streaming progress**: tail structured logs to chat; key milestones push notifications.
+- **Pause/Resume**: at any time; all tool calls are idempotent or guarded with external ids.
 
 ---
 
@@ -86,42 +86,42 @@ class RunState(TypedDict, total=False):
 
 ### GitHub discovery & enrichment
 
-* `search_github_repos(q: str, max_repos: int) -> [Repo]`
-* `extract_people(repos: [Repo], top_authors_per_repo: int=5) -> [PersonRef]`
-* `enrich_github_user(login: str) -> PersonProfile`
-* `find_commit_emails(login: str, repos: [Repo], days: int=90) -> [Email]`
+- `search_github_repos(q: str, max_repos: int) -> [Repo]`
+- `extract_people(repos: [Repo], top_authors_per_repo: int=5) -> [PersonRef]`
+- `enrich_github_user(login: str) -> PersonProfile`
+- `find_commit_emails(login: str, repos: [Repo], days: int=90) -> [Email]`
 
 ### Hygiene & scoring
 
-* `mx_check(emails: [str]) -> [GoodEmail]`
-* `score_icp(profile: PersonProfile, weights: dict) -> Score`
-  *Deterministic; expose each feature's contribution.*
+- `mx_check(emails: [str]) -> [GoodEmail]`
+- `score_icp(profile: PersonProfile, weights: dict) -> Score`
+  _Deterministic; expose each feature's contribution._
 
 ### Personalization & sending
 
-* `render_copy(lead: Lead, campaign: dict) -> {subject, body}`
-  *(Jinja v1; LLM v2; store prompt & output)*
-* `send_instantly(contacts: [dict], seq_id: str, per_inbox_cap: int=50) -> SendReport`
+- `render_copy(lead: Lead, campaign: dict) -> {subject, body}`
+  _(Jinja v1; LLM v2; store prompt & output)_
+- `send_instantly(contacts: [dict], seq_id: str, per_inbox_cap: int=50) -> SendReport`
 
 ### CRM & ticketing
 
-* `sync_attio(people: [dict], list_id: str) -> AttioReport`
-  *Upsert People → add to List → Note("Cold email scheduled")*
-* `sync_linear(parent_title: str, events: [dict]) -> LinearReport`
-  *Create parent campaign; child issues for errors/hot‑replies*
+- `sync_attio(people: [dict], list_id: str) -> AttioReport`
+  _Upsert People → add to List → Note("Cold email scheduled")_
+- `sync_linear(parent_title: str, events: [dict]) -> LinearReport`
+  _Create parent campaign; child issues for errors/hot‑replies_
 
 ### Export & finalize
 
-* `export_csv(rows: [dict], path: str) -> {path, count}`
-* `done(summary: str) -> null`
+- `export_csv(rows: [dict], path: str) -> {path, count}`
+- `done(summary: str) -> null`
 
 ---
 
 ## 6) Single‑Node LangGraph
 
-* **System prompt** anchors the order of operations, caps, and fallback logic.
-* The agent **must** use tools; free‑text answers are discouraged.
-* A **reducer** maps each tool's result into `RunState`.
+- **System prompt** anchors the order of operations, caps, and fallback logic.
+- The agent **must** use tools; free‑text answers are discouraged.
+- A **reducer** maps each tool's result into `RunState`.
 
 **Pseudocode skeleton**
 
@@ -161,7 +161,7 @@ def agent_step(state: dict):
   "signals": {
     "maintainer_of": ["owner/repo1"],
     "recent_pr_titles": ["Fix flaky pytest"],
-    "topics": ["pytest","ci","devtools"],
+    "topics": ["pytest", "ci", "devtools"],
     "primary_language": "Python",
     "activity_90d_commits": 23,
     "followers": 512
@@ -177,20 +177,20 @@ def agent_step(state: dict):
 
 ## 8) Observability & Persistence
 
-* **Storage**: `runs/{job_id}/state.json`, `artifacts/*.csv`, `logs/*.ndjson`.
-* **Langfuse** (optional): trace per tool call; tags: job\_id, stage, repo\_count.
-* **Metrics**: prospects/min, MX pass‑rate, Instantly acceptance, soft/hard bounces (later).
-* **Checkpoints**: write CSV every N=200 leads; resume from last checkpoint on restart.
+- **Storage**: `runs/{job_id}/state.json`, `artifacts/*.csv`, `logs/*.ndjson`.
+- **Langfuse** (optional): trace per tool call; tags: job_id, stage, repo_count.
+- **Metrics**: prospects/min, MX pass‑rate, Instantly acceptance, soft/hard bounces (later).
+- **Checkpoints**: write CSV every N=200 leads; resume from last checkpoint on restart.
 
 ---
 
 ## 9) Rate Limits, Retries, Idempotency
 
-* **GitHub**: backoff on `403` with `X-RateLimit-Reset`; support token pool round‑robin.
-* **Instantly**: enforce `per_inbox_daily` + pacing; de‑duplicate by `{email, seq_id}`.
-* **Attio**: upsert by email; write idempotency key = `job_id:email`.
-* **Linear**: single parent per `job_id`; child issues keyed by error hash.
-* **Retries**: exponential backoff with jitter; dead‑letter queue for persistent failures.
+- **GitHub**: backoff on `403` with `X-RateLimit-Reset`; support token pool round‑robin.
+- **Instantly**: enforce `per_inbox_daily` + pacing; de‑duplicate by `{email, seq_id}`.
+- **Attio**: upsert by email; write idempotency key = `job_id:email`.
+- **Linear**: single parent per `job_id`; child issues keyed by error hash.
+- **Retries**: exponential backoff with jitter; dead‑letter queue for persistent failures.
 
 ---
 
@@ -227,17 +227,17 @@ include_topics: [ci, testing, pytest, devtools, llm]
 
 ### A) Chat‑first
 
-* **You:** "Find \~2k Py maintainers active 90d, queue Instantly seq=123; add to Attio list=abc; export CSV."
-* **Agent:** Confirms plan (caps + knobs), creates **Job**, starts running. You can type follow‑ups during execution (it reads the same RunState).
+- **You:** "Find \~2k Py maintainers active 90d, queue Instantly seq=123; add to Attio list=abc; export CSV."
+- **Agent:** Confirms plan (caps + knobs), creates **Job**, starts running. You can type follow‑ups during execution (it reads the same RunState).
 
 ### B) CSV‑first (dry run)
 
-* **You:** "Same, but dry‑run and export only."
-* **Agent:** Skips send/sync; writes `prospects.csv` + `attio_people.csv`.
+- **You:** "Same, but dry‑run and export only."
+- **Agent:** Skips send/sync; writes `prospects.csv` + `attio_people.csv`.
 
 ### C) Error triage
 
-* **Agent:** On failure spikes, creates Linear child issues and pauses sending; asks if it should resume after N minutes.
+- **Agent:** On failure spikes, creates Linear child issues and pauses sending; asks if it should resume after N minutes.
 
 ---
 
@@ -245,32 +245,32 @@ include_topics: [ci, testing, pytest, devtools, llm]
 
 **v0.1 (this doc)**
 
-* Single node, toolbelt wrappers, SQLite state, CSV exports, Instantly send, Attio list sync, Linear error tickets, MX check, basic logs.
+- Single node, toolbelt wrappers, SQLite state, CSV exports, Instantly send, Attio list sync, Linear error tickets, MX check, basic logs.
 
 **v0.2**
 
-* Token pool for GitHub, parallel enrichment (map/reduce inside tool), resumable checkpoints, Langfuse traces, dry‑run toggle.
+- Token pool for GitHub, parallel enrichment (map/reduce inside tool), resumable checkpoints, Langfuse traces, dry‑run toggle.
 
 **v0.3**
 
-* LLM‑assisted copy (few‑shot with personalization payload), reply webhooks → Linear hot‑reply tasks, simple variant testing (A/B) with counters.
+- LLM‑assisted copy (few‑shot with personalization payload), reply webhooks → Linear hot‑reply tasks, simple variant testing (A/B) with counters.
 
 ---
 
 ## 13) Risks & Mitigations
 
-* **Email sparsity**: Commit emails aren't always present → widen repo topics, add PR authors, allow fallback to profile email.
-* **Rate limits**: Use token pool + caching; respect ETags.
-* **Nondeterministic agent loops**: Hard step caps; DONE tool; snapshot state per step.
-* **Deliverability**: Enforce per‑inbox caps; warm senders; MX sanity checks.
+- **Email sparsity**: Commit emails aren't always present → widen repo topics, add PR authors, allow fallback to profile email.
+- **Rate limits**: Use token pool + caching; respect ETags.
+- **Nondeterministic agent loops**: Hard step caps; DONE tool; snapshot state per step.
+- **Deliverability**: Enforce per‑inbox caps; warm senders; MX sanity checks.
 
 ---
 
 ## 14) Testing Strategy
 
-* **Unit**: tool contracts (GitHub paging, Instantly batch add, Attio upsert paths).
-* **Integration**: canned jobs with mock GitHub/Instantly/Attio fixtures; golden CSVs.
-* **Soak**: 3‑hour run across 1k repos; assert checkpoints every 200 leads.
+- **Unit**: tool contracts (GitHub paging, Instantly batch add, Attio upsert paths).
+- **Integration**: canned jobs with mock GitHub/Instantly/Attio fixtures; golden CSVs.
+- **Soak**: 3‑hour run across 1k repos; assert checkpoints every 200 leads.
 
 ---
 
