@@ -86,10 +86,25 @@ class JobTracker:
 
         # Generate hashes for reproducibility
         query_hash = hashlib.md5(search_query.encode()).hexdigest()[:12]
-        config_hash = hashlib.md5(json.dumps(config, sort_keys=True).encode()).hexdigest()[:12]
+
+        # Convert config to serializable format to avoid type comparison issues
+        try:
+            config_str = json.dumps(config, sort_keys=True, default=str)
+            config_hash = hashlib.md5(config_str.encode()).hexdigest()[:12]
+        except (TypeError, ValueError):
+            # Fallback: convert to string representation
+            config_str = str(sorted(config.items())) if hasattr(config, 'items') else str(config)
+            config_hash = hashlib.md5(config_str.encode()).hexdigest()[:12]
+
         icp_hash = None
         if icp_config:
-            icp_hash = hashlib.md5(json.dumps(icp_config, sort_keys=True).encode()).hexdigest()[:12]
+            try:
+                icp_str = json.dumps(icp_config, sort_keys=True, default=str)
+                icp_hash = hashlib.md5(icp_str.encode()).hexdigest()[:12]
+            except (TypeError, ValueError):
+                # Fallback: convert to string representation
+                icp_str = str(sorted(icp_config.items())) if hasattr(icp_config, 'items') else str(icp_config)
+                icp_hash = hashlib.md5(icp_str.encode()).hexdigest()[:12]
 
         # Generate job ID
         timestamp = utc_now().strftime('%Y%m%d_%H%M%S')

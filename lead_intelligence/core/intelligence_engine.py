@@ -1307,7 +1307,7 @@ class IntelligenceEngine:
         """Check if prospect passes location and language filters"""
         try:
             # Location filtering
-            if self.config.us_only:
+            if self.config.us_only and isinstance(self.config.us_only, bool):
                 location = getattr(prospect, 'location', '') or ''
                 location_lower = location.lower()
 
@@ -1324,7 +1324,7 @@ class IntelligenceEngine:
                     return False
 
             # Language filtering
-            if self.config.english_only:
+            if self.config.english_only and isinstance(self.config.english_only, bool):
                 # Check bio for English indicators
                 bio = getattr(prospect, 'bio', '') or ''
                 bio_lower = bio.lower()
