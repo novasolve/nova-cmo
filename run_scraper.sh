@@ -17,7 +17,10 @@ if [ -f ./.env ]; then
     if [ -n "$PREV_GITHUB_TOKEN" ]; then
         GITHUB_TOKEN="$PREV_GITHUB_TOKEN"
     else
-        GITHUB_TOKEN="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"
+        echo "❌ No GITHUB_TOKEN environment variable set!"
+        echo "Please run: export GITHUB_TOKEN=your_token_here"
+        echo "Or add to .env file"
+        exit 1
     fi
     if [ -n "$PREV_GH_TOKEN" ]; then
         GH_TOKEN="$PREV_GH_TOKEN"
