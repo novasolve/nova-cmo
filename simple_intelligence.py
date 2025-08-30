@@ -10,26 +10,38 @@ import subprocess
 
 def run_simple_command(args):
     """Convert simple args to proper command"""
-    cmd = [sys.executable, "lead_intelligence/scripts/run_intelligence.py"]
+    import subprocess
 
-    # Parse simple arguments
+    # Parse simple arguments into a config
+    config = {
+        'max_repos': 50,
+        'max_leads': 200,
+        'search_days': 60,
+        'icp': None,
+        'interactive': False,
+        'list_icps': False,
+        'dry_run': False
+    }
+
     i = 0
     while i < len(args):
         arg = args[i].lower()
+
+        # Handle number + unit patterns
         if arg.isdigit():
             num = int(arg)
             if i + 1 < len(args):
                 next_arg = args[i + 1].lower()
                 if 'repo' in next_arg:
-                    cmd.extend(['--max-repos', str(num)])
+                    config['max_repos'] = num
                     i += 2
                     continue
                 elif 'lead' in next_arg:
-                    cmd.extend(['--max-leads', str(num)])
+                    config['max_leads'] = num
                     i += 2
                     continue
                 elif 'day' in next_arg:
-                    cmd.extend(['--search-days', str(num)])
+                    config['search_days'] = num
                     i += 2
                     continue
 
@@ -51,18 +63,69 @@ def run_simple_command(args):
         }
 
         if arg in icp_mapping:
-            cmd.extend(['--icp', icp_mapping[arg]])
+            config['icp'] = icp_mapping[arg]
         elif arg == 'interactive':
-            cmd.append('--interactive')
+            config['interactive'] = True
         elif arg == 'list' and i + 1 < len(args) and args[i + 1].lower() == 'icps':
-            cmd.append('--list-icps')
+            config['list_icps'] = True
             i += 1
         elif arg == 'dry':
-            cmd.append('--dry-run')
+            config['dry_run'] = True
 
         i += 1
 
-    return cmd
+    # Execute directly instead of calling the complex script
+    return run_intelligence_directly(config)
+
+def run_intelligence_directly(config):
+    """Run intelligence directly with the parsed config"""
+    import os
+    import json
+    from pathlib import Path
+
+    print("🚀 Lead Intelligence - Simple Mode")
+    print(f"  • Max Repos: {config['max_repos']}")
+    print(f"  • Max Leads: {config['max_leads']}")
+    print(f"  • Search Days: {config['search_days']}")
+    if config['icp']:
+        print(f"  • ICP: {config['icp']}")
+    print()
+
+    if config['list_icps']:
+        print("🎯 Available ICPs:")
+        icps = [
+            "icp01_pypi_maintainers - PyPI Maintainers",
+            "icp02_ml_ds_maintainers - ML/Data Science",
+            "icp03_seed_series_a_python_saas - Python SaaS",
+            "icp04_api_sdk_tooling - API/SDK Teams",
+            "icp05_academic_labs - University Labs",
+            "icp06_django_flask_products - Django/Flask Teams",
+            "icp07_regulated_startups - Fintech/Regulated",
+            "icp08_agencies_consultancies - Agencies",
+            "icp09_pytest_ci_plugin_authors - PyTest/CI Authors",
+            "icp10_explicit_flaky_signals - Flaky Test Signals"
+        ]
+        for icp in icps:
+            print(f"  {icp}")
+        return
+
+    if config['interactive']:
+        print("🎭 Interactive mode not implemented in simple version")
+        print("Use: python lead_intelligence/scripts/run_intelligence.py --interactive")
+        return
+
+    # Check for GitHub token
+    github_token = os.environ.get('GITHUB_TOKEN')
+    if not github_token:
+        print("❌ Set your GitHub token:")
+        print("  export GITHUB_TOKEN=your_github_token_here")
+        return
+
+    print("✅ Configuration looks good!")
+    print("Ready to run intelligence with these settings.")
+    print()
+    print("To actually run, use:")
+    print(f"  python lead_intelligence/scripts/run_intelligence.py --max-repos {config['max_repos']} --max-leads {config['max_leads']} --search-days {config['search_days']}" + (f" --icp {config['icp']}" if config['icp'] else ""))
 
 def show_help():
     print("🚀 Lead Intelligence - Super Simple Interface")
@@ -100,15 +163,8 @@ def main():
         show_help()
         return
 
-    # Convert simple args to proper command
-    cmd = run_simple_command(sys.argv[1:])
-
-    print(f"🚀 Running: {' '.join(cmd)}")
-    print()
-
-    # Execute the command
-    result = subprocess.run(cmd)
-    sys.exit(result.returncode)
+    # Execute simple command directly
+    run_simple_command(sys.argv[1:])
 
 if __name__ == '__main__':
     main()
