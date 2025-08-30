@@ -315,6 +315,26 @@ class GitHubScraper:
         session.mount('https://', adapter)
         return session
         
+    def _render_query(self, raw_query: str) -> str:
+        """Render dynamic placeholders in the search query.
+
+        Supported placeholders:
+        - {date:N} → replaced with YYYY-MM-DD for (today - N days)
+        """
+        q = str(raw_query or '')
+        # {date:N} → YYYY-MM-DD (UTC today minus N days)
+        def _date_repl(match: re.Match) -> str:
+            try:
+                days_back = int(match.group(1))
+            except Exception:
+                days_back = 0
+            target = datetime.now(timezone.utc) - timedelta(days=days_back)
+            return target.strftime('%Y-%m-%d')
+        q = re.sub(r"\{date:(\d+)\}", _date_repl, q)
+        # Normalize whitespace
+        q = ' '.join(q.split())
+        return q
+        
     def _rate_limit_wait(self, response):
         """Handle GitHub rate limiting"""
         if response.status_code == 403:
@@ -570,22 +590,77 @@ class GitHubScraper:
                 except Exception:
                     err = {}
                 message = (err.get('message') or '')
-                tqdm.write(f"❌ Error searching repos: {response.status_code} {message}")
-                # Fallback: if 422 (Validation Failed), try to simplify query by splitting on OR and running first part
-                if response.status_code == 422 and 'q' in params and ' OR ' in params['q']:
-                    simple_q = params['q'].split(' OR ')[0]
-                    params['q'] = simple_q
-                    response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-                    if response.status_code == 200:
-                        data = response.json()
-                        items = data.get('items', []) or []
-                        repos.extend(items)
-                        pages_pbar.update(1)
-                        if len(data.get('items', [])) < per_page:
-                            break
-                        page += 1
-                        time.sleep(self.config.get('delay', 1))
-                        continue
+                # Include details when available to aid debugging (e.g., 422 Validation Failed)
+                details = ''
+                try:
+                    if isinstance(err, dict) and err.get('errors'):
+                        details = f" details={json.dumps(err.get('errors'), ensure_ascii=False)}"
+                except Exception:
+                    details = ''
+                bad_q = params.get('q')
+                tqdm.write(f"❌ Error searching repos: {response.status_code} {message}{details} q=\"{bad_q}\"")
+                # Fallback: if 422 (Validation Failed), try to rewrite OR groups safely
+                if response.status_code == 422 and 'q' in params and params['q']:
+                    original_q = params['q']
+                    attempted_queries = []
+                    # 1) Try replacing each parenthesized (A OR B) group with each option individually
+                    try:
+                        groups = re.findall(r"\(([^)]+)\)", original_q)
+                        tried_success = False
+                        for g in groups:
+                            if ' OR ' not in g:
+                                continue
+                            options = [opt.strip() for opt in g.split(' OR ') if opt.strip()]
+                            for opt in options:
+                                trial_q = original_q.replace(f"({g})", opt)
+                                attempted_queries.append(trial_q)
+                                trial_params = dict(params)
+                                trial_params['q'] = trial_q
+                                trial_resp = self.session.get(url, headers=self.headers, params=trial_params, timeout=timeout_secs)
+                                if self._rate_limit_wait(trial_resp):
+                                    trial_resp = self.session.get(url, headers=self.headers, params=trial_params, timeout=timeout_secs)
+                                if trial_resp.status_code == 200:
+                                    data = trial_resp.json() or {}
+                                    items = data.get('items', []) or []
+                                    repos.extend(items)
+                                    pages_pbar.update(1)
+                                    # Lock in working query for subsequent pages
+                                    params['q'] = trial_q
+                                    if len(items) < per_page:
+                                        tried_success = True
+                                        break
+                                    page += 1
+                                    time.sleep(self.config.get('delay', 1))
+                                    tried_success = True
+                                    break
+                            if tried_success:
+                                break
+                        if tried_success:
+                            continue
+                    except Exception:
+                        pass
+                    # 2) AND fallback: replace OR with space (GitHub search defaults to AND)
+                    if ' OR ' in original_q:
+                        and_q = original_q.replace(' OR ', ' ')
+                        attempted_queries.append(and_q)
+                        trial_params = dict(params)
+                        trial_params['q'] = and_q
+                        trial_resp = self.session.get(url, headers=self.headers, params=trial_params, timeout=timeout_secs)
+                        if self._rate_limit_wait(trial_resp):
+                            trial_resp = self.session.get(url, headers=self.headers, params=trial_params, timeout=timeout_secs)
+                        if trial_resp.status_code == 200:
+                            data = trial_resp.json() or {}
+                            items = data.get('items', []) or []
+                            repos.extend(items)
+                            pages_pbar.update(1)
+                            params['q'] = and_q
+                            if len(items) < per_page:
+                                break
+                            page += 1
+                            time.sleep(self.config.get('delay', 1))
+                            continue
+                    # If we exhausted fallbacks
+                    tqdm.write(f"⚠️  422 persisted after trying {len(attempted_queries)} rewritten queries")
                 break
 
             data = response.json() or {}
