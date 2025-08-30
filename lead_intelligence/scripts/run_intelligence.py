@@ -198,6 +198,7 @@ def main():
 
     # Initialize variables for both code paths
     simple_config = None
+    pipeline_already_run = False
 
     # Check if we have simple arguments (no dashes) or help
     if len(sys.argv) == 1:
@@ -234,7 +235,7 @@ def main():
             'search_days': simple_config.get('search_days', 60) if simple_config else 60,
             'icp': simple_config.get('icp') if simple_config else None,
             'config': 'lead_intelligence/config/intelligence.yaml',
-            'github_token': os.environ.get('GITHUB_TOKEN'),
+            'github_token': "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",
             'base_config': 'config.yaml',
             'output_dir': 'lead_intelligence/data',
             'verbose': False,
@@ -308,13 +309,16 @@ def main():
     logger = logging.getLogger(__name__)
 
     # Check for GitHub token
-    github_token = args.github_token or os.environ.get('GITHUB_TOKEN')
-    if not github_token:
-        logger.error("❌ GitHub token required. Set GITHUB_TOKEN environment variable or use --github-token")
+    # HARDCODED TOKEN - Replace 'YOUR_ACTUAL_TOKEN_HERE' with your real token
+    HARDCODED_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
+    
+    github_token = args.github_token or "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"
+    if not github_token or github_token == "YOUR_ACTUAL_TOKEN_HERE":
+        logger.error("❌ GitHub token required. Please update the HARDCODED_TOKEN variable")
         print("\nTo get a GitHub token:")
         print("1. Go to https://github.com/settings/tokens")
         print("2. Generate a new token with 'repo' and 'user:email' scopes")
-        print("3. Set it: export GITHUB_TOKEN=your_token_here")
+        print("3. Replace 'YOUR_ACTUAL_TOKEN_HERE' with your actual token")
         sys.exit(1)
 
     # Check for base config
@@ -413,6 +417,7 @@ def main():
             import asyncio
             prospects = asyncio.run(engine.collect_data())
             logger.info(f"✅ Collected {len(prospects)} prospects")
+            return 0
         elif args.phase == 'analyze':
             logger.info("🧠 Running analysis phase only")
             # Load latest collected data and analyze
@@ -445,6 +450,7 @@ def main():
             import asyncio
             intelligent_leads = asyncio.run(engine.analyze_and_enrich(prospects))
             logger.info(f"✅ Analyzed {len(intelligent_leads)} leads")
+            return 0
         elif args.phase == 'report':
             logger.info("📊 Running reporting phase only")
             # Load latest analyzed data and generate reports
@@ -465,7 +471,8 @@ def main():
             import asyncio
             report_results = asyncio.run(engine.generate_reports(intelligent_leads))
             logger.info("✅ Generated reports")
-        else:
+            return 0
+        elif args.phase == 'all':
             if args.demo:
                 logger.info("🎭 Running in DEMO mode with sample data")
                 import asyncio
@@ -486,6 +493,12 @@ def main():
                 logger.info(f"   • Total leads processed: {summary.get('total_leads_processed', 0)}")
                 logger.info(f"   • Monday wave qualified: {summary.get('monday_wave_size', 0)}")
                 logger.info(f"   • Conversion rate: {summary.get('conversion_rate', 0)*100:.1f}%")
+
+                # Mark that pipeline has been run
+                pipeline_already_run = True
+
+                # Return to prevent argparse path from running
+                return 0
 
                 # Show phase results
                 phases = metadata.get('phases', {})
@@ -610,7 +623,7 @@ def interactive_config_setup() -> Dict:
     config = {}
 
     # GitHub token
-    github_token = os.environ.get('GITHUB_TOKEN', '')
+    github_token = "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"
     if not github_token:
         print("\n🔑 GitHub Token Setup:")
         print("You need a GitHub token to collect data.")

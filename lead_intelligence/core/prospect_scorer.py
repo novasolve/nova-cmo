@@ -213,20 +213,26 @@ class ProspectScorer:
         score = 0
 
         # Language match
-        prospect_lang = prospect.get('language', '').lower()
+        prospect_lang = prospect.get('language', '')
+        if prospect_lang:
+            prospect_lang = prospect_lang.lower()
         icp_languages = self.icp_config.get('languages', [])
         if prospect_lang and prospect_lang in [lang.lower() for lang in icp_languages]:
             score += 5
 
         # Topic match
-        topics = prospect.get('topics', '').lower()
+        topics = prospect.get('topics', '')
+        if topics:
+            topics = topics.lower()
         icp_topics = self.icp_config.get('include_topics', [])
         topic_matches = sum(1 for topic in icp_topics if topic.lower() in topics)
         if topic_matches > 0:
             score += min(topic_matches * 3, 10)  # Max 10 points for topics
 
         # Company whitelist match
-        company = prospect.get('company', '').lower()
+        company = prospect.get('company', '')
+        if company:
+            company = company.lower()
         company_whitelist = self.icp_config.get('company_whitelist', [])
         if company and any(whitelisted.lower() in company for whitelisted in company_whitelist):
             score += 5
@@ -239,6 +245,11 @@ class ProspectScorer:
 
         # Stars bonus
         stars = prospect.get('stars', 0)
+        if stars is not None:
+            stars = int(stars) if isinstance(stars, str) else stars
+        else:
+            stars = 0
+
         if stars >= 300:
             score += self.scoring_weights['stars_velocity']
         elif stars >= 100:
@@ -305,13 +316,17 @@ class ProspectScorer:
                 return True
 
         # Check company field for academic indicators
-        company = prospect.get('company', '').lower()
+        company = prospect.get('company', '')
+        if company:
+            company = company.lower()
         academic_keywords = ['university', 'college', 'institute', 'school', 'academy', 'research', 'lab']
-        if any(keyword in company for keyword in academic_keywords):
+        if company and any(keyword in company for keyword in academic_keywords):
             return True
 
         # Check bio for academic indicators
-        bio = prospect.get('bio', '').lower()
+        bio = prospect.get('bio', '')
+        if bio:
+            bio = bio.lower()
         if any(keyword in bio for keyword in academic_keywords):
             return True
 
@@ -319,7 +334,9 @@ class ProspectScorer:
 
     def _has_off_icp_topics(self, prospect: Dict[str, Any]) -> bool:
         """Check if prospect has off-ICP topics"""
-        topics = prospect.get('topics', '').lower()
+        topics = prospect.get('topics', '')
+        if topics:
+            topics = topics.lower()
         exclude_topics = self.icp_config.get('exclude_topics', [])
 
         return any(topic.lower() in topics for topic in exclude_topics)

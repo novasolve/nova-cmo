@@ -1,0 +1,5 @@
+{"ts": "2025-08-30T14:02:17Z", "lvl": "INFO", "msg": "🚀 Starting data collection", "run_id": "20250830_070217_0b64b4", "icps": ["icp01_pypi_maintainers"], "limits": {"max_repos": 3, "max_leads": 2, "per_repo_events": 25}}
+{"ts": "2025-08-30T14:02:17Z", "lvl": "INFO", "msg": "🎯 Collecting for ICP: icp01_pypi_maintainers"}
+{"ts": "2025-08-30T14:02:17Z", "lvl": "INFO", "msg": "🔍 Searching with query: language:Python stars:50..2000 archived:false pushed:>=2025-07-01 in:readme pytest -is:fork..."}
+{"ts": "2025-08-30T14:02:20Z", "lvl": "INFO", "msg": "Lead cap reached", "event": "early_stop", "reason": "max_leads", "leads_emitted": 2}
+{"ts": "2025-08-30T14:02:20Z", "lvl": "INFO", "msg": "✅ Data collection complete", "run_id": "20250830_070217_0b64b4", "repos_scanned": 1, "leads_emitted": 2, "dedup_dropped": 3}
