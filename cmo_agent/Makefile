@@ -1,6 +1,9 @@
 # CMO Agent Makefile
 
-.PHONY: install run test clean
+.PHONY: install run run-config dry-run test dev-setup test-campaign test-persistence test-queue demo-processing submit-job run-job start-workers job-status list-jobs clean clean-all new-config help
+
+PYTHONPATH?=$(shell pwd)/..
+GOAL?=$(goal)
 
 # Installation
 install:
@@ -13,51 +16,51 @@ dev-setup: install
 
 # Run agent
 run:
-	python scripts/run_agent.py "$(GOAL)"
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_agent "$(GOAL)"
 
 # Run with custom config
 run-config:
-	python scripts/run_agent.py --config $(CONFIG) "$(GOAL)"
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_agent --config $(CONFIG) "$(GOAL)"
 
 # Dry run
 dry-run:
-	python scripts/run_agent.py --dry-run "$(GOAL)"
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_agent --dry-run "$(GOAL)"
 
 # Test campaign (small scale)
 test-campaign: dev-setup
-	python scripts/run_agent.py --dry-run "Find 10 Python repos with CI, extract 5 maintainers each"
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_agent --dry-run "Find 10 Python repos with CI, extract 5 maintainers each"
 
 # Test execution engine persistence
 test-persistence:
-	python scripts/test_execution_with_persistence.py
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.test_execution_with_persistence
 
 # Test persistent queue functionality
 test-queue:
-	python scripts/test_persistent_queue.py
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.test_persistent_queue
 
 # Demo job processing (shows actual execution)
 demo-processing:
-	python scripts/demo_job_processing.py
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.demo_job_processing
 
 # Submit a job to execution engine (just queue it)
 submit-job:
-	python scripts/submit_job_simple.py "$(GOAL)"
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.submit_job_simple "$(GOAL)"
 
 # Submit and process a job immediately
 run-job:
-	python scripts/run_execution.py --job "$(GOAL)" --start-workers
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_execution --job "$(GOAL)" --start-workers
 
 # Start worker pool only (no job submission)
 start-workers:
-	python scripts/run_execution.py --workers-only
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.run_execution --workers-only
 
 # Check job status
 job-status:
-	python scripts/check_job_status.py $(JOB_ID)
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.check_job_status $(JOB_ID)
 
 # List all jobs
 list-jobs:
-	python scripts/check_job_status.py
+	PYTHONPATH=$(PYTHONPATH) python -m cmo_agent.scripts.check_job_status
 
 # Clean up generated files
 clean:
