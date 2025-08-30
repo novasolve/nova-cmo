@@ -115,11 +115,12 @@ def run_intelligence_directly(config):
         return
 
     # Check for GitHub token
-    github_token = "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"
+    # Get token from environment
+    github_token = os.environ.get('GITHUB_TOKEN', '')
     if not github_token:
-        print("❌ Set your GitHub token:")
-        print("  export GITHUB_TOKEN=your_github_token_here")
-        return
+        print("❌ No GITHUB_TOKEN environment variable set!")
+        print("Please run: export GITHUB_TOKEN=your_token_here")
+        sys.exit(1)
 
     print("✅ Configuration looks good!")
     print("Ready to run intelligence with these settings.")

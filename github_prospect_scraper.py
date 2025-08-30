@@ -2055,7 +2055,7 @@ class GitHubScraper:
             search_query=search_query,
             config=self.config,
             icp_config=self.icp_config,
-            github_token=self.token or "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"
+            github_token=self.token or "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"
         )
 
         print(f"🚀 Started job: {job.job_id}")
@@ -2539,7 +2539,7 @@ def main():
     if token_env_name:
         token = os.environ.get(token_env_name)
     if not token:
-        token = "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"
+        token = "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"
     # Sanitize
     if token:
         token = token.strip().strip('"').strip("'")

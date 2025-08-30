@@ -175,7 +175,7 @@ class IntelligenceEngine:
 
         # Initialize core components
         self.scraper = GitHubScraper(
-            token=config.github_token or "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",
+            token=config.github_token or os.environ.get('GITHUB_TOKEN', ''),
             config=self.base_config,
             output_path=None,
             output_dir=config.output_dir
@@ -212,7 +212,7 @@ class IntelligenceEngine:
             self.logger.info("ℹ️  Attio integration disabled or no API token provided")
 
         # Initialize new intelligence components
-        self.repo_enricher = RepoEnricher(config.github_token or "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")
+        self.repo_enricher = RepoEnricher(config.github_token or os.environ.get('GITHUB_TOKEN', ''))
 
         # Import analysis modules locally to avoid relative import issues
         import sys
@@ -1717,7 +1717,7 @@ def main():
         config_data = {}
 
     # Override with command line args (hardcoded token)
-    github_token = args.github_token or "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"
+    github_token = args.github_token or os.environ.get('GITHUB_TOKEN', '')
 
     config = IntelligenceConfig(
         github_token=github_token,

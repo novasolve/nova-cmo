@@ -17,10 +17,11 @@ def test_phase2_enrichment():
     """Test the repository enrichment functionality"""
     
     # Get GitHub token from environment
-    github_token = "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"
+    # Get token from environment
+    github_token = os.environ.get('GITHUB_TOKEN', '')
     if not github_token:
-        print("❌ Error: GITHUB_TOKEN environment variable not set")
-        print("Please set it with: export GITHUB_TOKEN=your_token_here")
+        print("❌ No GITHUB_TOKEN environment variable set!")
+        print("Please run: export GITHUB_TOKEN=your_token_here")
         return False
     
     print("🚀 Testing Phase 2: Repository Enrichment")
