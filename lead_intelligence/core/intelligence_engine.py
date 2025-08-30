@@ -329,7 +329,7 @@ class IntelligenceEngine:
             # Phase 5: Quality gates & select Monday wave
             beautiful_logger.phase_start("5/7 Quality Gates", "Applying deliverability filters and selecting Monday wave")
             monday_wave_leads = await self.apply_quality_gates(personalized_leads)
-            qualified_rate = len(monday_wave_leads) / len(personalized_leads) if personalized_leads else 0
+            qualified_rate = len(monday_wave_leads) / len(personalized_leads) if personalized_leads and len(personalized_leads) > 0 else 0.0
             beautiful_logger.phase_end("Quality Gates", {
                 'qualified': len(monday_wave_leads),
                 'total': len(personalized_leads),
@@ -362,7 +362,7 @@ class IntelligenceEngine:
             pipeline_metadata['summary'] = {
                 'total_leads_processed': len(raw_leads),
                 'monday_wave_size': len(monday_wave_leads),
-                'conversion_rate': len(monday_wave_leads) / len(raw_leads) if raw_leads else 0,
+                'conversion_rate': len(monday_wave_leads) / len(raw_leads) if raw_leads and len(raw_leads) > 0 else 0,
                 'export_files_created': len(export_results.get('files', []))
             }
 
@@ -577,7 +577,7 @@ class IntelligenceEngine:
 
         beautiful_logger.data_stats("Quality Gates Applied", len(monday_wave), {
             'qualified_total': len(qualified_leads),
-            'conversion_rate': f"{len(monday_wave)/len(qualified_leads):.1%}" if qualified_leads else "0%"
+            'conversion_rate': f"{len(monday_wave)/len(qualified_leads):.1%}" if qualified_leads and len(qualified_leads) > 0 else "0%"
         })
 
         return monday_wave
@@ -1544,7 +1544,7 @@ class IntelligenceEngine:
                 'low_potential': len([l for l in leads if l.engagement_potential == 'low']),
                 'with_email': len([l for l in leads if l.prospect.has_email()]),
                 'with_company': len([l for l in leads if l.prospect.company]),
-                'average_score': round(sum(l.intelligence_score for l in leads) / len(leads), 2) if leads else 0
+                'average_score': round(sum(l.intelligence_score for l in leads) / len(leads), 2) if leads and len(leads) > 0 else 0
             },
             'top_performers': [
                 {
@@ -1568,10 +1568,10 @@ class IntelligenceEngine:
         """Generate quality analysis report"""
         # Quality metrics analysis
         quality_metrics = {
-            'email_coverage': len([l for l in leads if l.prospect.has_email()]) / len(leads),
-            'company_coverage': len([l for l in leads if l.prospect.company]) / len(leads),
-            'location_coverage': len([l for l in leads if l.prospect.location]) / len(leads),
-            'high_score_percentage': len([l for l in leads if l.intelligence_score >= 5.0]) / len(leads)
+            'email_coverage': len([l for l in leads if l.prospect.has_email()]) / len(leads) if leads and len(leads) > 0 else 0,
+            'company_coverage': len([l for l in leads if l.prospect.company]) / len(leads) if leads and len(leads) > 0 else 0,
+            'location_coverage': len([l for l in leads if l.prospect.location]) / len(leads) if leads and len(leads) > 0 else 0,
+            'high_score_percentage': len([l for l in leads if l.intelligence_score >= 5.0]) / len(leads) if leads and len(leads) > 0 else 0
         }
 
         # Signal frequency analysis
