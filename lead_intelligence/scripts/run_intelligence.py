@@ -235,7 +235,7 @@ def main():
             'search_days': simple_config.get('search_days', 60) if simple_config else 60,
             'icp': simple_config.get('icp') if simple_config else None,
             'config': 'lead_intelligence/config/intelligence.yaml',
-            'github_token': "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",
+            'github_token': os.environ.get('GITHUB_TOKEN', ''),
             'base_config': 'config.yaml',
             'output_dir': 'lead_intelligence/data',
             'verbose': False,
@@ -313,8 +313,19 @@ def main():
     # HARDCODED TOKEN - Replace 'YOUR_ACTUAL_TOKEN_HERE' with your real token
     HARDCODED_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
     
-    github_token = args.github_token or "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"
-    if not github_token or github_token == "YOUR_ACTUAL_TOKEN_HERE":
+    # Try to get token from environment first, then from args
+    github_token = os.environ.get('GITHUB_TOKEN') or args.github_token
+    
+    # Check for backup tokens if primary fails
+    if not github_token:
+        for i in range(2, 10):
+            backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
+            if backup_token:
+                print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
+                github_token = backup_token
+                break
+    
+    if not github_token:
         logger.error("❌ GitHub token required. Please update the HARDCODED_TOKEN variable")
         print("\nTo get a GitHub token:")
         print("1. Go to https://github.com/settings/tokens")
@@ -624,7 +635,18 @@ def interactive_config_setup() -> Dict:
     config = {}
 
     # GitHub token
-    github_token = "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"
+    # Get token from environment
+    github_token = os.environ.get('GITHUB_TOKEN', '')
+    
+    # Check for backup tokens if primary is not available
+    if not github_token:
+        for i in range(2, 10):
+            backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
+            if backup_token:
+                print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
+                github_token = backup_token
+                break
+    
     if not github_token:
         print("\n🔑 GitHub Token Setup:")
         print("You need a GitHub token to collect data.")
