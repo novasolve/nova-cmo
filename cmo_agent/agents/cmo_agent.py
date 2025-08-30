@@ -178,6 +178,9 @@ class CMOAgent:
         from ..core.state import ErrorHandler
         self.error_handler = ErrorHandler(self.config)
 
+        # Artifact management
+        from ..core.artifacts import get_artifact_manager
+        self.artifact_manager = get_artifact_manager(self.config)
         # Optional artifact management (fallback if module not present)
         try:
             from ..core.artifacts import get_artifact_manager
@@ -1327,33 +1330,39 @@ Available tools: {', '.join(self.tools.keys())}
         return artifacts
 
     async def _export_repos_data(self, job_id: str, repos: list, job_status: str):
-        """Export repositories data to artifact"""
+        """Export repositories data to artifact using artifact manager"""
         try:
-            from pathlib import Path
-            import json
+            data = {
+                "job_id": job_id,
+                "job_status": job_status,
+                "export_timestamp": datetime.now().isoformat(),
+                "data_type": "repositories",
+                "count": len(repos),
+                "repositories": repos,
+            }
 
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
+            filename = f"repos_{job_status}.json"
+            artifact_id = await self.artifact_manager.store_artifact(
+                job_id=job_id,
+                filename=filename,
+                data=data,
+                artifact_type="repositories",
+                retention_policy="default",
+                compress=len(repos) > 100,  # Compress large datasets
+                tags=["repositories", job_status]
+            )
 
-            filename = f"{job_id}_repos_{job_status}.json"
-            filepath = exports_dir / filename
-
-            with open(filepath, 'w') as f:
-                json.dump({
-                    "job_id": job_id,
-                    "job_status": job_status,
-                    "export_timestamp": datetime.now().isoformat(),
-                    "data_type": "repositories",
-                    "count": len(repos),
-                    "repositories": repos,
-                }, f, indent=2, default=str)
+            # Get metadata for return value
+            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
 
             return {
                 "type": "repositories",
-                "path": str(filepath),
-                "filename": filename,
+                "artifact_id": artifact_id,
+                "path": metadata.path if metadata else None,
+                "filename": metadata.filename if metadata else filename,
                 "count": len(repos),
                 "format": "json",
+                "compressed": metadata.compressed if metadata else False,
             }
 
         except Exception as e:
@@ -1361,33 +1370,38 @@ Available tools: {', '.join(self.tools.keys())}
             return None
 
     async def _export_leads_data(self, job_id: str, leads: list, job_status: str):
-        """Export leads data to artifact"""
+        """Export leads data to artifact using artifact manager"""
         try:
-            from pathlib import Path
-            import json
+            data = {
+                "job_id": job_id,
+                "job_status": job_status,
+                "export_timestamp": datetime.now().isoformat(),
+                "data_type": "leads",
+                "count": len(leads),
+                "leads": leads,
+            }
 
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
+            filename = f"leads_{job_status}.json"
+            artifact_id = await self.artifact_manager.store_artifact(
+                job_id=job_id,
+                filename=filename,
+                data=data,
+                artifact_type="leads",
+                retention_policy="default",
+                compress=len(leads) > 50,  # Compress larger datasets
+                tags=["leads", job_status]
+            )
 
-            filename = f"{job_id}_leads_{job_status}.json"
-            filepath = exports_dir / filename
-
-            with open(filepath, 'w') as f:
-                json.dump({
-                    "job_id": job_id,
-                    "job_status": job_status,
-                    "export_timestamp": datetime.now().isoformat(),
-                    "data_type": "leads",
-                    "count": len(leads),
-                    "leads": leads,
-                }, f, indent=2, default=str)
+            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
 
             return {
                 "type": "leads",
-                "path": str(filepath),
-                "filename": filename,
+                "artifact_id": artifact_id,
+                "path": metadata.path if metadata else None,
+                "filename": metadata.filename if metadata else filename,
                 "count": len(leads),
                 "format": "json",
+                "compressed": metadata.compressed if metadata else False,
             }
 
         except Exception as e:
@@ -1395,33 +1409,38 @@ Available tools: {', '.join(self.tools.keys())}
             return None
 
     async def _export_candidates_data(self, job_id: str, candidates: list, job_status: str):
-        """Export candidates data to artifact"""
+        """Export candidates data to artifact using artifact manager"""
         try:
-            from pathlib import Path
-            import json
+            data = {
+                "job_id": job_id,
+                "job_status": job_status,
+                "export_timestamp": datetime.now().isoformat(),
+                "data_type": "candidates",
+                "count": len(candidates),
+                "candidates": candidates,
+            }
 
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
+            filename = f"candidates_{job_status}.json"
+            artifact_id = await self.artifact_manager.store_artifact(
+                job_id=job_id,
+                filename=filename,
+                data=data,
+                artifact_type="candidates",
+                retention_policy="default",
+                compress=len(candidates) > 200,  # Compress for larger datasets
+                tags=["candidates", job_status]
+            )
 
-            filename = f"{job_id}_candidates_{job_status}.json"
-            filepath = exports_dir / filename
-
-            with open(filepath, 'w') as f:
-                json.dump({
-                    "job_id": job_id,
-                    "job_status": job_status,
-                    "export_timestamp": datetime.now().isoformat(),
-                    "data_type": "candidates",
-                    "count": len(candidates),
-                    "candidates": candidates,
-                }, f, indent=2, default=str)
+            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
 
             return {
                 "type": "candidates",
-                "path": str(filepath),
-                "filename": filename,
+                "artifact_id": artifact_id,
+                "path": metadata.path if metadata else None,
+                "filename": metadata.filename if metadata else filename,
                 "count": len(candidates),
                 "format": "json",
+                "compressed": metadata.compressed if metadata else False,
             }
 
         except Exception as e:
