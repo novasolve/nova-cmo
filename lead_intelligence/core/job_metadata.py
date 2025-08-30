@@ -89,7 +89,7 @@ class JobTracker:
 
         # Convert config to serializable format to avoid type comparison issues
         try:
-            config_str = json.dumps(config, sort_keys=True, default=str)
+            config_str = json.dumps(config, default=str)
             config_hash = hashlib.md5(config_str.encode()).hexdigest()[:12]
         except (TypeError, ValueError):
             # Fallback: convert to string representation
@@ -99,7 +99,7 @@ class JobTracker:
         icp_hash = None
         if icp_config:
             try:
-                icp_str = json.dumps(icp_config, sort_keys=True, default=str)
+                icp_str = json.dumps(icp_config, default=str)
                 icp_hash = hashlib.md5(icp_str.encode()).hexdigest()[:12]
             except (TypeError, ValueError):
                 # Fallback: convert to string representation
@@ -171,6 +171,10 @@ class JobTracker:
         job = self.current_job
         stats = job.stats
 
+        # Calculate percentages safely to avoid division by zero
+        contactable_pct = f"{(stats.contactable_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe and stats.prospects_after_dedupe > 0 else "N/A"
+        maintainer_pct = f"{(stats.maintainer_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe and stats.prospects_after_dedupe > 0 else "N/A"
+
         summary = f"""
 📊 Phase 1: Data Collection
 Job ID: {job.job_id}
@@ -180,8 +184,8 @@ Started: {job.started_at}
 
 📦 Processing Results:
 Fetched: {stats.total_repos_processed} repos | Raw prospects: {stats.raw_prospects_found}
-Deduped: {stats.prospects_after_dedupe} | Contactable: {stats.contactable_prospects} ({stats.contactable_prospects/stats.prospects_after_dedupe*100:.1f}%)
-Maintainers: {stats.maintainer_prospects} ({stats.maintainer_prospects/stats.prospects_after_dedupe*100:.1f}%) | Org Members: {stats.org_member_prospects}
+Deduped: {stats.prospects_after_dedupe} | Contactable: {stats.contactable_prospects} ({contactable_pct})
+Maintainers: {stats.maintainer_prospects} ({maintainer_pct}) | Org Members: {stats.org_member_prospects}
 
 🏆 Tier Distribution:
 A: {stats.prospects_by_tier.get('A', 0)} | B: {stats.prospects_by_tier.get('B', 0)} | C: {stats.prospects_by_tier.get('C', 0)} | Rejected: {stats.prospects_by_tier.get('REJECT', 0)}
