@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 import yaml
 import os
 
+from .compliance_checker import ComplianceChecker, ComplianceResult
+
 
 @dataclass
 class ScoringResult:
@@ -21,6 +23,7 @@ class ScoringResult:
     risk_factors: List[str]
     priority_signals: List[str]
     cohort: Dict[str, Any]
+    compliance_result: Optional[ComplianceResult] = None
 
 
 class ProspectScorer:
@@ -44,6 +47,9 @@ class ProspectScorer:
             'C': 40,
             'REJECT': 0
         })
+
+        # Initialize compliance checker
+        self.compliance_checker = ComplianceChecker(self.icp_config)
 
     def _load_icp_config(self, config_path: Optional[str]) -> Dict[str, Any]:
         """Load ICP configuration"""
@@ -79,6 +85,22 @@ class ProspectScorer:
         risk_factors = []
         priority_signals = []
 
+        # First, check compliance
+        compliance_result = self.compliance_checker.check_compliance(prospect_data)
+
+        # If blocked by compliance, force REJECT tier
+        if self.compliance_checker.should_block_prospect(compliance_result):
+            return ScoringResult(
+                total_score=0,
+                component_scores={'compliance_blocked': -100},
+                tier='REJECT',
+                recommendation="Blocked by compliance policy",
+                risk_factors=compliance_result.risk_factors,
+                priority_signals=[],
+                cohort=self._determine_cohort(prospect_data, repo_data),
+                compliance_result=compliance_result
+            )
+
         # 1. Maintainer status score
         maintainer_score = self._score_maintainer_status(prospect_data)
         component_scores['maintainer'] = maintainer_score
@@ -103,6 +125,10 @@ class ProspectScorer:
         penalties = self._calculate_penalties(prospect_data, repo_data)
         component_scores['penalties'] = penalties
 
+        # 7. Apply compliance-based adjustments
+        compliance_adjustment = self._calculate_compliance_adjustment(compliance_result)
+        component_scores['compliance'] = compliance_adjustment
+
         # Calculate total score
         total_score = sum(component_scores.values())
 
@@ -112,8 +138,9 @@ class ProspectScorer:
         # Generate recommendation
         recommendation = self._generate_recommendation(tier, prospect_data)
 
-        # Identify risk factors
-        risk_factors = self._identify_risk_factors(prospect_data, component_scores)
+        # Identify risk factors (combine scoring and compliance risks)
+        scoring_risks = self._identify_risk_factors(prospect_data, component_scores)
+        risk_factors = list(set(scoring_risks + compliance_result.risk_factors))
 
         # Identify priority signals
         priority_signals = self._identify_priority_signals(prospect_data, component_scores)
@@ -128,7 +155,8 @@ class ProspectScorer:
             recommendation=recommendation,
             risk_factors=risk_factors,
             priority_signals=priority_signals,
-            cohort=cohort
+            cohort=cohort,
+            compliance_result=compliance_result
         )
 
     def _score_maintainer_status(self, prospect: Dict[str, Any]) -> int:
@@ -241,6 +269,20 @@ class ProspectScorer:
             penalties -= 5
 
         return penalties
+
+    def _calculate_compliance_adjustment(self, compliance_result: ComplianceResult) -> int:
+        """Calculate score adjustment based on compliance result"""
+        if not compliance_result.compliant:
+            # Apply penalties based on risk level
+            if compliance_result.risk_level == 'high':
+                return -20
+            elif compliance_result.risk_level == 'medium':
+                return -10
+            else:
+                return -5
+
+        # Small bonus for fully compliant prospects
+        return 5
 
     def _is_university_account(self, prospect: Dict[str, Any]) -> bool:
         """Check if account appears to be university/academic"""
