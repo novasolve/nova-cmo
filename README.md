@@ -1,17 +1,374 @@
-# 🚀 Open Source Maintainers Outreach System
+# 🚀 Lead Intelligence System
 
-**Schedule 2,000 emails on Monday with AI-powered personalization, Attio CRM integration, and automated follow-ups.**
+**AI-powered lead generation, scoring, and CRM automation for open source maintainer outreach. Schedule 2,000 emails on Monday with full intelligence pipeline and automated follow-ups.**
 
-## 🏗️ System Overview
+## 🏗️ System Architecture
 
-This is a complete **agentic sales system** for open source maintainer outreach, combining:
+### Lead Intelligence Pipeline
 
-- **🎯 Lead Generation**: GitHub scraper for OSS maintainers
-- **📊 CRM Integration**: Attio with custom OSS data model
+The Lead Intelligence System is a comprehensive pipeline that automates prospecting and lead qualification:
+
+#### Phase 1: Data Collection
+- **GitHub API Integration**: Searches repositories with customizable queries
+- **Multi-source Ingestion**: GitHub repos, PyPI, external lead databases
+- **Signal Detection**: PRs, commits, issues, releases from recent activity
+- **Email Enrichment**: Public commits, PyPI metadata, CODEOWNERS files
+
+#### Phase 2: Data Validation & Quality Assurance
+- **Email Validation**: MX record checking, format verification
+- **Duplicate Removal**: Cross-source deduplication by email/GitHub login
+- **Relevance Filtering**: ICP matching, activity thresholds, company size
+- **Data Normalization**: Standardized fields and consistent formatting
+
+#### Phase 3: Intelligence Analysis & Scoring
+- **Repository Enrichment**: CI status, dependency analysis, activity patterns
+- **Lead Scoring Algorithm**:
+  - Priority Score (0-1): Email quality, follower count, repo stars
+  - Deliverability Risk: Domain reputation, bounce history
+  - Engagement Potential: Activity recency, contribution patterns
+- **AI Research Agent**: Automated prospect intelligence gathering
+- **Cohort Analysis**: Technical stack, company size, project maturity
+
+#### Phase 4: Personalization & Content Generation
+- **Repo Brief Generation**: Technical context and pain points
+- **Subject Line Variants**: A/B testing optimization
+- **Email Body Personalization**: Signal-based context insertion
+- **Copy Generation**: AI-powered content variants
+
+#### Phase 5: CRM Integration & Export
+- **Attio API Integration**: Automatic lead syncing with full intelligence
+- **Ready-to-Send CSV Export**: Instantly-compatible campaign materials
+- **Workflow Automation**: Linear task creation for hot leads
+- **Reporting Dashboard**: Performance metrics and insights
+
+### Core Components
+
+- **🎯 Lead Generation Engine**: GitHub scraper with 65+ data fields
+- **🧠 Intelligence Pipeline**: AI-powered analysis and scoring
+- **📊 CRM Integration**: Attio with custom OSS maintainer model
 - **📧 Email Campaigns**: Instantly with 17 Google Workspace domains
 - **🎬 Video Personalization**: 87-customized demo videos
 - **📋 Project Management**: Linear for deal tracking
 - **🤖 AI Automation**: Agentic workflows for personalization and follow-ups
+
+## 🧠 Intelligence Scoring System
+
+### Lead Scoring Algorithm
+
+The system uses a multi-dimensional scoring approach to prioritize prospects:
+
+#### Priority Score (0-5 Scale)
+```python
+# Email Quality (max 3.0 points)
+email_score = 0
+if prospect.has_email():
+    email_score += 3.0
+    if prospect.email_profile:  # Preferred over commit email
+        email_score += 1.0
+
+# GitHub Engagement (max 2.0 points)
+engagement_score = min(prospect.followers / 100, 2.0)
+
+# Repository Quality (max 2.0 points)
+repo_score = min(prospect.stars / 500, 2.0)
+
+# Company Information (1.0 point)
+company_score = 1.0 if prospect.company else 0
+
+# Recent Activity (max 1.5 points)
+activity_score = min(prospect.contributions_last_year / 50, 1.5)
+
+# Bio Completeness (0.5 points)
+bio_score = 0.5 if prospect.bio and len(prospect.bio) > 50 else 0
+
+total_score = email_score + engagement_score + repo_score +
+             company_score + activity_score + bio_score
+```
+
+#### Deliverability Risk Assessment
+- **Low Risk (< 0.3)**: Corporate emails, verified domains
+- **Medium Risk (0.3-0.5)**: Mixed sources, some validation
+- **High Risk (> 0.5)**: Public emails, unverified domains
+
+#### Engagement Potential Classification
+- **High (5.0+)**: Strong signals across multiple dimensions
+- **Medium (3.0-5.0)**: Good fundamentals, some gaps
+- **Low (1.0-3.0)**: Basic contact info, limited signals
+- **Minimal (< 1.0)**: Insufficient data for outreach
+
+### Cohort Analysis & Segmentation
+
+#### Technical Stack Cohorting
+- **Python/ML**: TensorFlow, PyTorch, scikit-learn users
+- **Web Development**: React, Vue, Next.js maintainers
+- **DevOps/Infrastructure**: Kubernetes, Docker, CI/CD tools
+- **Data Science**: Pandas, NumPy, Jupyter ecosystem
+
+#### Company Size Segmentation
+- **Seed/Series A**: <50 employees, fast-moving
+- **Series B+**: 50-500 employees, established processes
+- **Enterprise**: 500+ employees, complex decision-making
+
+#### Project Maturity Cohorts
+- **Early Stage**: <1 year old, rapid iteration
+- **Growth Stage**: 1-3 years, feature expansion
+- **Mature**: 3+ years, stability and maintenance focus
+
+## 🎨 Personalization & Content Generation
+
+### AI Research Agent
+
+The system includes an AI-powered research agent that automates prospect intelligence gathering:
+
+#### Automated Research Capabilities
+- **Job Title Intelligence**: Uses web search and LinkedIn analysis to determine roles
+- **Company Research**: Gathers firmographic data, industry context, funding status
+- **Intent Signals**: Identifies buying signals and pain points from public activity
+- **Technology Stack Analysis**: Maps current tools, frameworks, and dependencies
+
+#### AI Research Workflow
+```python
+def research_prospect(prospect):
+    # Phase 1: Basic enrichment
+    company_info = ai_agent.search_company(prospect.company)
+
+    # Phase 2: Role identification
+    job_title = ai_agent.identify_role(prospect.name, prospect.company)
+
+    # Phase 3: Technology analysis
+    tech_stack = ai_agent.analyze_tech_stack(prospect.github_repos)
+
+    # Phase 4: Intent detection
+    intent_signals = ai_agent.detect_intent_signals(prospect.activity)
+
+    return {
+        'company_context': company_info,
+        'job_title': job_title,
+        'tech_stack': tech_stack,
+        'intent_signals': intent_signals,
+        'enrichment_confidence': calculate_confidence()
+    }
+```
+
+### Repo Brief Generation
+
+#### Technical Context Analysis
+The system generates detailed repository briefs for each prospect:
+
+```json
+{
+  "repo_analysis": {
+    "pain_points": ["CI failures", "Test flakiness", "Slow builds"],
+    "recent_activity": "Active development with 15 PRs last month",
+    "tech_stack": "Python, pytest, GitHub Actions",
+    "community_health": "45 contributors, 2.1k stars",
+    "business_context": "Growing open source project"
+  },
+  "prospect_profile": {
+    "role": "Senior Python Developer",
+    "company_size": "Series A startup",
+    "technical_focus": "Machine learning infrastructure",
+    "engagement_potential": "High"
+  }
+}
+```
+
+#### Personalized Content Variants
+
+The system generates multiple content variants for A/B testing:
+
+**Subject Line Options:**
+- "Quick fix for {{repo}} CI flakes"
+- "{{repo}} deserves green builds"
+- "Stop the pain: {{repo}} test failures"
+
+**Email Body Personalization:**
+```python
+def generate_personalized_email(prospect, repo_brief):
+    context = analyze_pain_points(repo_brief)
+
+    return f"""
+    Hi {prospect.first_name},
+
+    I noticed your recent work on {repo_brief.repo_name} -
+    {context.personalized_hook}
+
+    {context.problem_statement}
+
+    {context.solution_introduction}
+
+    Would you like me to create a demo PR showing how Nova
+    can help with {context.specific_pain_point}?
+
+    Sebastian
+    """
+```
+
+### Copy Generation Pipeline
+
+#### Multi-Variant Content Generation
+- **Technical Variants**: Different technical approaches
+- **Business Variants**: ROI-focused vs. technical-focused
+- **Tone Variants**: Professional vs. community-focused
+
+#### A/B Testing Framework
+```python
+copy_variants = {
+    'technical': [
+        "Fix flaky tests in {{repo}}",
+        "Automate CI reliability for {{repo}}",
+        "Reduce test failures by 90% in {{repo}}"
+    ],
+    'business': [
+        "Save 10 hours/week on CI maintenance",
+        "Increase developer productivity with reliable tests",
+        "Ship faster with automated test fixing"
+    ],
+    'community': [
+        "Help {{repo}} community with test stability",
+        "Contribute to {{repo}} reliability",
+        "Support open source testing excellence"
+    ]
+}
+```
+
+## 📊 Deliverability Risk Assessment
+
+### Domain Reputation Analysis
+
+The system evaluates email deliverability risk at multiple levels:
+
+#### Email Domain Classification
+```python
+def assess_domain_risk(email_domain):
+    # Corporate domains (Low Risk)
+    corporate_domains = ['.com', '.io', '.dev', '.ai', '.co']
+    if any(email.endswith(corp) for corp in corporate_domains):
+        return 'low_risk'
+
+    # Public email providers (Medium Risk)
+    public_providers = ['gmail.com', 'outlook.com', 'yahoo.com', 'proton.me']
+    if email_domain in public_providers:
+        return 'medium_risk'
+
+    # Unknown domains (High Risk)
+    return 'high_risk'
+```
+
+#### Risk Factors Assessment
+- **Domain Age**: New domains (<6 months) increase risk
+- **MX Record Validation**: Invalid MX records = high risk
+- **Spam Blacklist Check**: Listed domains = immediate rejection
+- **Historical Bounce Rate**: Previous bounce patterns
+
+#### Risk Score Calculation
+```python
+deliverability_risk = calculate_risk_score({
+    'domain_age_months': domain_age,
+    'mx_valid': mx_exists,
+    'blacklisted': in_blacklist,
+    'bounce_history': bounce_rate,
+    'email_provider_type': provider_category
+})
+```
+
+### Campaign-Level Optimization
+
+#### Inbox Placement Strategy
+- **Domain Diversity**: Rotate across 17 Google Workspace domains
+- **IP Warm-up**: Gradual volume increases across inboxes
+- **Time Zone Targeting**: Send during business hours
+- **Content Compliance**: CAN-SPAM compliance checks
+
+#### A/B Testing Framework
+```python
+campaign_variants = {
+    'send_times': ['09:30', '14:00', '16:30'],
+    'subject_lines': ['Technical', 'Business', 'Community'],
+    'email_lengths': ['Short', 'Medium', 'Long'],
+    'sender_domains': ['domain1.com', 'domain2.com', 'domain3.com']
+}
+```
+
+## 📤 Export Ready-to-Send CSV
+
+### Instantly-Compatible CSV Format
+
+The system generates campaign-ready CSV files with all personalization data:
+
+#### CSV Schema
+```csv
+email,first_name,repo,language,personalization_snippet,subject,body,unsub
+john@example.com,John,pytorch/torchvision,Python,"noticed CI issues with CUDA builds", "Quick fix for torchvision CI", "Hi John, I noticed your recent work...", "unsubscribe.example.com"
+sarah@company.com,Sarah,facebook/react,JavaScript,"React performance optimizations", "React deserves better performance", "Hi Sarah, Your React work...", "unsubscribe.example.com"
+```
+
+#### Automated Campaign Package Generation
+
+```python
+def create_campaign_package(monday_wave_leads):
+    # 1. Filter by quality gates
+    qualified_leads = apply_quality_gates(monday_wave_leads)
+
+    # 2. Generate personalized content
+    campaign_data = []
+    for lead in qualified_leads:
+        personalized = generate_personalization(lead)
+        campaign_data.append({
+            'email': lead.email,
+            'first_name': extract_first_name(lead.name),
+            'repo': lead.repo_full_name,
+            'language': lead.primary_language,
+            'personalization_snippet': personalized.snippet,
+            'subject': personalized.subject,
+            'body': personalized.body,
+            'unsub': generate_unsub_link(lead.email)
+        })
+
+    # 3. Export to CSV
+    export_instantly_csv(campaign_data, 'monday_campaign.csv')
+
+    # 4. Generate repo briefs for follow-up
+    repo_briefs = generate_repo_briefs(qualified_leads)
+    export_repo_briefs(repo_briefs, 'repo_briefs.jsonl')
+
+    return {
+        'csv_file': 'monday_campaign.csv',
+        'briefs_file': 'repo_briefs.jsonl',
+        'lead_count': len(campaign_data),
+        'estimated_send_time': calculate_send_schedule(campaign_data)
+    }
+```
+
+### Quality Gates & Filtering
+
+#### Pre-Campaign Validation
+- **Email Deliverability**: Risk score < 0.5
+- **Personalization Completeness**: All template variables populated
+- **Content Compliance**: Unsubscribe links present
+- **Domain Diversity**: Balanced distribution across domains
+
+#### Campaign Metrics Export
+```json
+{
+  "campaign_summary": {
+    "total_leads": 2400,
+    "qualified_leads": 2200,
+    "filtered_out": 200,
+    "deliverability_risk_distribution": {
+      "low_risk": 1800,
+      "medium_risk": 350,
+      "high_risk": 50
+    },
+    "cohort_breakdown": {
+      "python_ml": 800,
+      "web_dev": 600,
+      "devops": 500,
+      "data_science": 300
+    }
+  }
+}
+```
 
 ## 🎯 Current Mission: 2,000 Emails on Monday
 
