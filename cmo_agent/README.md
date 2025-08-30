@@ -1,8 +1,18 @@
-# CMO Agent
+# 🚀 CMO Agent - MAIN IMPLEMENTATION
 
 **A Single-Agent, Tool-Calling LangGraph for Outbound & CRM Operations**
 
+> **🎯 This is the ACTIVE, WORKING implementation of the CMO Agent system.**
+>
+> For the complete specification and architecture overview, see the root [`README.md`](../README.md).
+
 The CMO Agent is an intelligent automation system that handles the complete outbound sales pipeline: from GitHub discovery and lead enrichment, through email personalization and sending, to CRM synchronization and issue tracking.
+
+## 📚 Documentation
+
+- **[Complete Specification](../README.md)** - Full system architecture and design
+- **[Execution Model](execution_model_README.md)** - Detailed implementation guide
+- **[API Reference](execution_model_README.md#api-reference)** - Tool contracts and schemas
 
 ## 🏗️ Architecture
 
