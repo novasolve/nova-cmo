@@ -12,13 +12,14 @@ from typing import Dict, Any, Optional
 import yaml
 from dotenv import load_dotenv
 
-# Add parent directory to path for imports
-parent_dir = str(Path(__file__).parent.parent)
-sys.path.insert(0, parent_dir)
+# Ensure project root on sys.path for absolute imports
+project_root = str(Path(__file__).resolve().parents[2])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
-# Import modules with proper path handling
-from agents.cmo_agent import CMOAgent
-from core.state import DEFAULT_CONFIG
+# Import modules with absolute package paths
+from cmo_agent.agents.cmo_agent import CMOAgent
+from cmo_agent.core.state import DEFAULT_CONFIG
 
 # Load environment variables
 load_dotenv()
@@ -80,12 +81,24 @@ async def run_campaign(goal: str, config_path: Optional[str] = None):
         logger.info(f"Campaign completed: {result['success']}")
 
         # Print summary
-        if result['success']:
-            final_state = result['final_state']
+        if result.get('success'):
+            final_state = result.get('final_state') or {}
+            counters = final_state.get('counters', {}) if isinstance(final_state, dict) else {}
+            stats = {
+                "steps": counters.get("steps", 0),
+                "api_calls": counters.get("api_calls", 0),
+                "leads": len(final_state.get("leads", [])) if isinstance(final_state.get("leads", []), list) else 0,
+                "emails_prepared": len(final_state.get("to_send", [])) if isinstance(final_state.get("to_send", []), list) else 0,
+            }
+
             print("\n🎉 Campaign completed successfully!")
-            print(f"📊 Stats: {result['stats']}")
-            print(f"📧 Emails processed: {len(final_state.get('to_send', []))}")
-            print(f"🏢 CRM sync: {len(final_state.get('reports', {}).get('attio', {}).get('synced_people', []))}")
+            print(f"📊 Stats: {stats}")
+            print(f"📧 Emails prepared: {stats['emails_prepared']}")
+
+            reports = final_state.get("reports", {}) if isinstance(final_state.get("reports", {}), dict) else {}
+            attio = reports.get("attio", {}) if isinstance(reports.get("attio", {}), dict) else {}
+            synced_people = attio.get("synced_people", []) if isinstance(attio.get("synced_people", []), list) else []
+            print(f"🏢 CRM sync: {len(synced_people)}")
         else:
             print(f"\n❌ Campaign failed: {result.get('error', 'Unknown error')}")
 

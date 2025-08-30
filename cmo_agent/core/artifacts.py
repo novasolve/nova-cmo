@@ -1,4 +1,182 @@
 """
+Artifact management for CMO Agent.
+
+Provides a simple file-system based ArtifactManager with:
+- JSON storage (optional gzip compression)
+- Metadata indexing per artifact
+- Async-friendly API surface
+"""
+import os
+import json
+import gzip
+import hashlib
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+
+@dataclass
+class ArtifactMetadata:
+    artifact_id: str
+    job_id: str
+    path: str
+    filename: str
+    created_at: str
+    size_bytes: int
+    compressed: bool
+    artifact_type: str
+    tags: List[str]
+
+
+class ArtifactManager:
+    def __init__(self, base_dir: Path):
+        self.base_dir = Path(base_dir)
+        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.index_path = self.base_dir / "artifacts_index.json"
+        self._index: Dict[str, Dict[str, Any]] = {}
+        self._load_index()
+
+    # ---------- Index persistence ----------
+    def _load_index(self):
+        if self.index_path.exists():
+            try:
+                self._index = json.load(open(self.index_path, "r"))
+            except Exception:
+                self._index = {}
+
+    def _save_index(self):
+        tmp = self.index_path.with_suffix(".tmp")
+        with open(tmp, "w") as f:
+            json.dump(self._index, f, indent=2)
+        os.replace(tmp, self.index_path)
+
+    # ---------- Helpers ----------
+    def _compute_artifact_id(self, job_id: str, filename: str) -> str:
+        payload = f"{job_id}:{filename}:{datetime.now().isoformat()}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+    def _job_dir(self, job_id: str) -> Path:
+        d = self.base_dir / job_id
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    # ---------- Public API (async) ----------
+    async def store_artifact(
+        self,
+        *,
+        job_id: str,
+        filename: str,
+        data: Any,
+        artifact_type: str,
+        retention_policy: str = "default",
+        compress: bool = False,
+        tags: Optional[List[str]] = None,
+    ) -> str:
+        tags = tags or []
+        artifact_id = self._compute_artifact_id(job_id, filename)
+        job_dir = self._job_dir(job_id)
+
+        # Prepare path
+        out_name = filename + (".gz" if compress else "")
+        out_path = job_dir / out_name
+
+        # Serialize JSON
+        payload = json.dumps(data, indent=2, default=str).encode("utf-8")
+        if compress:
+            with gzip.open(out_path, "wb") as f:
+                f.write(payload)
+        else:
+            with open(out_path, "wb") as f:
+                f.write(payload)
+
+        size_bytes = out_path.stat().st_size
+
+        meta = ArtifactMetadata(
+            artifact_id=artifact_id,
+            job_id=job_id,
+            path=str(out_path),
+            filename=out_name,
+            created_at=datetime.now().isoformat(),
+            size_bytes=size_bytes,
+            compressed=compress,
+            artifact_type=artifact_type,
+            tags=tags,
+        )
+
+        # Persist metadata
+        self._index[artifact_id] = {
+            "artifact_id": meta.artifact_id,
+            "job_id": meta.job_id,
+            "path": meta.path,
+            "filename": meta.filename,
+            "created_at": meta.created_at,
+            "size_bytes": meta.size_bytes,
+            "compressed": meta.compressed,
+            "artifact_type": meta.artifact_type,
+            "tags": meta.tags,
+        }
+        self._save_index()
+
+        return artifact_id
+
+    async def get_artifact(self, artifact_id: str) -> Optional[bytes]:
+        meta = self._index.get(artifact_id)
+        if not meta:
+            return None
+        path = Path(meta.get("path", ""))
+        if not path.exists():
+            return None
+        return path.read_bytes()
+
+    async def get_artifact_metadata(self, artifact_id: str) -> Optional[ArtifactMetadata]:
+        meta = self._index.get(artifact_id)
+        if not meta:
+            return None
+        return ArtifactMetadata(**meta)
+
+    async def list_artifacts(self, job_id: Optional[str] = None) -> List[ArtifactMetadata]:
+        items: List[ArtifactMetadata] = []
+        for meta in self._index.values():
+            if job_id and meta.get("job_id") != job_id:
+                continue
+            items.append(ArtifactMetadata(**meta))
+        return items
+
+    async def delete_artifact(self, artifact_id: str) -> bool:
+        meta = self._index.get(artifact_id)
+        if not meta:
+            return False
+        path = Path(meta.get("path", ""))
+        try:
+            if path.exists():
+                path.unlink()
+        except Exception:
+            pass
+        self._index.pop(artifact_id, None)
+        self._save_index()
+        return True
+
+
+_global_manager: Optional[ArtifactManager] = None
+
+
+def get_artifact_manager(config: Dict[str, Any] = None) -> ArtifactManager:
+    global _global_manager
+    if _global_manager is not None:
+        return _global_manager
+
+    config = config or {}
+    base = (
+        config.get("directories", {}).get("artifacts")
+        or config.get("directories", {}).get("exports")
+        or "./exports"
+    )
+    base_dir = Path(base)
+    _global_manager = ArtifactManager(base_dir)
+    return _global_manager
+
+"""
 Enhanced Artifacts Management System
 """
 import json
