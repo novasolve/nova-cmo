@@ -229,26 +229,56 @@ class SendInstantly(InstantlyTool):
             return ToolResult(success=False, error=str(e))
 
     async def _get_or_create_campaign(self, seq_id: str) -> str:
-        """Get existing campaign or create new one"""
+        """Get existing campaign or create new one via Instantly API v2.
+
+        Notes:
+        - This uses common Instantly patterns: list campaigns and match by name,
+          otherwise create. If your account uses different endpoints, you'll get
+          a clear error message.
+        """
+        import aiohttp
         try:
-            # This would make actual API calls to Instantly
-            # For now, return a mock campaign ID
-            return f"campaign_{seq_id}_{hash(seq_id) % 1000}"
+            base = self.base_url
+            headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+
+            # Try to find by name
+            list_url = f"{base}/campaigns"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(list_url, headers=headers) as resp:
+                    data = await resp.json()
+                    if resp.status == 200 and isinstance(data, dict):
+                        for c in data.get("campaigns", []):
+                            if c.get("name") == seq_id:
+                                return c.get("id")
+
+            # Create campaign
+            create_url = f"{base}/campaigns"
+            payload = {"name": seq_id}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(create_url, headers=headers, json=payload) as resp:
+                    data = await resp.json()
+                    if resp.status >= 400:
+                        raise Exception(f"Instantly create campaign failed: {data}")
+                    return data.get("id") or data.get("campaign", {}).get("id")
         except Exception as e:
             logger.error(f"Campaign creation/lookup failed: {e}")
             raise
 
     async def _send_contacts(self, campaign_id: str, contacts: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Send contacts to Instantly campaign"""
+        """Send contacts to Instantly campaign via API v2."""
+        import aiohttp
         try:
-            # This would make actual API calls to Instantly
-            # For now, return mock results
-            return {
-                "success": True,
-                "accepted_count": len(contacts),
-                "rejected_count": 0,
-                "estimated_send_time": "2024-01-01T09:30:00Z",
-            }
+            base = self.base_url
+            headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+
+            url = f"{base}/campaigns/{campaign_id}/leads/bulk"
+            payload = {"leads": contacts}
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    data = await resp.json()
+                    if resp.status >= 400:
+                        raise Exception(f"Instantly add leads failed: {data}")
+                    return data
         except Exception as e:
             logger.error(f"Contact sending failed: {e}")
             raise
