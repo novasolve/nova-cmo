@@ -2055,7 +2055,7 @@ class GitHubScraper:
             search_query=search_query,
             config=self.config,
             icp_config=self.icp_config,
-            github_token=self.token or "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"
+            github_token=self.token or os.environ.get('GITHUB_TOKEN', '')
         )
 
         print(f"🚀 Started job: {job.job_id}")
@@ -2539,7 +2539,12 @@ def main():
     if token_env_name:
         token = os.environ.get(token_env_name)
     if not token:
-        token = "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"
+        # Get token from environment
+        token = os.environ.get('GITHUB_TOKEN', '')
+        if not token:
+            print("❌ Error: GITHUB_TOKEN environment variable not set")
+            print("Please run: export GITHUB_TOKEN=your_token_here")
+            sys.exit(1)
     # Sanitize
     if token:
         token = token.strip().strip('"').strip("'")
