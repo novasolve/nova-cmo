@@ -473,3 +473,4 @@ class ProspectInsightsEngine:
             recommendations['follow_up_plan'] = strategy['follow_up_sequence']
 
         return recommendations
+

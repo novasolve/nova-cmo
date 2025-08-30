@@ -18,6 +18,9 @@ from pathlib import Path
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+# Import timezone utilities
+from .timezone_utils import utc_now, to_utc_iso8601
+
 # Add parent directory to path to import existing scraper
 sys.path.append(str(Path(__file__).parent.parent.parent))
 
@@ -51,7 +54,7 @@ class DataManager:
 
     def save_raw_data(self, data: Any, filename: str) -> str:
         """Save raw data with timestamp"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = utc_now().strftime('%Y%m%d_%H%M%S')
         file_path = self.raw_dir / f"{filename}_{timestamp}.json"
 
         with open(file_path, 'w') as f:
@@ -70,7 +73,7 @@ class DataManager:
 
     def create_backup(self, data: Any, filename: str) -> str:
         """Create backup of data"""
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = utc_now().strftime('%Y%m%d_%H%M%S')
         file_path = self.backup_dir / f"{filename}_backup_{timestamp}.json"
 
         with open(file_path, 'w') as f:
@@ -116,6 +119,12 @@ class IntelligenceConfig:
     attio_api_token: str = ""
     backup_enabled: bool = True
     logging_level: str = "INFO"
+
+    # Filtering options
+    location_filter: str = "us"
+    language_filter: str = "english"
+    english_only: bool = True
+    us_only: bool = True
 
 
 @dataclass
@@ -252,7 +261,7 @@ class IntelligenceEngine:
         beautiful_logger.phase_start("Pipeline", "Starting comprehensive lead intelligence")
 
         pipeline_metadata = {
-            'start_time': datetime.now().isoformat(),
+            'start_time': to_utc_iso8601(utc_now()),
             'pipeline_version': '2.0',
             'phases': {},
             'errors': [],
@@ -266,7 +275,7 @@ class IntelligenceEngine:
             beautiful_logger.data_stats("Leads ingested", len(raw_leads))
             pipeline_metadata['phases']['ingestion'] = {
                 'leads_ingested': len(raw_leads),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             if not raw_leads:
@@ -281,7 +290,7 @@ class IntelligenceEngine:
             pipeline_metadata['phases']['enrichment'] = {
                 'leads_enriched': len(enriched_leads),
                 'repos_snapshots_created': repos_count,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             # Phase 3: Extract features (CI flake score, patchability score, etc.)
@@ -294,7 +303,7 @@ class IntelligenceEngine:
                 'leads_scored': len(scored_leads),
                 'high_priority_count': high_priority,
                 'low_risk_count': low_risk,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             # Phase 4: Cohort & personalize (generate Repo Briefs)
@@ -306,7 +315,7 @@ class IntelligenceEngine:
                 'leads_personalized': len(personalized_leads),
                 'repo_briefs_generated': len(personalized_leads),
                 'cohorts_identified': len(cohorts),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             # Phase 5: Quality gates & select Monday wave
@@ -322,7 +331,7 @@ class IntelligenceEngine:
                 'total_candidates': len(personalized_leads),
                 'monday_wave_selected': len(monday_wave_leads),
                 'qualified_rate': qualified_rate,
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             # Phase 6: Export Instantly CSV + repo briefs
@@ -340,7 +349,7 @@ class IntelligenceEngine:
             pipeline_metadata['phases']['crm_integration'] = crm_results
 
             # Success summary
-            pipeline_metadata['end_time'] = datetime.now().isoformat()
+            pipeline_metadata['end_time'] = to_utc_iso8601(utc_now())
             pipeline_metadata['success'] = True
             pipeline_metadata['summary'] = {
                 'total_leads_processed': len(raw_leads),
@@ -369,11 +378,11 @@ class IntelligenceEngine:
 
         except Exception as e:
             pipeline_metadata['success'] = False
-            pipeline_metadata['end_time'] = datetime.now().isoformat()
+            pipeline_metadata['end_time'] = to_utc_iso8601(utc_now())
             pipeline_metadata['errors'].append({
                 'error': str(e),
                 'phase': 'unknown',
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             })
 
             beautiful_logger.error_banner("PIPELINE ERROR", str(e))
@@ -755,7 +764,7 @@ class IntelligenceEngine:
 
     def _create_empty_pipeline_result(self, metadata: Dict[str, Any]) -> Dict[str, Any]:
         """Create empty result when no leads are processed"""
-        metadata['end_time'] = datetime.now().isoformat()
+        metadata['end_time'] = to_utc_iso8601(utc_now())
         metadata['success'] = True
         metadata['summary'] = {
             'total_leads_processed': 0,
@@ -777,7 +786,7 @@ class IntelligenceEngine:
         beautiful_logger.phase_start("Demo Mode", "Running with sample data for testing")
 
         cycle_metadata = {
-            'start_time': datetime.now().isoformat(),
+            'start_time': to_utc_iso8601(utc_now()),
             'config': asdict(self.config),
             'phases': {},
             'demo_mode': True,
@@ -790,7 +799,7 @@ class IntelligenceEngine:
             demo_prospects = self._generate_demo_prospects()
             cycle_metadata['phases']['demo_data_generation'] = {
                 'prospects_generated': len(demo_prospects),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             }
 
             # Phase 1: Data Collection (simulated)
@@ -800,7 +809,7 @@ class IntelligenceEngine:
             raw_file = self.data_manager.save_raw_data(raw_data, 'demo_prospects')
             cycle_metadata['phases']['collection'] = {
                 'prospects_collected': len(demo_prospects),
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': to_utc_iso8601(utc_now()),
                 'demo_mode': True
             }
 
@@ -819,7 +828,7 @@ class IntelligenceEngine:
             intelligent_leads = await self.analyze_and_enrich(demo_prospects)
             cycle_metadata['phases']['analysis'] = {
                 'leads_processed': len(intelligent_leads),
-                'timestamp': datetime.now().isoformat(),
+                'timestamp': to_utc_iso8601(utc_now()),
                 'demo_mode': True
             }
 
@@ -835,17 +844,17 @@ class IntelligenceEngine:
             report_results = await self.generate_reports(intelligent_leads)
             cycle_metadata['phases']['reporting'] = report_results
 
-            cycle_metadata['end_time'] = datetime.now().isoformat()
+            cycle_metadata['end_time'] = to_utc_iso8601(utc_now())
             cycle_metadata['success'] = True
 
             self.logger.info(f"✅ Demo intelligence cycle complete. Processed {len(intelligent_leads)} demo leads")
 
         except Exception as e:
             cycle_metadata['success'] = False
-            cycle_metadata['end_time'] = datetime.now().isoformat()
+            cycle_metadata['end_time'] = to_utc_iso8601(utc_now())
             cycle_metadata['errors'].append({
                 'error': str(e),
-                'timestamp': datetime.now().isoformat()
+                'timestamp': to_utc_iso8601(utc_now())
             })
 
             if self.error_handler:
@@ -1191,7 +1200,7 @@ class IntelligenceEngine:
 
             # Save collection metadata
             collection_metadata = {
-                'collection_timestamp': datetime.now().isoformat(),
+                'collection_timestamp': to_utc_iso8601(utc_now()),
                 'prospects_collected': len(prospects),
                 'raw_data_file': raw_file,
                 'scraper_config': asdict(self.config)
@@ -1234,7 +1243,7 @@ class IntelligenceEngine:
 
         # Save analysis metadata
         analysis_metadata = {
-            'analysis_timestamp': datetime.now().isoformat(),
+            'analysis_timestamp': to_utc_iso8601(utc_now()),
             'leads_analyzed': len(intelligent_leads),
             'processed_data_file': processed_file,
             'scoring_enabled': self.config.scoring_enabled,
@@ -1248,6 +1257,9 @@ class IntelligenceEngine:
     def process_single_lead(self, prospect: Prospect) -> Optional[LeadIntelligence]:
         """Process a single prospect through intelligence pipeline"""
         try:
+            # Apply filtering first
+            if not self._passes_filters(prospect):
+                return None
             # Basic analysis
             intelligence_score = self.calculate_intelligence_score(prospect)
             quality_signals = self.identify_quality_signals(prospect)
@@ -1274,6 +1286,63 @@ class IntelligenceEngine:
         except Exception as e:
             self.logger.error(f"Error processing prospect {prospect.login}: {e}")
             return None
+
+    def _passes_filters(self, prospect: Prospect) -> bool:
+        """Check if prospect passes location and language filters"""
+        try:
+            # Location filtering
+            if self.config.us_only:
+                location = getattr(prospect, 'location', '') or ''
+                location_lower = location.lower()
+
+                # Check for US indicators
+                us_indicators = ['us', 'usa', 'united states', 'america', 'california', 'new york',
+                               'texas', 'florida', 'washington', 'san francisco', 'los angeles',
+                               'seattle', 'austin', 'miami', 'chicago', 'boston', 'denver']
+
+                # Check if location contains US indicators
+                has_us_indicator = any(indicator in location_lower for indicator in us_indicators)
+
+                # If no clear US indicators and location is specified, exclude
+                if location and not has_us_indicator:
+                    return False
+
+            # Language filtering
+            if self.config.english_only:
+                # Check bio for English indicators
+                bio = getattr(prospect, 'bio', '') or ''
+                bio_lower = bio.lower()
+
+                # English language indicators
+                english_indicators = ['python', 'developer', 'engineer', 'software', 'data',
+                                    'machine learning', 'ai', 'web', 'backend', 'frontend',
+                                    'full stack', 'devops', 'cloud', 'aws', 'docker', 'kubernetes']
+
+                # Check if bio contains English technical terms
+                has_english_content = any(indicator in bio_lower for indicator in english_indicators)
+
+                # If bio exists but no English indicators, exclude
+                if bio and not has_english_content:
+                    return False
+
+                # Check company name for English indicators
+                company = getattr(prospect, 'company', '') or ''
+                company_lower = company.lower()
+
+                english_company_indicators = ['inc', 'llc', 'corp', 'ltd', 'co', 'labs', 'tech',
+                                            'software', 'systems', 'solutions', 'group']
+
+                has_english_company = any(indicator in company_lower for indicator in english_company_indicators)
+
+                # If company exists but no English indicators, exclude
+                if company and not has_english_company and not has_english_content:
+                    return False
+
+            return True
+
+        except Exception as e:
+            self.logger.warning(f"Error applying filters to {prospect.login}: {e}")
+            return True  # Default to including if filtering fails
 
     def calculate_intelligence_score(self, prospect: Prospect) -> float:
         """Calculate overall intelligence score for a prospect"""
@@ -1451,7 +1520,7 @@ class IntelligenceEngine:
     async def generate_summary_report(self, leads: List[LeadIntelligence]):
         """Generate summary intelligence report"""
         report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': to_utc_iso8601(utc_now()),
             'total_leads': len(leads),
             'summary_stats': {
                 'high_potential': len([l for l in leads if l.engagement_potential == 'high']),
@@ -1499,7 +1568,7 @@ class IntelligenceEngine:
             signal_counts[signal] = signal_counts.get(signal, 0) + 1
 
         quality_report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': to_utc_iso8601(utc_now()),
             'quality_metrics': quality_metrics,
             'signal_frequency': dict(sorted(signal_counts.items(), key=lambda x: x[1], reverse=True)),
             'score_distribution': self._calculate_score_distribution(leads)
@@ -1538,7 +1607,7 @@ class IntelligenceEngine:
                 })
 
         opportunity_report = {
-            'timestamp': datetime.now().isoformat(),
+            'timestamp': to_utc_iso8601(utc_now()),
             'company_clusters': {
                 company: {
                     'lead_count': len(leads),
