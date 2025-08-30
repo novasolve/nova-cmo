@@ -11,6 +11,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Dict, Any, List
+from dotenv import load_dotenv
 
 # Ensure project root on sys.path for absolute imports
 project_root = str(Path(__file__).resolve().parents[2])
@@ -28,6 +29,9 @@ from cmo_agent.tools.personalization import RenderCopy, SendInstantly
 from cmo_agent.tools.crm import SyncAttio, SyncLinear
 from cmo_agent.tools.export import ExportCSV, Done
 from cmo_agent.core.state import DEFAULT_CONFIG
+
+# Load environment variables from .env if present
+load_dotenv()
 
 
 def print_header(title: str):
@@ -146,18 +150,21 @@ async def test_crm_tools(config: Dict[str, Any]) -> Dict[str, Any]:
     results: Dict[str, Any] = {"tests": {}, "skipped_attio": False, "skipped_linear": False}
 
     try:
+        # Support multiple env var aliases for Attio API token
         attio_key = (
             os.getenv("ATTIO_ACCESS_TOKEN")
             or config.get("ATTIO_ACCESS_TOKEN")
             or os.getenv("ATTIO_API_KEY")
             or config.get("ATTIO_API_KEY")
+            or os.getenv("ATTIO_API_TOKEN")  # alias used by setup_attio.sh
+            or config.get("ATTIO_API_TOKEN")
         )
         attio_ws = os.getenv("ATTIO_WORKSPACE_ID") or config.get("ATTIO_WORKSPACE_ID")
         if not (attio_key and attio_ws):
             results["skipped_attio"] = True
             missing = []
             if not attio_key:
-                missing.append("ATTIO_ACCESS_TOKEN/ATTIO_API_KEY")
+                missing.append("ATTIO_ACCESS_TOKEN/ATTIO_API_KEY/ATTIO_API_TOKEN")
             if not attio_ws:
                 missing.append("ATTIO_WORKSPACE_ID")
             print(f"sync_attio: SKIP (missing {', '.join(missing)})")
