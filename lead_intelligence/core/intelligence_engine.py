@@ -119,6 +119,8 @@ class IntelligenceConfig:
     attio_api_token: str = ""
     backup_enabled: bool = True
     logging_level: str = "INFO"
+    max_repos: int = 40
+    max_leads: int = 200
 
     # Filtering options
     location_filter: str = "us"
@@ -164,6 +166,12 @@ class IntelligenceEngine:
 
         # Load base configuration
         self.base_config = self.load_base_config()
+
+        # Override limits from simple config if provided
+        if hasattr(config, 'max_repos') and config.max_repos != 40:
+            self.base_config.setdefault('limits', {})['max_repos'] = config.max_repos
+        if hasattr(config, 'max_leads') and config.max_leads != 200:
+            self.base_config.setdefault('limits', {})['max_people'] = config.max_leads
 
         # Initialize core components
         self.scraper = GitHubScraper(
