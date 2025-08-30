@@ -1,8 +1,64 @@
-# CMO Agent — A Single‑Agent, Tool‑Calling LangGraph for Outbound & CRM Ops (v0.1)
+# 🚀 CMO Agent — A Single‑Agent, Tool‑Calling LangGraph for Outbound & CRM Ops (v0.1)
 
 **Owner:** Sebastian (NovaSolve)
 **Inspo:** DeepAgents (asynchronous, long‑running plans), Open‑SWE (agentic dev flows)
 **Goal:** Chat with a single "CMO" agent (GPT‑5) that can **discover → enrich → personalize → send → sync → track** using a strict toolbelt (GitHub, Instantly/Smartlead, Attio, Linear). Start simple; enable long‑running, resumable jobs.
+
+## 🎯 **IMPORTANT: Main Implementation is in `/cmo_agent/` Directory**
+
+**All the working code, tools, and execution engine are located in the `cmo_agent/` subdirectory.** This README contains the comprehensive specification, but the actual implementation is in:
+
+```
+📁 cmo_agent/
+├── 📄 agents/cmo_agent.py          # Main CMO agent implementation
+├── 🛠️  core/                       # Job queue, workers, monitoring
+├── 🔧 tools/                       # GitHub, CRM, export tools
+├── 📋 scripts/                     # Test and execution scripts
+├── ⚙️  config/                     # YAML configurations
+└── 📚 execution_model_README.md    # Detailed execution model docs
+```
+
+**To get started:** `cd cmo_agent && python scripts/run_execution.py --help`
+
+---
+
+## 📂 Directory Structure
+
+```
+leads/                          # Repository root
+├── 📁 cmo_agent/              # ⭐ MAIN IMPLEMENTATION ⭐
+│   ├── agents/cmo_agent.py    # Core agent logic
+│   ├── core/                  # Job execution engine
+│   ├── tools/                 # Tool implementations
+│   ├── scripts/               # CLI scripts
+│   └── config/                # Configuration files
+├── 📁 copy_factory/           # Legacy copy generation
+├── 📁 lead_intelligence/      # Legacy intelligence system
+├── 📁 video_system/           # Video processing tools
+└── 📁 icp_wizard/             # Legacy ICP wizard
+```
+
+---
+
+## ⚡ Quick Start
+
+```bash
+# Navigate to the main implementation
+cd cmo_agent
+
+# Set up environment (copy and edit)
+cp env.example .env
+# Edit .env with your API keys
+
+# Run a test
+python scripts/test_execution_engine.py
+
+# Start the execution engine
+python scripts/run_execution.py --job "Find 2k Python maintainers" --start-workers
+
+# Get help
+python scripts/run_execution.py --help
+```
 
 ---
 
