@@ -1,7 +1,7 @@
 # Lead Intelligence System Makefile
 # Usage: make <target>
 
-.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test
+.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom
 
 # Default target
 help: ## Show this help message
@@ -127,6 +127,57 @@ intelligence-collect: install ## Run intelligence data collection only
 intelligence-test: install ## Test the intelligence system
 	@echo "🧪 Testing Lead Intelligence System..."
 	python lead_intelligence/scripts/test_intelligence.py
+
+# Phase 2: Data Validation & Quality Assurance
+phase2: install ## Run complete Phase 2 validation pipeline
+	@echo "🚀 Running Phase 2: Data Validation & Quality Assurance..."
+	@if [ -z "$(INPUT)" ]; then \
+		echo "Usage: make phase2 INPUT=data/raw_prospects.jsonl"; \
+		exit 1; \
+	fi
+	python run_phase2.py --input "$(INPUT)" --output-dir lead_intelligence/data/phase2_results
+
+phase2-simple: install ## Run Phase 2 with defaults (looks for latest raw prospects)
+	@echo "🚀 Running Phase 2: Data Validation & Quality Assurance..."
+	@LATEST_FILE=$$(find lead_intelligence/data -name "raw_prospects_*.jsonl" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-); \
+	if [ -z "$$LATEST_FILE" ]; then \
+		echo "❌ No raw prospects file found. Run Phase 1 first."; \
+		exit 1; \
+	fi; \
+	echo "📥 Using: $$LATEST_FILE"; \
+	python run_phase2.py --input "$$LATEST_FILE" --output-dir lead_intelligence/data/phase2_results
+
+phase2-test: install ## Test Phase 2 components
+	@echo "🧪 Testing Phase 2 Components..."
+	python test_phase2.py
+
+phase2-integration-test: install ## Run Phase 2 integration test
+	@echo "🔄 Running Phase 2 Integration Test..."
+	python test_phase2.py --integration
+
+phase2-custom: install ## Run Phase 2 with custom settings
+	@echo "🚀 Running Phase 2 with Custom Settings..."
+	@if [ -z "$(INPUT)" ]; then \
+		echo "Usage: make phase2-custom INPUT=data/prospects.jsonl [OUTPUT_DIR=path] [ICP_RELEVANCE=0.7]"; \
+		exit 1; \
+	fi; \
+	OUTPUT_DIR_ARG=""; \
+	if [ -n "$(OUTPUT_DIR)" ]; then \
+		OUTPUT_DIR_ARG="--output-dir $(OUTPUT_DIR)"; \
+	fi; \
+	ICP_ARG=""; \
+	if [ -n "$(ICP_RELEVANCE)" ]; then \
+		ICP_ARG="--icp-relevance-threshold $(ICP_RELEVANCE)"; \
+	fi; \
+	COMPANY_SIZES_ARG=""; \
+	if [ -n "$(COMPANY_SIZES)" ]; then \
+		COMPANY_SIZES_ARG="--icp-company-sizes $(COMPANY_SIZES)"; \
+	fi; \
+	TECH_STACKS_ARG=""; \
+	if [ -n "$(TECH_STACKS)" ]; then \
+		TECH_STACKS_ARG="--icp-tech-stacks $(TECH_STACKS)"; \
+	fi; \
+	python run_phase2.py --input "$(INPUT)" $$OUTPUT_DIR_ARG $$ICP_ARG $$COMPANY_SIZES_ARG $$TECH_STACKS_ARG
 
 # Attio Integration
 attio-setup: ## Setup Attio CRM integration
