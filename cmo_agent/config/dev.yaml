@@ -58,9 +58,57 @@ checkpoint_every: 200 # Save CSV every N leads
 log_level: "INFO"
 log_file: "./logs/cmo_agent.log"
 
+# Worker configuration
+workers:
+  pool_size: 3 # Number of concurrent workers
+  max_jobs_per_worker: 10 # Jobs before worker restart
+  heartbeat_interval: 30 # Heartbeat frequency (seconds)
+  graceful_shutdown: 60 # Shutdown timeout (seconds)
+
+# Queue configuration
+queue:
+  type: persistent # persistent, redis, postgres, sqlite, memory
+  storage_dir: "./data/jobs" # For persistent queue
+  max_retries: 3
+  retry_delay: 5 # seconds
+  priority_levels: 3
+  max_queue_size: 1000
+
+# Persistence configuration
+persistence:
+  type: json # json, postgres, sqlite, redis
+  checkpoint_interval: 300 # seconds
+  max_checkpoints: 50
+  compression: false
+
+# Job configuration
+job_config:
+  timeouts:
+    job_timeout: 3600 # 1 hour max per job
+    step_timeout: 300 # 5 minutes max per step
+    api_timeout: 30 # 30 seconds max per API call
+  limits:
+    max_concurrent_jobs: 10
+    max_queue_size: 1000
+    rate_limit_buffer: 0.8 # Use 80% of rate limits
+  checkpoints:
+    time_interval: 300 # Every 5 minutes
+    step_interval: 50 # Every 50 steps
+    volume_interval: 1000 # Every 1000 leads
+
+# Monitoring and metrics
+monitoring:
+  enabled: true
+  metrics_interval: 60 # seconds
+  enable_prometheus: false
+  enable_datadog: false
+
 # Feature flags
 features:
   dry_run: false
   enable_langfuse: false
   enable_background_jobs: true
   enable_rate_limiting: true
+  enable_distributed_workers: false
+  enable_fault_tolerance: true
+  enable_progress_streaming: true

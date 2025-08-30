@@ -122,10 +122,14 @@ class GitHubTool(BaseTool):
 
         # Record API call attempt
         try:
-            from .monitoring import record_api_call
+            from ..core.monitoring import record_api_call
             record_api_call_attempted = True
         except ImportError:
-            record_api_call_attempted = False
+            try:
+                from core.monitoring import record_api_call
+                record_api_call_attempted = True
+            except ImportError:
+                record_api_call_attempted = False
 
         url = f"{self.base_url}{endpoint}"
         headers = {
