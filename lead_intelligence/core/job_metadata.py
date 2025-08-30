@@ -172,8 +172,8 @@ class JobTracker:
         stats = job.stats
 
         # Calculate percentages safely to avoid division by zero
-        contactable_pct = f"{(stats.contactable_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe and stats.prospects_after_dedupe > 0 else "N/A"
-        maintainer_pct = f"{(stats.maintainer_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe and stats.prospects_after_dedupe > 0 else "N/A"
+        contactable_pct = f"{(stats.contactable_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe > 0 else "N/A"
+        maintainer_pct = f"{(stats.maintainer_prospects / stats.prospects_after_dedupe * 100):.1f}%" if stats.prospects_after_dedupe > 0 else "N/A"
 
         summary = f"""
 📊 Phase 1: Data Collection
