@@ -31,36 +31,18 @@ class JobWorker:
         self.failed_jobs = 0
         self.start_time = None
 
-        # Crash recovery and health monitoring
-        self.heartbeat_interval = 30  # seconds
-        self.last_heartbeat = datetime.now()
-        self.heartbeat_task: Optional[asyncio.Task] = None
-        self.worker_registry = {}  # Track other workers for crash detection
-        self.crash_recovery_enabled = True
-
     async def start(self):
         """Start the worker"""
         self.is_running = True
         self.start_time = datetime.now()
-        self.last_heartbeat = datetime.now()
         logger.info(f"Worker {self.worker_id} started")
-
-        # Start heartbeat task
-        self.heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-
-        # Perform crash recovery check
-        if self.crash_recovery_enabled:
-            await self._perform_crash_recovery()
 
         try:
             await self._worker_loop()
         except Exception as e:
             logger.error(f"Worker {self.worker_id} crashed: {e}")
-            await self._handle_worker_crash()
         finally:
             self.is_running = False
-            if self.heartbeat_task and not self.heartbeat_task.done():
-                self.heartbeat_task.cancel()
             logger.info(f"Worker {self.worker_id} stopped")
 
     async def stop(self):
@@ -107,14 +89,10 @@ class JobWorker:
                 await asyncio.sleep(5)  # Backoff on errors
 
     async def _process_job(self, job: Job):
-        """Process a single job with pause/resume support"""
+        """Process a single job"""
         start_time = datetime.now()
 
         try:
-            # Assign this worker to the job for crash recovery
-            job.metadata["assigned_worker"] = self.worker_id
-            job.metadata["assigned_at"] = datetime.now().isoformat()
-
             # Update progress
             job.update_progress(stage="initializing", current_item="Setting up job execution")
 
@@ -123,22 +101,6 @@ class JobWorker:
 
             # Calculate duration
             duration = (datetime.now() - start_time).total_seconds()
-
-            # Check if job was paused
-            if result.get('paused'):
-                # Job was paused, don't mark as completed but finalize partial results
-                job.update_progress(stage="paused", current_item="Job paused by user request")
-
-                # Finalize partial results for paused job
-                if hasattr(self.agent, '_finalize_job'):
-                    try:
-                        finalization_result = await self.agent._finalize_job(job.id, result.get('final_state'), "paused")
-                        if finalization_result:
-                            job.artifacts.extend(finalization_result.get("artifacts", []))
-                    except Exception as e:
-                        logger.warning(f"Failed to finalize paused job {job.id}: {e}")
-
-                return result
 
             # Update final progress
             job.update_progress(
@@ -158,8 +120,6 @@ class JobWorker:
             # Store final state
             if result.get('final_state'):
                 job.run_state = result['final_state']
-
-            return result
 
         except Exception as e:
             duration = (datetime.now() - start_time).total_seconds()
@@ -185,114 +145,11 @@ class JobWorker:
             "failed_jobs": self.failed_jobs,
             "success_rate": self.processed_jobs / max(self.processed_jobs + self.failed_jobs, 1),
             "uptime_seconds": uptime.total_seconds() if uptime else 0,
-            "last_heartbeat": self.last_heartbeat.isoformat(),
         }
-
-    async def _heartbeat_loop(self):
-        """Send periodic heartbeats to indicate worker health"""
-        while self.is_running:
-            try:
-                self.last_heartbeat = datetime.now()
-                await self._send_heartbeat()
-                await asyncio.sleep(self.heartbeat_interval)
-            except Exception as e:
-                logger.error(f"Heartbeat error for worker {self.worker_id}: {e}")
-                await asyncio.sleep(self.heartbeat_interval)
-
-    async def _send_heartbeat(self):
-        """Send heartbeat signal - could be to a database or shared storage"""
-        # For now, just log it. In production, this would update a shared registry
-        logger.debug(f"Worker {self.worker_id} heartbeat at {self.last_heartbeat}")
-
-        # Store heartbeat in a simple registry (in production, use Redis/DB)
-        heartbeat_data = {
-            "worker_id": self.worker_id,
-            "timestamp": self.last_heartbeat.isoformat(),
-            "current_job": self.current_job.id if self.current_job else None,
-            "is_running": self.is_running,
-            "processed_jobs": self.processed_jobs,
-            "failed_jobs": self.failed_jobs,
-        }
-
-        # Store in worker registry for crash detection
-        self.worker_registry[self.worker_id] = heartbeat_data
-
-    async def _perform_crash_recovery(self):
-        """Check for crashed workers and recover their jobs"""
-        logger.info(f"Worker {self.worker_id} performing crash recovery check")
-
-        try:
-            # Get all jobs that are marked as running
-            jobs = await self.queue.list_jobs()
-            running_jobs = [job for job in jobs if job.status == JobStatus.RUNNING]
-
-            recovered_count = 0
-            for job in running_jobs:
-                # Check if the job's worker is still alive
-                if await self._is_worker_crashed(job):
-                    logger.info(f"Recovering job {job.id} from crashed worker")
-                    # Reset job status to queued for reassignment
-                    job.update_status(JobStatus.QUEUED)
-                    await self.queue.update_job_status(job.id, JobStatus.QUEUED)
-                    recovered_count += 1
-
-            if recovered_count > 0:
-                logger.info(f"Worker {self.worker_id} recovered {recovered_count} jobs from crashed workers")
-
-        except Exception as e:
-            logger.error(f"Crash recovery failed for worker {self.worker_id}: {e}")
-
-    async def _is_worker_crashed(self, job: Job) -> bool:
-        """Determine if a worker has crashed based on job metadata and heartbeat data"""
-        try:
-            # Check job metadata for worker information
-            worker_id = job.metadata.get("assigned_worker")
-            if not worker_id:
-                # Job doesn't have worker assignment info, assume it's from a crashed worker
-                return True
-
-            # Check if worker is in registry and has recent heartbeat
-            if worker_id not in self.worker_registry:
-                return True
-
-            worker_data = self.worker_registry[worker_id]
-            last_heartbeat = datetime.fromisoformat(worker_data["timestamp"])
-            time_since_heartbeat = datetime.now() - last_heartbeat
-
-            # Consider worker crashed if no heartbeat for more than 2x heartbeat interval
-            max_age = timedelta(seconds=self.heartbeat_interval * 2)
-            return time_since_heartbeat > max_age
-
-        except Exception as e:
-            logger.error(f"Error checking if worker crashed for job {job.id}: {e}")
-            return True  # Assume crashed if we can't determine
-
-    async def _handle_worker_crash(self):
-        """Handle this worker's crash - mark current job for recovery"""
-        try:
-            if self.current_job:
-                logger.warning(f"Worker {self.worker_id} crashed while processing job {self.current_job.id}")
-                # The job will be recovered by another worker during crash recovery
-                # Don't change status here - let recovery process handle it
-        except Exception as e:
-            logger.error(f"Error handling crash for worker {self.worker_id}: {e}")
-
-    async def check_worker_health(self, worker_id: str) -> bool:
-        """Check if a specific worker is healthy"""
-        if worker_id not in self.worker_registry:
-            return False
-
-        worker_data = self.worker_registry[worker_id]
-        last_heartbeat = datetime.fromisoformat(worker_data["timestamp"])
-        time_since_heartbeat = datetime.now() - last_heartbeat
-
-        # Worker is healthy if heartbeat is recent
-        max_age = timedelta(seconds=self.heartbeat_interval * 1.5)
-        return time_since_heartbeat <= max_age
 
 
 class WorkerPool:
-    """Pool of job workers with crash recovery"""
+    """Pool of job workers"""
 
     def __init__(self, num_workers: int = 3, queue: Optional[JobQueue] = None, agent: Optional[CMOAgent] = None):
         self.num_workers = num_workers
@@ -301,11 +158,6 @@ class WorkerPool:
         self.workers: List[JobWorker] = []
         self.tasks: List[asyncio.Task] = []
         self.is_running = False
-
-        # Crash recovery coordination
-        self.worker_health_monitor_task: Optional[asyncio.Task] = None
-        self.crash_recovery_enabled = True
-        self.health_check_interval = 60  # seconds
 
     async def start(self, agent: Optional[CMOAgent] = None):
         """Start the worker pool"""
@@ -330,11 +182,6 @@ class WorkerPool:
         # Start monitoring task
         monitor_task = asyncio.create_task(self._monitor_workers())
         self.tasks.append(monitor_task)
-
-        # Start worker health monitoring for crash recovery
-        if self.crash_recovery_enabled:
-            self.worker_health_monitor_task = asyncio.create_task(self._monitor_worker_health())
-            self.tasks.append(self.worker_health_monitor_task)
 
         logger.info(f"Worker pool started with {len(self.workers)} workers")
 
@@ -393,89 +240,6 @@ class WorkerPool:
             except Exception as e:
                 logger.error(f"Error in worker monitor: {e}")
                 await asyncio.sleep(5)
-
-    async def _monitor_worker_health(self):
-        """Monitor worker health for crash recovery coordination"""
-        while self.is_running:
-            try:
-                await self._check_worker_health_and_recover()
-                await asyncio.sleep(self.health_check_interval)
-            except Exception as e:
-                logger.error(f"Error in worker health monitor: {e}")
-                await asyncio.sleep(10)
-
-    async def _check_worker_health_and_recover(self):
-        """Check all workers' health and recover jobs from crashed workers"""
-        logger.debug("Checking worker health for crash recovery")
-
-        try:
-            # Get all jobs that are marked as running
-            jobs = await self.queue.list_jobs()
-            running_jobs = [job for job in jobs if job.status == JobStatus.RUNNING]
-
-            if not running_jobs:
-                return  # No running jobs to check
-
-            # Collect all active workers' heartbeats
-            active_workers = {}
-            for worker in self.workers:
-                if worker.is_running:
-                    # Share heartbeat data between workers for crash detection
-                    for wid, heartbeat_data in worker.worker_registry.items():
-                        active_workers[wid] = heartbeat_data
-
-            # Check each running job for crashed worker
-            recovered_count = 0
-            for job in running_jobs:
-                worker_id = job.metadata.get("assigned_worker")
-                if not worker_id:
-                    continue
-
-                # Check if worker is healthy
-                if worker_id not in active_workers:
-                    # Worker not found in registry - assume crashed
-                    logger.warning(f"Job {job.id} assigned to unknown worker {worker_id}, recovering")
-                    await self._recover_job_from_crashed_worker(job)
-                    recovered_count += 1
-                else:
-                    # Check heartbeat age
-                    worker_data = active_workers[worker_id]
-                    last_heartbeat = datetime.fromisoformat(worker_data["timestamp"])
-                    time_since_heartbeat = datetime.now() - last_heartbeat
-
-                    max_age = timedelta(seconds=self.workers[0].heartbeat_interval * 2)
-                    if time_since_heartbeat > max_age:
-                        logger.warning(f"Job {job.id} assigned to stale worker {worker_id}, recovering")
-                        await self._recover_job_from_crashed_worker(job)
-                        recovered_count += 1
-
-            if recovered_count > 0:
-                logger.info(f"Worker pool recovered {recovered_count} jobs from crashed/stale workers")
-
-        except Exception as e:
-            logger.error(f"Error in worker health check: {e}")
-
-    async def _recover_job_from_crashed_worker(self, job: Job):
-        """Recover a job from a crashed worker"""
-        try:
-            logger.info(f"Recovering job {job.id} from crashed worker")
-
-            # Reset job status to queued for reassignment
-            job.update_status(JobStatus.QUEUED)
-            await self.queue.update_job_status(job.id, JobStatus.QUEUED)
-
-            # Clear worker assignment
-            job.metadata.pop("assigned_worker", None)
-            job.metadata.pop("assigned_at", None)
-
-            # Add recovery metadata
-            job.metadata["recovered_at"] = datetime.now().isoformat()
-            job.metadata["recovery_reason"] = "worker_crash"
-
-            logger.info(f"Job {job.id} successfully recovered and queued for reassignment")
-
-        except Exception as e:
-            logger.error(f"Failed to recover job {job.id}: {e}")
 
     def get_stats(self) -> Dict[str, Any]:
         """Get worker pool statistics"""

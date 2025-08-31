@@ -66,35 +66,13 @@ class SearchGitHubRepos(GitHubTool):
         )
 
     async def execute(self, q: str, max_repos: int = 200, **kwargs) -> ToolResult:
-        """Execute repository search that respects caller's qualifiers.
-
-        Notes:
-        - Do NOT pre-encode q; let the HTTP client encode params.
-        - Add sensible defaults only if missing in q.
-        - Provide deterministic sorting.
-        """
+        """Execute repository search"""
         try:
-            raw_q = (q or "").strip()
-
-            # Add default qualifiers only if the caller didn't specify them
-            def _ensure(qualifier: str) -> None:
-                nonlocal raw_q
-                if qualifier not in raw_q:
-                    raw_q += (" " if raw_q else "") + qualifier
-
-            # Defaults: public, not archived, not forks
-            _ensure("is:public")
-            _ensure("archived:false")
-            _ensure("fork:false")
-
-            # Sorting: stars desc for stability unless caller specified sort/order in q
-            # GitHub allows sort:stars as an inline qualifier in q
-            if "sort:" not in raw_q:
-                raw_q += " sort:stars"
-
+            # Build search query with sorting and filtering
+            search_query = f"{q} stars:>100 is:public archived:false"
             params = {
-                "q": raw_q,
-                "sort": "stars",
+                "q": search_query,
+                "sort": "updated",
                 "order": "desc",
                 "per_page": min(max_repos, 100),  # GitHub API limit
             }
