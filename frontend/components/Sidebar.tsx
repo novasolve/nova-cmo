@@ -136,18 +136,16 @@ export function Sidebar() {
                   </div>
                   <span
                     className={`text-xs px-2 py-1 rounded ${
-                      campaign.status === "running"
+                      campaign.currentJobId
                         ? "bg-green-100 text-green-800"
-                        : campaign.status === "paused"
-                        ? "bg-yellow-100 text-yellow-800"
                         : "bg-gray-100 text-gray-800"
                     }`}
                   >
-                    {campaign.status}
+                    {campaign.currentJobId ? "Active" : "Idle"}
                   </span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  Budget: {campaign.budget}
+                  {campaign.lastActivity || "No recent activity"}
                 </div>
               </div>
             ))}

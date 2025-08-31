@@ -224,7 +224,7 @@ class JobManager:
                 import logging
                 logging.getLogger(__name__).warning(f"Failed to load config from {config_path}: {e}")
         
-        job = Job.create(goal, created_by, config, metadata)
+        job = Job.create(goal, created_by, config=config, metadata=metadata)
         self.jobs[job.id] = job
         self._notify_listeners("job_created", job)
         return job

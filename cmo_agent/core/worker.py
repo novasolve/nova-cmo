@@ -145,21 +145,29 @@ class JobWorker:
                 except Exception as e:
                     logger.debug(f"Failed to emit initial progress for job {job.id}: {e}")
 
-            # Create progress callback that forwards updates to the queue's progress stream
+                        # Create progress callback that forwards updates to the queue's progress stream
             async def progress_callback(progress_info):
                 """Forward progress updates to the queue's progress stream"""
+                logger.info(f"🔄 Progress callback called for job {job.id}: {progress_info}")
+                
                 # Update the job's progress
                 if isinstance(progress_info, dict):
                     job.update_progress(**progress_info)
+                    logger.info(f"✅ Updated job progress: stage={progress_info.get('stage', 'unknown')}, step={progress_info.get('step', 0)}")
                 else:
                     job.progress = progress_info
-
+                    logger.info(f"✅ Set job progress object: {progress_info}")
+                
                 # Forward to queue's progress stream for SSE
                 if job.id in self.queue._progress_streams:
                     try:
                         await self.queue._progress_streams[job.id].put(job.progress)
+                        logger.info(f"📡 Emitted progress to stream for job {job.id}")
                     except Exception as e:
-                        logger.debug(f"Failed to emit progress for job {job.id}: {e}")
+                        logger.error(f"❌ Failed to emit progress for job {job.id}: {e}")
+                else:
+                    logger.warning(f"⚠️ No progress stream found for job {job.id}")
+                    logger.info(f"Available streams: {list(self.queue._progress_streams.keys())}")
 
             # Run the CMO Agent with progress callback
             result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'), progress_callback)

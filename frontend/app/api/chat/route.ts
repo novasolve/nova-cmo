@@ -107,8 +107,10 @@ export async function POST(req: Request) {
           const jobResult = await resp.json();
           
           // Store the mapping so the events endpoint knows which job to stream
-          console.log(`Storing thread mapping: ${threadId} -> ${jobResult.id}`);
-          storeThreadJobMapping(threadId, jobResult.id);
+          const actualJobId = jobResult.job_id || jobResult.id;
+          console.log(`Job result:`, jobResult);
+          console.log(`Storing thread mapping: ${threadId} -> ${actualJobId}`);
+          storeThreadJobMapping(threadId, actualJobId);
           
           // Update thread with job status
           updateThread(threadId, {
@@ -117,9 +119,9 @@ export async function POST(req: Request) {
           
           return new Response(JSON.stringify({
             success: true,
-            jobId: jobResult.id,
+            jobId: actualJobId,
             threadId,
-            message: `Job ${jobResult.id} created and ${jobResult.status}. Streaming events...`,
+            message: `Job ${actualJobId} created and ${jobResult.status}. Streaming events...`,
             timestamp: new Date().toISOString()
           }), {
             status: 200,

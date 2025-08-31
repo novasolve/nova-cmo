@@ -35,18 +35,52 @@ export async function GET(
           const jobs = await jobsResp.json();
           console.log(`Found ${jobs.length} jobs`);
           
-          // Find the most recent job for this thread
-          const threadJob = jobs.find((job: any) => 
-            job.metadata?.threadId === threadId || 
-            job.goal?.includes(threadId) ||
-            job.id === threadId
-          );
+          // Find the most recent job that could belong to this thread
+          console.log(`Searching for thread ${threadId} in ${jobs.length} jobs`);
+          
+          // Try multiple strategies to find the right job
+          let threadJob = null;
+          
+          // Strategy 1: Exact threadId match in metadata
+          threadJob = jobs.find((job: any) => job.metadata?.threadId === threadId);
           if (threadJob) {
-            currentJobId = threadJob.id;
+            console.log(`Found job via metadata.threadId: ${threadJob.job_id || threadJob.id}`);
+          }
+          
+          // Strategy 2: Recent job created in last 5 minutes (fallback)
+          if (!threadJob) {
+            const recentJobs = jobs.filter((job: any) => {
+              const createdAt = new Date(job.created_at || job.metadata?.created_at);
+              const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+              return createdAt > fiveMinutesAgo;
+            }).sort((a: any, b: any) => {
+              const aTime = new Date(a.created_at || a.metadata?.created_at).getTime();
+              const bTime = new Date(b.created_at || b.metadata?.created_at).getTime();
+              return bTime - aTime; // Most recent first
+            });
+            
+            threadJob = recentJobs[0];
+            if (threadJob) {
+              console.log(`Found recent job as fallback: ${threadJob.job_id || threadJob.id}`);
+            }
+          }
+          
+          if (threadJob) {
+            currentJobId = threadJob.job_id || threadJob.id; // Handle both field names
             console.log(`Mapped thread ${threadId} to job ${currentJobId}`);
             // Store the mapping for future requests
-            const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
-            storeThreadJobMapping(threadId, threadJob.id);
+            if (currentJobId) {
+              const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
+              storeThreadJobMapping(threadId, currentJobId);
+            }
+          } else {
+            console.log(`No suitable job found for thread ${threadId}`);
+            console.log(`Available jobs:`, jobs.slice(0, 3).map((j: any) => ({
+              id: j.job_id || j.id,
+              goal: j.goal?.substring(0, 50),
+              threadId: j.metadata?.threadId,
+              created: j.created_at || j.metadata?.created_at
+            })));
           }
         } else {
           console.warn(`Jobs API failed: ${jobsResp.status} ${jobsResp.statusText}`);

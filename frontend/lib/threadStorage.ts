@@ -80,8 +80,8 @@ export function clearTestThreads(): void {
   // Remove any threads that look like test threads
   const threadsToDelete: string[] = [];
 
-  for (const [id, thread] of threads.entries()) {
-    if (id.includes('test') ||
+    for (const [id, thread] of Array.from(threads.entries())) {
+    if (id.includes('test') || 
         thread.name.toLowerCase().includes('test')) {
       threadsToDelete.push(id);
     }

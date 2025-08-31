@@ -38,13 +38,16 @@ export async function POST(req: Request) {
           const jobResult = await resp.json();
           
           // Store the mapping so the events endpoint knows which job to stream
-          storeThreadJobMapping(threadId, jobResult.id);
+          const actualJobId = jobResult.job_id || jobResult.id;
+          console.log(`Smoke test job result:`, jobResult);
+          console.log(`Storing smoke test mapping: ${threadId} -> ${actualJobId}`);
+          storeThreadJobMapping(threadId, actualJobId);
           
           return new Response(JSON.stringify({
             success: true,
-            jobId: jobResult.id,
+            jobId: actualJobId,
             threadId,
-            message: `Smoke test ${jobResult.id} started. Running vertical slice validation...`,
+            message: `Smoke test ${actualJobId} started. Running vertical slice validation...`,
             testType: "smoke_test",
             startTime: new Date().toISOString()
           }), {
