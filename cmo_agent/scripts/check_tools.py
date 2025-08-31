@@ -5,6 +5,7 @@ Check which tools are available in the CMO Agent
 import sys
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)
@@ -16,6 +17,11 @@ from core.state import DEFAULT_CONFIG
 
 def check_available_tools():
     """Check which tools are available based on current configuration"""
+    # Load environment variables from .env if present
+    try:
+        load_dotenv()
+    except Exception:
+        pass
     print("🔧 CMO Agent Tool Availability Check")
     print("=" * 50)
 

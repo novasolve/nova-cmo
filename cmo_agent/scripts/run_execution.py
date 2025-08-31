@@ -6,6 +6,7 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -23,6 +24,10 @@ try:
 except ImportError:
     from ..agents.cmo_agent import CMOAgent
 from core.state import DEFAULT_CONFIG
+from dotenv import load_dotenv
+
+# Load environment variables from .env if present
+load_dotenv()
 
 # Setup logging
 logging.basicConfig(
@@ -73,6 +78,26 @@ class ExecutionEngine:
                 with open(config_path, 'r') as f:
                     file_config = yaml.safe_load(f)
                     config.update(file_config)
+
+            # Overlay environment variables (take precedence over file)
+            env_mapping = {
+                'GITHUB_TOKEN': 'GITHUB_TOKEN',
+                'INSTANTLY_API_KEY': 'INSTANTLY_API_KEY',
+                'ATTIO_API_KEY': 'ATTIO_API_KEY',
+                'ATTIO_WORKSPACE_ID': 'ATTIO_WORKSPACE_ID',
+                'LINEAR_API_KEY': 'LINEAR_API_KEY',
+                'OPENAI_API_KEY': 'OPENAI_API_KEY',
+                # Optional extras referenced in README
+                'STATE_DB_URL': 'STATE_DB_URL',
+                'BLOB_DIR': 'BLOB_DIR',
+                'LANGFUSE_SERVER_URL': 'LANGFUSE_SERVER_URL',
+                'LANGFUSE_PUBLIC_KEY': 'LANGFUSE_PUBLIC_KEY',
+                'LANGFUSE_SECRET_KEY': 'LANGFUSE_SECRET_KEY',
+            }
+            for config_key, env_var in env_mapping.items():
+                env_val = os.getenv(env_var)
+                if env_val:
+                    config[config_key] = env_val
 
             # Ensure directories exist (logs, checkpoints, artifacts, exports)
             from core.state import DEFAULT_CONFIG as _DEF
