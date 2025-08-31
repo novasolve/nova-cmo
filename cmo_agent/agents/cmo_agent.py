@@ -9,21 +9,7 @@ from datetime import datetime
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-
-import sys
-import os
 from pathlib import Path
-
-# Add current directory and parent directory to path for imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-cmo_agent_dir = parent_dir
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
-if cmo_agent_dir not in sys.path:
-    sys.path.insert(0, cmo_agent_dir)
 
 try:
     from ..core.state import RunState, JobMetadata, DEFAULT_CONFIG
@@ -143,7 +129,20 @@ class CMOAgent:
     """Main CMO Agent class that orchestrates the entire outbound campaign pipeline"""
 
     def __init__(self, config: Dict[str, Any] = None):
-        self.config = config or DEFAULT_CONFIG.copy()
+        # Deep copy default config to avoid shared nested state across jobs/agents
+        import copy
+        base_config = copy.deepcopy(DEFAULT_CONFIG)
+        # Merge user config shallowly on top (keeps nested defaults unless overridden)
+        if config:
+            # For nested dicts, merge keys without sharing references
+            for key, value in config.items():
+                if isinstance(value, dict) and isinstance(base_config.get(key), dict):
+                    merged = copy.deepcopy(base_config.get(key))
+                    merged.update(value)
+                    base_config[key] = merged
+                else:
+                    base_config[key] = value
+        self.config = base_config
         # Initialize all tools first
         self.tools = self._initialize_tools()
 
@@ -151,9 +150,12 @@ class CMOAgent:
         tool_schemas = self._create_tool_schemas()
 
         # Initialize LLM with tool binding
+        llm_cfg = self.config.get("llm", {}) if isinstance(self.config.get("llm"), dict) else {}
+        model_name = llm_cfg.get("model", "gpt-4o-mini")
+        temperature = float(llm_cfg.get("temperature", 0.0))
         self.llm = ChatOpenAI(
-            model="gpt-4-turbo-preview",  # Could be upgraded to gpt-5 when available
-            temperature=0.0,  # Deterministic for reliability
+            model=model_name,
+            temperature=temperature,
         )
 
         # Bind tools to LLM
@@ -170,27 +172,43 @@ class CMOAgent:
             "errors_encountered": 0,
         }
 
-        # Pause/Resume state management
-        self._pause_requested = False
+        # Pause/Resume state management (per-job to avoid cross-job interference)
+        self._pause_requested = set()  # set of job_ids
         self._job_states = {}  # job_id -> saved state for resume
+        # Checkpoint scheduling (per-job)
+        self._last_checkpoint_time_by_job = {}
+        self._last_checkpointed_stage_by_job = {}
 
         # Error handling and retry logic
         from ..core.state import ErrorHandler
         self.error_handler = ErrorHandler(self.config)
 
+        # Initialize Toolbelt for centralized execution (idempotency, retries, PII redaction)
+        try:
+            from ..tools.toolbelt import Toolbelt
+            self.toolbelt = Toolbelt(self.tools, config=self.config)
+        except Exception:
+            self.toolbelt = None
+
         # Artifact management
         from ..core.artifacts import get_artifact_manager
         self.artifact_manager = get_artifact_manager(self.config)
+        # Configure logger level
+        try:
+            level_name = str(self.config.get("log_level", "INFO")).upper()
+            logger.setLevel(getattr(logging, level_name, logging.INFO))
+        except Exception:
+            logger.setLevel(logging.INFO)
 
     def request_pause(self, job_id: str):
         """Request to pause a running job"""
         logger.info(f"Pause requested for job {job_id}")
-        self._pause_requested = True
+        self._pause_requested.add(job_id)
 
     def request_resume(self, job_id: str):
         """Request to resume a paused job"""
         logger.info(f"Resume requested for job {job_id}")
-        self._pause_requested = False
+        self._pause_requested.discard(job_id)
 
     def save_job_state(self, job_id: str, state: RunState):
         """Save job state for potential resume"""
@@ -205,9 +223,9 @@ class CMOAgent:
         """Clear saved job state"""
         self._job_states.pop(job_id, None)
 
-    def is_pause_requested(self) -> bool:
-        """Check if pause has been requested"""
-        return self._pause_requested
+    def is_pause_requested(self, job_id: str) -> bool:
+        """Check if pause has been requested for this job"""
+        return job_id in self._pause_requested
 
     def _create_tool_schemas(self) -> List[Dict[str, Any]]:
         """Create tool schemas for LLM binding"""
@@ -504,7 +522,16 @@ class CMOAgent:
 
         # Simple conditional: continue until done or max steps reached
         def should_end(state: RunState) -> str:
-            if state.get("ended") or state.get("counters", {}).get("steps", 0) >= self.config.get("max_steps", 40):
+            if state.get("ended"):
+                return END
+            if state.get("counters", {}).get("steps", 0) >= self.config.get("max_steps", 40):
+                # Mark state as ended due to max steps for clearer finalization
+                try:
+                    state["ended"] = True
+                    state["current_stage"] = state.get("current_stage", "completed")
+                    state["end_reason"] = "max_steps_reached"
+                except Exception:
+                    pass
                 return END
             return "agent"
 
@@ -518,6 +545,7 @@ class CMOAgent:
         tool_calls = []  # Initialize to avoid scoping issues
 
         try:
+            state = self._ensure_state_basics(state)
             # Build system prompt
             system_prompt = self._build_system_prompt(state)
 
@@ -551,9 +579,26 @@ class CMOAgent:
                     "error_type": "TimeoutError",
                     "timestamp": datetime.now().isoformat(),
                 })
-                # Bump step counter and fall through to auto-progression block
-                state.setdefault("counters", {})
-                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
+                response = type("Resp", (), {"content": "", "tool_calls": []})()
+            except Exception as e:
+                # Broadly handle auth/model/network errors to avoid aborting the step entirely.
+                logger.error(f"LLM call failed: {e}")
+                state.setdefault("errors", []).append({
+                    "stage": "agent_step",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "timestamp": datetime.now().isoformat(),
+                })
+                # Proceed with empty response so auto-progress can kick in and counters still advance
+                response = type("Resp", (), {"content": "", "tool_calls": []})()
+            except Exception as e:
+                logger.error(f"LLM call failed: {e}")
+                state.setdefault("errors", []).append({
+                    "stage": "agent_step",
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "timestamp": datetime.now().isoformat(),
+                })
                 response = type("Resp", (), {"content": "", "tool_calls": []})()
 
             # Parse tool calls
@@ -567,6 +612,8 @@ class CMOAgent:
                 "tool_calls": [call.dict() if hasattr(call, 'dict') else call for call in tool_calls],
                 "timestamp": datetime.now().isoformat(),
             })
+            # Trim conversation history to control prompt size
+            self._trim_history(state)
 
             # Safeguard against repeated no-tool-call responses
             if not tool_calls:
@@ -585,20 +632,16 @@ class CMOAgent:
                     })
                     state["ended"] = True
                     state["current_stage"] = "failed"
+                    state["end_reason"] = "no_tool_calls_limit"
                 else:
-                    logger.info("No tool calls, continuing to agent")
-
-                # Update step counter and return early
-                state.setdefault("counters", {})
-                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                return state
+                    logger.info("No tool calls, evaluating auto-progress if enabled")
 
             # Reset the no-tool-call streak on valid tool calls
             state.setdefault("counters", {})
             if state["counters"].get("no_tool_call_streak"):
                 state["counters"]["no_tool_call_streak"] = 0
 
-            # Execute tool calls directly in the agent step
+            # Execute tool calls with centralized toolbelt (idempotency + retries) when available
             for call in tool_calls:
                 tool_name = call.get("name")
                 if tool_name and tool_name in self.tools:
@@ -614,6 +657,7 @@ class CMOAgent:
                                 "content": hydration_note,
                                 "timestamp": datetime.now().isoformat(),
                             })
+                            self._trim_history(state)
 
                         # If we cannot safely hydrate required args, skip executing this tool
                         if hydrated_args is None:
@@ -624,7 +668,16 @@ class CMOAgent:
                         hydrated_args = dict(hydrated_args)
                         hydrated_args.setdefault("job_id", state.get("job_id"))
                         hydrated_args.setdefault("dry_run", bool(self.config.get("features", {}).get("dry_run", False)))
-                        result = await tool.execute(**hydrated_args)
+
+                        if getattr(self, "toolbelt", None):
+                            result = await self.toolbelt.execute(
+                                tool_name,
+                                job_id=state.get("job_id"),
+                                args=hydrated_args,
+                            )
+                        else:
+                            # Fallback direct execution with retry
+                            result = await self.error_handler.execute_with_retry(tool.execute, **hydrated_args)
 
                         # Store result
                         state = self._reduce_tool_result(state, tool_name, result)
@@ -641,6 +694,7 @@ class CMOAgent:
                                     "content": summary_msg,
                                     "timestamp": datetime.now().isoformat(),
                                 })
+                                self._trim_history(state)
                         except Exception:
                             # Non-fatal if summarization fails
                             pass
@@ -648,6 +702,7 @@ class CMOAgent:
                         # Check if this is the done tool
                         if tool_name == "done":
                             state["ended"] = True
+                            state["end_reason"] = "done"
                             logger.info("Done tool called - ending workflow")
                             break
 
@@ -657,183 +712,10 @@ class CMOAgent:
                         state = self._reduce_tool_result(state, tool_name, error_result)
                         self.stats["errors_encountered"] += 1
 
-            # Fallback auto-progression if the LLM keeps issuing only searches
-            if not state.get("ended"):
+            # Fallback auto-progression if enabled
+            if not state.get("ended") and bool(self.config.get("features", {}).get("enable_auto_progress", True)):
                 try:
-                    repos = state.get("repos", [])
-                    candidates = state.get("candidates", [])
-                    leads = state.get("leads", [])
-
-                    # If we already have repos but no candidates, extract people
-                    if repos and not candidates and "extract_people" in self.tools:
-                        logger.info("Auto-progress: executing extract_people based on repos present")
-                        try:
-                            tool = self.tools["extract_people"]
-                            result = await tool.execute(repos=repos, top_authors_per_repo=5)
-                            state = self._reduce_tool_result(state, "extract_people", result)
-                            self.stats["tools_executed"] += 1
-                            # Inform LLM about auto-progress result
-                            try:
-                                summary_msg = self._summarize_tool_result("extract_people", result, state, auto_progress=True)
-                                if summary_msg:
-                                    state.setdefault("history", []).append({
-                                        "type": "ai",
-                                        "content": summary_msg,
-                                        "timestamp": datetime.now().isoformat(),
-                                    })
-                            except Exception:
-                                pass
-                            # After extracting, return early to let next loop continue
-                            state.setdefault("counters", {})
-                            state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                            logger.info("Auto-progress: extract_people completed, yielding control")
-                            return state
-                        except Exception as e:
-                            logger.warning(f"Auto-progress extract_people failed: {e}")
-
-                    # If we have candidates but no leads enriched, enrich users in batch
-                    if candidates and not leads and "enrich_github_users" in self.tools:
-                        unique_logins = []
-                        seen = set()
-                        for c in candidates:
-                            login = c.get("login")
-                            if login and login not in seen:
-                                unique_logins.append(login)
-                                seen.add(login)
-                        if unique_logins:
-                            logger.info("Auto-progress: executing enrich_github_users based on candidates present")
-                            try:
-                                tool = self.tools["enrich_github_users"]
-                                result = await tool.execute(logins=unique_logins[:25])
-                                state = self._reduce_tool_result(state, "enrich_github_users", result)
-                                self.stats["tools_executed"] += 1
-                                # Inform LLM about auto-progress result
-                                try:
-                                    summary_msg = self._summarize_tool_result("enrich_github_users", result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-                                state.setdefault("counters", {})
-                                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                                logger.info("Auto-progress: enrich_github_users completed, yielding control")
-                                return state
-                            except Exception as e:
-                                logger.warning(f"Auto-progress enrich_github_users failed: {e}")
-
-                    # If we have enriched leads but missing emails and have candidates mapping, find emails in batch
-                    if state.get("leads") and "find_commit_emails_batch" in self.tools and not state.get("email_search_exhausted"):
-                        leads_without_email = [l for l in state.get("leads", []) if not l.get("email") and not l.get("no_email_found")]
-                        if leads_without_email and candidates:
-                            user_repo_pairs = []
-                            # Build (login, repo_full_name) pairs from candidates signals
-                            for c in candidates:
-                                login = c.get("login")
-                                repo_full_name = c.get("from_repo")
-                                if login and repo_full_name:
-                                    user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
-                            if user_repo_pairs:
-                                logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
-                                try:
-                                    # Track before/after counts to detect progress
-                                    before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
-                                    tool = self.tools["find_commit_emails_batch"]
-                                    result = await tool.execute(user_repo_pairs=user_repo_pairs[:50], days=90)
-                                    state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
-                                    after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
-
-                                    self.stats["tools_executed"] += 1
-                                    state.setdefault("counters", {})
-                                    state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-
-                                    # Inform LLM about auto-progress result
-                                    try:
-                                        summary_msg = self._summarize_tool_result("find_commit_emails_batch", result, state, auto_progress=True, extra_info={
-                                            "before": before_with_email,
-                                            "after": after_with_email,
-                                        })
-                                        if summary_msg:
-                                            state.setdefault("history", []).append({
-                                                "type": "ai",
-                                                "content": summary_msg,
-                                                "timestamp": datetime.now().isoformat(),
-                                            })
-                                    except Exception:
-                                        pass
-
-                                    # Detect no-progress attempts and set exhaustion flag to break loops
-                                    if after_with_email <= before_with_email:
-                                        streak = state["counters"].get("email_find_noop_streak", 0) + 1
-                                        state["counters"]["email_find_noop_streak"] = streak
-                                        if streak >= 2:
-                                            # Mark unresolvable leads and stop auto email search
-                                            for lead in state.get("leads", []):
-                                                if not lead.get("email"):
-                                                    attempts = lead.get("_email_attempts", 0) + 1
-                                                    lead["_email_attempts"] = attempts
-                                                    if attempts >= 2:
-                                                        lead["no_email_found"] = True
-                                            state["email_search_exhausted"] = True
-                                            logger.info("Auto-progress: email search exhausted; marking unresolvable leads and stopping further attempts")
-                                    else:
-                                        # Reset noop streak on progress
-                                        if state["counters"].get("email_find_noop_streak"):
-                                            state["counters"]["email_find_noop_streak"] = 0
-
-                                    logger.info("Auto-progress: find_commit_emails_batch completed, yielding control")
-                                    return state
-                                except Exception as e:
-                                    logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
-
-                    # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
-                    leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
-                    if leads_with_email and not state.get("ended"):
-                        try:
-                            # Attempt simple personalization (optional) - skip if not available
-                            # Export leads with email
-                            if "export_csv" in self.tools:
-                                export_tool = self.tools["export_csv"]
-                                job_id = state.get("job_id", "job")
-                                export_path = f"{job_id}_leads.csv"
-                                export_rows = leads_with_email
-                                export_result = await export_tool.execute(rows=export_rows, path=export_path)
-                                state = self._reduce_tool_result(state, "export_csv", export_result)
-                                try:
-                                    summary_msg = self._summarize_tool_result("export_csv", export_result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-
-                            # Signal completion
-                            if "done" in self.tools:
-                                done_tool = self.tools["done"]
-                                summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
-                                done_result = await done_tool.execute(summary=summary_text)
-                                state = self._reduce_tool_result(state, "done", done_result)
-                                try:
-                                    summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-                                state["ended"] = True
-                                logger.info("Auto-progress: finalized job via export and done")
-                                return state
-                        except Exception as e:
-                            logger.warning(f"Auto-finalization failed: {e}")
+                    state = await self._auto_progress(state)
                 except Exception as e:
                     logger.warning(f"Auto-progress block encountered an error: {e}")
 
@@ -862,6 +744,8 @@ class CMOAgent:
             # Update error counter
             state.setdefault("counters", {})
             state["counters"]["errors"] = state["counters"].get("errors", 0) + 1
+            # Ensure steps advance even on failure to avoid 0-step jobs
+            state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
 
             return state
 
@@ -898,23 +782,30 @@ class CMOAgent:
             state["current_stage"] = "extraction"
 
         elif tool_name == "enrich_github_user" and result.success:
-            # Add enriched profile to leads
+            # Add enriched profile to leads and use profile email when available
             profile = result.data.get("profile", {})
             state.setdefault("leads", [])
             # Find and update existing lead or add new one
-            updated = False
-            for i, lead in enumerate(state["leads"]):
-                if lead.get("login") == profile.get("login"):
-                    state["leads"][i] = {**lead, **profile}
-                    updated = True
-                    break
-            if not updated:
+            index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
+            login = profile.get("login")
+            if login in index:
+                i = index[login]
+                state["leads"][i] = {**state["leads"][i], **profile}
+            else:
                 state["leads"].append(profile)
+                i = len(state["leads"]) - 1
+            # Normalize profile email if present
+            email = profile.get("email")
+            if email and "@" in email and not str(email).endswith("@users.noreply.github.com"):
+                state["leads"][i]["email"] = email
 
         elif tool_name == "enrich_github_users" and result.success:
             # Handle batched user enrichment
             profiles = result.data.get("profiles", [])
             state.setdefault("leads", [])
+
+            # Build index for faster merging
+            index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
 
             for profile in profiles:
                 if profile.get("enriched") == False:
@@ -923,14 +814,18 @@ class CMOAgent:
                     continue
 
                 # Find and update existing lead or add new one
-                updated = False
-                for i, lead in enumerate(state["leads"]):
-                    if lead.get("login") == profile.get("login"):
-                        state["leads"][i] = {**lead, **profile}
-                        updated = True
-                        break
-                if not updated:
+                login = profile.get("login")
+                if login in index:
+                    i = index[login]
+                    state["leads"][i] = {**state["leads"][i], **profile}
+                else:
                     state["leads"].append(profile)
+                    i = len(state["leads"]) - 1
+                    index[login] = i
+                # Normalize profile email if present
+                email = profile.get("email")
+                if email and "@" in email and not str(email).endswith("@users.noreply.github.com"):
+                    state["leads"][i]["email"] = email
             state["current_stage"] = "enrichment"
 
         elif tool_name == "find_commit_emails" and result.success:
@@ -938,23 +833,19 @@ class CMOAgent:
             login = result.data.get("login")
             emails = result.data.get("emails", [])
             if login and emails:
-                for lead in state.get("leads", []):
-                    if lead.get("login") == login:
-                        lead["email"] = emails[0]  # Take first email
-                        break
+                index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
+                if login in index:
+                    state["leads"][index[login]]["email"] = emails[0]
             state["current_stage"] = "validation"
 
         elif tool_name == "find_commit_emails_batch" and result.success:
             # Handle batched email lookup
             user_emails = result.data.get("user_emails", {})
+            index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
             for login, email_data in user_emails.items():
                 emails = email_data.get("emails", [])
-                if emails:
-                    # Find the corresponding lead and add email
-                    for lead in state.get("leads", []):
-                        if lead.get("login") == login:
-                            lead["email"] = emails[0]  # Take first email
-                            break
+                if emails and login in index:
+                    state["leads"][index[login]]["email"] = emails[0]
             state["current_stage"] = "validation"
 
         elif tool_name == "mx_check" and result.success:
@@ -967,8 +858,24 @@ class CMOAgent:
             state["current_stage"] = "validation"
 
         elif tool_name == "score_icp" and result.success:
-            # This would be handled per-lead in the enrichment phase
-            pass
+            # Attach ICP score to the corresponding lead profile if present
+            profile = result.data.get("profile_summary")
+            final_score = result.data.get("final_score")
+            is_qualified = result.data.get("is_qualified")
+            # Best effort: match by login in summary text
+            if profile:
+                import re
+                m = re.search(r"\(([^)]+)\)", profile)
+                login = m.group(1) if m else None
+            else:
+                login = None
+            if login:
+                index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
+                if login in index:
+                    lead = state["leads"][index[login]]
+                    lead["icp_score"] = final_score
+                    lead["icp_qualified"] = is_qualified
+            state["current_stage"] = "scoring"
 
         elif tool_name == "render_copy" and result.success:
             # Add rendered email to to_send
@@ -1057,38 +964,91 @@ class CMOAgent:
             hydrated = dict(args or {})
 
             if tool_name == "enrich_github_users":
-                # Prefer candidates from state over LLM-supplied examples
-                if not hydrated.get("logins"):
-                    candidates = state.get("candidates", [])
-                    unique_logins = []
-                    seen = set()
-                    for c in candidates:
-                        login = c.get("login")
-                        if login and login not in seen:
-                            unique_logins.append(login)
-                            seen.add(login)
-                    if unique_logins:
-                        # Cap batch size conservatively
-                        hydrated["logins"] = unique_logins[:25]
-                        note = f"[auto] Filled enrich_github_users logins from candidates: {len(hydrated['logins'])}"
+                # Normalize/validate provided logins or fallback to candidates
+                import re
+
+                def _normalize_list(value):
+                    # Accept comma/space separated string or list of strings
+                    if isinstance(value, str):
+                        parts = [p.strip() for p in re.split(r"[\s,]+", value) if p.strip()]
+                    elif isinstance(value, list):
+                        parts = []
+                        for v in value:
+                            if isinstance(v, str):
+                                parts.extend([p.strip() for p in re.split(r"[\s,]+", v) if p.strip()])
+                            else:
+                                parts.append(str(v))
                     else:
-                        return None, "[auto] enrich_github_users skipped: no candidates available."
+                        parts = []
+                    # Strip leading '@' and dedupe while preserving order
+                    seen_local = set()
+                    normed: list[str] = []
+                    for p in parts:
+                        token = p.lstrip('@')
+                        if token and token not in seen_local:
+                            normed.append(token)
+                            seen_local.add(token)
+                    return normed
+
+                def _filter_valid(logins_list):
+                    valid = []
+                    pattern = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
+                    for l in logins_list:
+                        # Basic GitHub login constraints; skip very short/invalid tokens
+                        if 2 <= len(l) <= 39 and pattern.match(l):
+                            valid.append(l)
+                    return valid
+
+                provided = hydrated.get("logins")
+                if provided:
+                    normed = _normalize_list(provided)
+                    valid = _filter_valid(normed)
+                    if valid:
+                        hydrated["logins"] = valid[:25]
+                        note = f"[auto] Normalized enrich_github_users logins: {len(hydrated['logins'])}"
+                        return hydrated, note
+                    # Fall through to candidates if provided list is invalid/empty after filtering
+
+                # Prefer candidates from state
+                candidates = state.get("candidates", [])
+                unique_logins = []
+                seen = set()
+                for c in candidates:
+                    login = c.get("login")
+                    if login and login not in seen:
+                        unique_logins.append(login)
+                        seen.add(login)
+                if unique_logins:
+                    hydrated["logins"] = unique_logins[:25]
+                    note = f"[auto] Filled enrich_github_users logins from candidates: {len(hydrated['logins'])}"
+                else:
+                    return None, "[auto] enrich_github_users skipped: no candidates available."
                 return hydrated, note
 
             if tool_name == "find_commit_emails_batch":
                 # Build pairs from candidates if not provided
                 if not hydrated.get("user_repo_pairs"):
+                    import re
+                    pattern = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
                     pairs = []
+                    seen_pairs = set()
                     for c in state.get("candidates", []):
                         login = c.get("login")
                         repo_full_name = c.get("from_repo")
-                        if login and repo_full_name:
-                            pairs.append({"login": login, "repo_full_name": repo_full_name})
+                        if not (login and repo_full_name):
+                            continue
+                        if not (2 <= len(login) <= 39 and pattern.match(login)):
+                            continue
+                        key = (login, repo_full_name)
+                        if key in seen_pairs:
+                            continue
+                        seen_pairs.add(key)
+                        pairs.append({"login": login, "repo_full_name": repo_full_name})
                     if pairs:
                         hydrated["user_repo_pairs"] = pairs[:50]
                         note = f"[auto] Filled find_commit_emails_batch pairs: {len(hydrated['user_repo_pairs'])}"
                     else:
-                        return None, "[auto] find_commit_emails_batch skipped: no candidate repo pairs available."
+                        return None, "[auto] find_commit_emails_batch skipped: no valid candidate repo pairs available."
                 return hydrated, note
 
             if tool_name == "export_csv":
@@ -1134,6 +1094,27 @@ class CMOAgent:
                         return None, "[auto] score_icp skipped: no lead profile available."
                     hydrated["profile"] = lead
                     note = f"[auto] Filled score_icp profile for {lead.get('login', 'unknown')}"
+                return hydrated, note
+
+            if tool_name == "extract_people":
+                # Ensure repos are present and normalized
+                repos = hydrated.get("repos")
+                if not repos:
+                    repos = state.get("repos", [])
+                    if not repos:
+                        return None, "[auto] extract_people skipped: no repositories available."
+                    hydrated["repos"] = repos[: min(len(repos), int(self.config.get('max_repos', 600)))]
+                    note = f"[auto] Filled extract_people repos from state: {len(hydrated['repos'])}"
+                elif isinstance(repos, list) and repos and isinstance(repos[0], str):
+                    # Normalize list of repo full_names -> minimal repo dicts
+                    normed = []
+                    for r in repos:
+                        if isinstance(r, str) and "/" in r:
+                            normed.append({"full_name": r, "name": r.split("/")[-1], "stars": 0})
+                    if not normed:
+                        return None, "[auto] extract_people skipped: invalid repo list."
+                    hydrated["repos"] = normed
+                    note = f"[auto] Normalized extract_people repos from strings: {len(normed)}"
                 return hydrated, note
 
             # Default: return original args without note
@@ -1184,11 +1165,13 @@ Available tools: {', '.join(self.tools.keys())}
             # Initialize state
             initial_state = RunState(
                 **job_meta.to_dict(),
+                state_version=1,
                 icp=self.config.get("default_icp", {}),
                 config=self.config,
                 current_stage="initialization",
                 counters={"steps": 0, "api_calls": 0, "tokens": 0, "errors": 0, "tool_errors": 0},
                 ended=False,  # Explicitly initialize ended flag
+                end_reason="",
                 repos=[],     # Initialize empty lists
                 candidates=[],
                 leads=[],
@@ -1212,13 +1195,16 @@ Available tools: {', '.join(self.tools.keys())}
                 async for step_result in self.graph.astream(initial_state, {"recursion_limit": max_steps + 10}):
                     final_state = step_result
 
-                    # Extract progress information
+                    # Extract and persist progress information
                     progress_info = self._extract_progress_info(step_result)
+                    if hasattr(step_result, 'setdefault'):
+                        step_result.setdefault("progress", {})
+                        step_result["progress"] = progress_info
                     if progress_callback:
                         await progress_callback(progress_info)
 
-                    # Check for pause request
-                    if self.is_pause_requested():
+                    # Check for pause request (per-job)
+                    if self.is_pause_requested(job_meta.job_id):
                         logger.info(f"Pause detected for job {job_meta.job_id}, saving state and stopping")
                         # Save current state for resume
                         self.save_job_state(job_meta.job_id, step_result)
@@ -1233,11 +1219,11 @@ Available tools: {', '.join(self.tools.keys())}
                             "message": "Job paused by user request",
                         }
 
-                    # Periodic checkpointing
+                    # Periodic checkpointing (per-job schedule)
                     if await self._should_checkpoint(step_result):
                         await self._save_checkpoint(job_meta.job_id, step_result, "periodic")
 
-                logger.info("Job completed successfully via astream")
+                logger.info("Job finished via astream; evaluating final status")
 
             except Exception as e:
                 logger.error(f"Job execution failed via astream: {e}")
@@ -1246,11 +1232,21 @@ Available tools: {', '.join(self.tools.keys())}
             # Update stats
             self.stats["jobs_processed"] += 1
 
+            # Determine success/failure from final_state
+            # Flatten nested state if graph wrapped it under node key (e.g., {"agent": {...}})
+            try:
+                if isinstance(final_state, dict) and isinstance(final_state.get("agent"), dict):
+                    final_state = final_state.get("agent")
+            except Exception:
+                pass
+            job_failed = self._is_failure_state(final_state)
+            job_status = "failed" if job_failed else "completed"
+
             # Finalize job with comprehensive artifact collection
-            finalization_result = await self._finalize_job(job_meta.job_id, final_state, "completed")
+            finalization_result = await self._finalize_job(job_meta.job_id, final_state, job_status)
 
             return {
-                "success": True,
+                "success": not job_failed,
                 "job_id": job_meta.job_id,
                 "final_state": final_state,
                 "artifacts": finalization_result.get("artifacts", []),
@@ -1298,8 +1294,8 @@ Available tools: {', '.join(self.tools.keys())}
         if not saved_state:
             raise ValueError(f"No saved state found for job {job_id}")
 
-        # Clear pause flag for resume
-        self._pause_requested = False
+        # Clear pause flag for this job on resume
+        self._pause_requested.discard(job_id)
 
         # Continue from saved state
         final_state = None
@@ -1309,13 +1305,16 @@ Available tools: {', '.join(self.tools.keys())}
             async for step_result in self.graph.astream(saved_state, {"recursion_limit": max_steps + 10}):
                 final_state = step_result
 
-                # Extract progress information
+                # Extract and persist progress information
                 progress_info = self._extract_progress_info(step_result)
+                if hasattr(step_result, 'setdefault'):
+                    step_result.setdefault("progress", {})
+                    step_result["progress"] = progress_info
                 if progress_callback:
                     await progress_callback(progress_info)
 
                 # Check for pause request (can pause again during resume)
-                if self.is_pause_requested():
+                if self.is_pause_requested(job_id):
                     logger.info(f"Pause detected during resume for job {job_id}, saving state and stopping")
                     self.save_job_state(job_id, step_result)
                     await self._save_checkpoint(job_id, step_result, "paused")
@@ -1332,7 +1331,7 @@ Available tools: {', '.join(self.tools.keys())}
                 if await self._should_checkpoint(step_result):
                     await self._save_checkpoint(job_id, step_result, "periodic")
 
-            logger.info(f"Job {job_id} resumed and completed successfully")
+            logger.info(f"Job {job_id} resumed and finished; evaluating final status")
 
             # Clear saved state since job is complete
             self.clear_job_state(job_id)
@@ -1340,11 +1339,21 @@ Available tools: {', '.join(self.tools.keys())}
             # Update stats
             self.stats["jobs_processed"] += 1
 
-            # Finalize job after successful resume
-            finalization_result = await self._finalize_job(job_id, final_state, "completed")
+            # Determine success/failure from final_state
+            # Flatten nested state if graph wrapped it under node key (e.g., {"agent": {...}})
+            try:
+                if isinstance(final_state, dict) and isinstance(final_state.get("agent"), dict):
+                    final_state = final_state.get("agent")
+            except Exception:
+                pass
+            job_failed = self._is_failure_state(final_state)
+            job_status = "failed" if job_failed else "completed"
+
+            # Finalize job after resume
+            finalization_result = await self._finalize_job(job_id, final_state, job_status)
 
             return {
-                "success": True,
+                "success": not job_failed,
                 "job_id": job_id,
                 "final_state": final_state,
                 "artifacts": finalization_result.get("artifacts", []),
@@ -1462,9 +1471,9 @@ Available tools: {', '.join(self.tools.keys())}
                 "progress": state.get("progress", {}),
             }
 
-            # Save to file
-            with open(checkpoint_file, 'w') as f:
-                json.dump(checkpoint_data, f, indent=2, default=str)
+            # Save to file (UTF-8, preserve Unicode characters)
+            with open(checkpoint_file, 'w', encoding='utf-8') as f:
+                json.dump(checkpoint_data, f, indent=2, default=str, ensure_ascii=False)
 
             # Add to state's checkpoints list
             state.setdefault("checkpoints", []).append({
@@ -1493,6 +1502,7 @@ Available tools: {', '.join(self.tools.keys())}
         counters = state.get("counters", {})
         current_step = counters.get("steps", 0)
         current_stage = state.get("current_stage", "")
+        job_id = state.get("job_id")
 
         # Get checkpoint configuration
         checkpoint_config = self.config.get("job_config", {}).get("checkpoints", {})
@@ -1501,11 +1511,13 @@ Available tools: {', '.join(self.tools.keys())}
         volume_interval = checkpoint_config.get("volume_interval", 1000)  # Every 1000 leads
 
         # Time-based checkpointing
-        last_checkpoint_time = getattr(self, '_last_checkpoint_time', 0)
+        # Use per-job last checkpoint time to avoid cross-job interference
+        last_checkpoint_time = self._last_checkpoint_time_by_job.get(job_id, 0)
         current_time = time.time()
 
         if current_time - last_checkpoint_time >= time_interval:
-            self._last_checkpoint_time = current_time
+            if job_id:
+                self._last_checkpoint_time_by_job[job_id] = current_time
             logger.debug(f"Time-based checkpoint triggered after {time_interval}s")
             return True
 
@@ -1526,9 +1538,10 @@ Available tools: {', '.join(self.tools.keys())}
             return True
 
         # Stage transition checkpointing
-        last_checkpointed_stage = getattr(self, '_last_checkpointed_stage', None)
+        last_checkpointed_stage = self._last_checkpointed_stage_by_job.get(job_id)
         if last_checkpointed_stage != current_stage and current_stage:
-            self._last_checkpointed_stage = current_stage
+            if job_id:
+                self._last_checkpointed_stage_by_job[job_id] = current_stage
             logger.debug(f"Stage transition checkpoint triggered: {current_stage}")
             return True
 
@@ -1538,6 +1551,25 @@ Available tools: {', '.join(self.tools.keys())}
             return True
 
         return False
+
+    def _is_failure_state(self, state: RunState) -> bool:
+        """Determine if the final state represents a failure."""
+        try:
+            if not state:
+                return True
+            # Explicit failure stage
+            if state.get("current_stage") == "failed":
+                return True
+            # Critical error recorded
+            for err in state.get("errors", []) or []:
+                if err.get("critical") is True:
+                    return True
+            # Ended without completion
+            if state.get("ended") and state.get("current_stage") != "completed":
+                return True
+            return False
+        except Exception:
+            return True
 
     async def _cleanup_checkpoints(self, job_id: str):
         """Clean up old checkpoints to prevent disk space issues"""
@@ -1579,23 +1611,31 @@ Available tools: {', '.join(self.tools.keys())}
             logger.info(f"Finalizing job {job_id} with status: {job_status}")
 
             # Collect artifacts based on job status
-            artifacts = await self._collect_artifacts(job_id, final_state, job_status)
+            # Ensure we work on a flattened view of state for exporters and report
+            flat_state = final_state
+            try:
+                if isinstance(final_state, dict) and isinstance(final_state.get("agent"), dict):
+                    flat_state = final_state.get("agent")
+            except Exception:
+                pass
+
+            artifacts = await self._collect_artifacts(job_id, flat_state, job_status)
 
             # Save final checkpoint
-            if final_state:
-                await self._save_checkpoint(job_id, final_state, job_status)
+            if flat_state:
+                await self._save_checkpoint(job_id, flat_state, job_status)
 
             # Clean up temporary resources
             await self._cleanup_job_resources(job_id, job_status)
 
             # Generate final report
-            final_report = self._generate_final_report(job_id, final_state, artifacts, job_status)
+            final_report = self._generate_final_report(job_id, flat_state, artifacts, job_status)
 
             return {
                 "job_id": job_id,
                 "status": job_status,
                 "artifacts": artifacts,
-                "final_state": final_state,
+                "final_state": flat_state,
                 "report": final_report,
             }
 
@@ -2008,3 +2048,391 @@ Available tools: {', '.join(self.tools.keys())}
                 return True
 
         return False
+
+    def _trim_history(self, state: RunState) -> None:
+        """Trim conversation history to the last N entries according to config."""
+        try:
+            limit = int(self.config.get("history_limit", 120))
+        except Exception:
+            limit = 120
+        history = state.get("history")
+        if isinstance(history, list) and len(history) > limit:
+            # Keep the most recent entries
+            state["history"] = history[-limit:]
+
+    async def _auto_progress(self, state: RunState) -> RunState:
+        """Auto-progress through pipeline stages when LLM omits obvious next steps."""
+        repos = state.get("repos", [])
+        candidates = state.get("candidates", [])
+        leads = state.get("leads", [])
+
+        # If we already have repos but no candidates, extract people
+        if repos and not candidates and "extract_people" in self.tools:
+            logger.info("Auto-progress: executing extract_people based on repos present")
+            try:
+                tool = self.tools["extract_people"]
+                result = await self.error_handler.execute_with_retry(tool.execute, repos=repos, top_authors_per_repo=5)
+                state = self._reduce_tool_result(state, "extract_people", result)
+                self.stats["tools_executed"] += 1
+                # Inform LLM about auto-progress result
+                try:
+                    summary_msg = self._summarize_tool_result("extract_people", result, state, auto_progress=True)
+                    if summary_msg:
+                        state.setdefault("history", []).append({
+                            "type": "ai",
+                            "content": summary_msg,
+                            "timestamp": datetime.now().isoformat(),
+                        })
+                        self._trim_history(state)
+                except Exception:
+                    pass
+                logger.info("Auto-progress: extract_people completed, yielding control")
+                return state
+            except Exception as e:
+                logger.warning(f"Auto-progress extract_people failed: {e}")
+
+        # If we have candidates but no leads enriched, enrich users in batch
+        if candidates and not leads and "enrich_github_users" in self.tools:
+            unique_logins = []
+            seen = set()
+            for c in candidates:
+                login = c.get("login")
+                if login and login not in seen:
+                    unique_logins.append(login)
+                    seen.add(login)
+            if unique_logins:
+                logger.info("Auto-progress: executing enrich_github_users based on candidates present")
+                try:
+                    tool = self.tools["enrich_github_users"]
+                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25])
+                    state = self._reduce_tool_result(state, "enrich_github_users", result)
+                    self.stats["tools_executed"] += 1
+                    # Inform LLM about auto-progress result
+                    try:
+                        summary_msg = self._summarize_tool_result("enrich_github_users", result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                            self._trim_history(state)
+                    except Exception:
+                        pass
+                    logger.info("Auto-progress: enrich_github_users completed, yielding control")
+                    return state
+                except Exception as e:
+                    logger.warning(f"Auto-progress enrich_github_users failed: {e}")
+
+        # If we have enriched leads but missing emails and have candidates mapping, find emails in batch
+        if state.get("leads") and "find_commit_emails_batch" in self.tools and not state.get("email_search_exhausted"):
+            leads_without_email = [l for l in state.get("leads", []) if not l.get("email") and not l.get("no_email_found")]
+            if leads_without_email and candidates:
+                user_repo_pairs = []
+                # Build (login, repo_full_name) pairs from candidates signals
+                for c in candidates:
+                    login = c.get("login")
+                    repo_full_name = c.get("from_repo")
+                    if login and repo_full_name:
+                        user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
+                if user_repo_pairs:
+                    logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
+                    try:
+                        # Track before/after counts to detect progress
+                        before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
+                        tool = self.tools["find_commit_emails_batch"]
+                        # Pull discovery tuning from config
+                        es = self.config.get("email_search", {}) if isinstance(self.config.get("email_search"), dict) else {}
+                        days = int(es.get("days", 90))
+                        batch_size = int(es.get("batch_size", 5))
+                        repos_per_user = int(es.get("repos_per_user", 5))
+                        commits_per_repo = int(es.get("commits_per_repo", 10))
+                        include_committer_email = bool(es.get("include_committer_email", False))
+
+                        result = await self.error_handler.execute_with_retry(
+                            tool.execute,
+                            user_repo_pairs=user_repo_pairs[:50],
+                            days=days,
+                            batch_size=batch_size,
+                            repos_per_user=repos_per_user,
+                            commits_per_repo=commits_per_repo,
+                            include_committer_email=include_committer_email,
+                        )
+                        state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
+                        after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
+
+                        # Inform LLM about auto-progress result
+                        try:
+                            summary_msg = self._summarize_tool_result("find_commit_emails_batch", result, state, auto_progress=True, extra_info={
+                                "before": before_with_email,
+                                "after": after_with_email,
+                            })
+                            if summary_msg:
+                                state.setdefault("history", []).append({
+                                    "type": "ai",
+                                    "content": summary_msg,
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                                self._trim_history(state)
+                        except Exception:
+                            pass
+
+                        # Detect no-progress attempts and set exhaustion flag to break loops
+                        if after_with_email <= before_with_email:
+                            streak = state["counters"].get("email_find_noop_streak", 0) + 1
+                            state["counters"]["email_find_noop_streak"] = streak
+                            # Use configurable threshold for exhaustion
+                            noop_threshold = int(es.get("noop_streak_threshold", 2))
+                            if streak >= noop_threshold:
+                                # Mark unresolvable leads and stop auto email search
+                                for lead in state.get("leads", []):
+                                    if not lead.get("email"):
+                                        attempts = lead.get("_email_attempts", 0) + 1
+                                        lead["_email_attempts"] = attempts
+                                        if attempts >= 2:
+                                            lead["no_email_found"] = True
+                                state["email_search_exhausted"] = True
+                                logger.info("Auto-progress: email search exhausted; marking unresolvable leads and stopping further attempts")
+                        else:
+                            # Reset noop streak on progress
+                            if state["counters"].get("email_find_noop_streak"):
+                                state["counters"]["email_find_noop_streak"] = 0
+
+                        logger.info("Auto-progress: find_commit_emails_batch completed, yielding control")
+                        return state
+                    except Exception as e:
+                        logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
+
+        # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
+        leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+        if leads_with_email and not state.get("ended"):
+            try:
+                # Export leads with email
+                if "export_csv" in self.tools:
+                    export_tool = self.tools["export_csv"]
+                    job_id = state.get("job_id", "job")
+                    export_path = f"{job_id}_leads.csv"
+                    export_rows = leads_with_email
+                    export_result = await self.error_handler.execute_with_retry(export_tool.execute, rows=export_rows, path=export_path)
+                    state = self._reduce_tool_result(state, "export_csv", export_result)
+                    try:
+                        summary_msg = self._summarize_tool_result("export_csv", export_result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                            self._trim_history(state)
+                    except Exception:
+                        pass
+
+                # Signal completion
+                if "done" in self.tools:
+                    done_tool = self.tools["done"]
+                    summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
+                    done_result = await self.error_handler.execute_with_retry(done_tool.execute, summary=summary_text)
+                    state = self._reduce_tool_result(state, "done", done_result)
+                    try:
+                        summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                            self._trim_history(state)
+                    except Exception:
+                        pass
+                    state["ended"] = True
+                    state["end_reason"] = "auto_finalization"
+                    logger.info("Auto-progress: finalized job via export and done")
+                    return state
+            except Exception as e:
+                logger.warning(f"Auto-finalization failed: {e}")
+
+        return state
+
+    def _ensure_state_basics(self, state: RunState) -> RunState:
+        """Ensure basic state fields are present and valid"""
+        if not state.get("ended"):
+            state.setdefault("ended", False)
+        if not state.get("current_stage"):
+            state.setdefault("current_stage", "initialization")
+        if not state.get("counters"):
+            state.setdefault("counters", {"steps": 0, "api_calls": 0, "tokens": 0, "errors": 0, "tool_errors": 0})
+        if not state.get("repos"):
+            state.setdefault("repos", [])
+        if not state.get("candidates"):
+            state.setdefault("candidates", [])
+        if not state.get("leads"):
+            state.setdefault("leads", [])
+        if not state.get("to_send"):
+            state.setdefault("to_send", [])
+        if not state.get("reports"):
+            state.setdefault("reports", {})
+        if not state.get("errors"):
+            state.setdefault("errors", [])
+        if not state.get("checkpoints"):
+            state.setdefault("checkpoints", [])
+        if not state.get("tool_results"):
+            state.setdefault("tool_results", {})
+        return state
+
+    async def _auto_progress(self, state: RunState) -> RunState:
+        """Auto-progression to avoid stalls by triggering appropriate next tools based on state.
+
+        Returns updated state. Does not modify step counters; caller should handle.
+        """
+        repos = state.get("repos", [])
+        candidates = state.get("candidates", [])
+        leads = state.get("leads", [])
+
+        # If we already have repos but no candidates, extract people
+        if repos and not candidates and "extract_people" in self.tools:
+            logger.info("Auto-progress: executing extract_people based on repos present")
+            try:
+                tool = self.tools["extract_people"]
+                result = await self.error_handler.execute_with_retry(tool.execute, repos=repos, top_authors_per_repo=5)
+                state = self._reduce_tool_result(state, "extract_people", result)
+                self.stats["tools_executed"] += 1
+                try:
+                    summary_msg = self._summarize_tool_result("extract_people", result, state, auto_progress=True)
+                    if summary_msg:
+                        state.setdefault("history", []).append({
+                            "type": "ai",
+                            "content": summary_msg,
+                            "timestamp": datetime.now().isoformat(),
+                        })
+                except Exception:
+                    pass
+                return state
+            except Exception as e:
+                logger.warning(f"Auto-progress extract_people failed: {e}")
+
+        # If we have candidates but no leads enriched, enrich users in batch
+        if candidates and not leads and "enrich_github_users" in self.tools:
+            unique_logins = []
+            seen = set()
+            for c in candidates:
+                login = c.get("login")
+                if login and login not in seen:
+                    unique_logins.append(login)
+                    seen.add(login)
+            if unique_logins:
+                logger.info("Auto-progress: executing enrich_github_users based on candidates present")
+                try:
+                    tool = self.tools["enrich_github_users"]
+                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25])
+                    state = self._reduce_tool_result(state, "enrich_github_users", result)
+                    self.stats["tools_executed"] += 1
+                    try:
+                        summary_msg = self._summarize_tool_result("enrich_github_users", result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                    except Exception:
+                        pass
+                    return state
+                except Exception as e:
+                    logger.warning(f"Auto-progress enrich_github_users failed: {e}")
+
+        # If we have enriched leads but missing emails and have candidates mapping, find emails in batch
+        if state.get("leads") and "find_commit_emails_batch" in self.tools and not state.get("email_search_exhausted"):
+            leads_without_email = [l for l in state.get("leads", []) if not l.get("email") and not l.get("no_email_found")]
+            if leads_without_email and candidates:
+                user_repo_pairs = []
+                for c in candidates:
+                    login = c.get("login")
+                    repo_full_name = c.get("from_repo")
+                    if login and repo_full_name:
+                        user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
+                if user_repo_pairs:
+                    logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
+                    try:
+                        before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
+                        tool = self.tools["find_commit_emails_batch"]
+                        result = await self.error_handler.execute_with_retry(tool.execute, user_repo_pairs=user_repo_pairs[:50], days=90)
+                        state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
+                        after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
+                        self.stats["tools_executed"] += 1
+                        try:
+                            summary_msg = self._summarize_tool_result(
+                                "find_commit_emails_batch", result, state, auto_progress=True, extra_info={
+                                    "before": before_with_email,
+                                    "after": after_with_email,
+                                }
+                            )
+                            if summary_msg:
+                                state.setdefault("history", []).append({
+                                    "type": "ai",
+                                    "content": summary_msg,
+                                    "timestamp": datetime.now().isoformat(),
+                                })
+                        except Exception:
+                            pass
+                        if after_with_email <= before_with_email:
+                            streak = state["counters"].get("email_find_noop_streak", 0) + 1
+                            state["counters"]["email_find_noop_streak"] = streak
+                            if streak >= 2:
+                                for lead in state.get("leads", []):
+                                    if not lead.get("email"):
+                                        attempts = lead.get("_email_attempts", 0) + 1
+                                        lead["_email_attempts"] = attempts
+                                        if attempts >= 2:
+                                            lead["no_email_found"] = True
+                                state["email_search_exhausted"] = True
+                                logger.info("Auto-progress: email search exhausted; marking unresolvable leads and stopping further attempts")
+                        else:
+                            if state["counters"].get("email_find_noop_streak"):
+                                state["counters"]["email_find_noop_streak"] = 0
+                        return state
+                    except Exception as e:
+                        logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
+
+        # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
+        leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+        if leads_with_email and not state.get("ended"):
+            try:
+                if "export_csv" in self.tools:
+                    export_tool = self.tools["export_csv"]
+                    job_id = state.get("job_id", "job")
+                    export_path = f"{job_id}_leads.csv"
+                    export_rows = leads_with_email
+                    export_result = await self.error_handler.execute_with_retry(export_tool.execute, rows=export_rows, path=export_path)
+                    state = self._reduce_tool_result(state, "export_csv", export_result)
+                    try:
+                        summary_msg = self._summarize_tool_result("export_csv", export_result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                    except Exception:
+                        pass
+                if "done" in self.tools:
+                    done_tool = self.tools["done"]
+                    summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
+                    done_result = await self.error_handler.execute_with_retry(done_tool.execute, summary=summary_text)
+                    state = self._reduce_tool_result(state, "done", done_result)
+                    try:
+                        summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
+                        if summary_msg:
+                            state.setdefault("history", []).append({
+                                "type": "ai",
+                                "content": summary_msg,
+                                "timestamp": datetime.now().isoformat(),
+                            })
+                    except Exception:
+                        pass
+                    state["ended"] = True
+                    logger.info("Auto-progress: finalized job via export and done")
+                    return state
+            except Exception as e:
+                logger.warning(f"Auto-finalization failed: {e}")
+
+        return state

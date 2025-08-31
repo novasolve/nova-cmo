@@ -172,32 +172,44 @@ class ExtractPeople(GitHubTool):
 
             for repo in repos[:50]:  # Limit to avoid rate limits
                 try:
+                    # Tolerate minimal/malformed repo inputs
+                    repo_full_name = repo.get("full_name") or repo.get("repo_full_name")
+                    if not repo_full_name:
+                        continue
+                    repo_name = repo.get("name") or repo_full_name.split("/")[-1]
+                    repo_stars = repo.get("stars", 0)
+                    repo_language = repo.get("language")
+                    repo_topics = repo.get("topics", []) or []
+
                     # Get contributors for this repo
                     contributors = await self._github_request(
-                        f"/repos/{repo['full_name']}/contributors",
+                        f"/repos/{repo_full_name}/contributors",
                         params={"per_page": top_authors_per_repo * 2}  # Get more to filter bots
                     )
 
                     # Filter out bots and get top contributors
                     human_contributors = [
                         c for c in contributors
-                        if not c["login"].endswith("[bot]") and not c["login"].endswith("-bot")
+                        if isinstance(c, dict)
+                        and isinstance(c.get("login", ""), str)
+                        and not c["login"].endswith("[bot]")
+                        and not c["login"].endswith("-bot")
                     ][:top_authors_per_repo]
 
                     for contributor in human_contributors:
                         candidate = {
                             "login": contributor["login"],
-                            "from_repo": repo["full_name"],
-                            "signal": f"contributor to {repo['name']}",
-                            "contributions": contributor["contributions"],
-                            "repo_stars": repo["stars"],
-                            "repo_language": repo.get("language"),
-                            "repo_topics": repo.get("topics", []),
+                            "from_repo": repo_full_name,
+                            "signal": f"contributor to {repo_name}",
+                            "contributions": contributor.get("contributions", 0),
+                            "repo_stars": repo_stars,
+                            "repo_language": repo_language,
+                            "repo_topics": repo_topics,
                         }
                         all_candidates.append(candidate)
 
                 except Exception as e:
-                    logger.warning(f"Failed to get contributors for {repo['full_name']}: {e}")
+                    logger.warning(f"Failed to get contributors for {repo_full_name or 'unknown'}: {e}")
                     continue
 
             # Remove duplicates by login
@@ -395,7 +407,10 @@ class FindCommitEmailsBatch(GitHubTool):
         try:
             user_emails = {}
             cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-            batch_size = kwargs.get("batch_size", 5)  # Process fewer users at once
+            batch_size = int(kwargs.get("batch_size", 5))  # users per batch
+            repos_per_user = int(kwargs.get("repos_per_user", 5))
+            commits_per_repo = int(kwargs.get("commits_per_repo", 10))
+            include_committer_email = bool(kwargs.get("include_committer_email", False))
 
             # Group by user to avoid duplicate work
             user_to_repos = {}
@@ -414,7 +429,7 @@ class FindCommitEmailsBatch(GitHubTool):
                 for login in batch_logins:
                     try:
                         emails = set()
-                        repos = user_to_repos[login][:5]  # Limit repos per user
+                        repos = user_to_repos[login][:repos_per_user]
 
                         for repo_full_name in repos:
                             try:
@@ -424,15 +439,20 @@ class FindCommitEmailsBatch(GitHubTool):
                                     params={
                                         "author": login,
                                         "since": cutoff_date,
-                                        "per_page": 10  # Fewer commits per repo
+                                        "per_page": commits_per_repo
                                     }
                                 )
 
                                 for commit in commits:
-                                    if commit.get("commit", {}).get("author", {}).get("email"):
-                                        email = commit["commit"]["author"]["email"]
-                                        if "@" in email and not email.endswith("@users.noreply.github.com"):
-                                            emails.add(email)
+                                    # Prefer commit author email
+                                    author_email = commit.get("commit", {}).get("author", {}).get("email")
+                                    if author_email and "@" in author_email and not author_email.endswith("@users.noreply.github.com"):
+                                        emails.add(author_email)
+                                    # Optionally include committer email
+                                    if include_committer_email:
+                                        committer_email = commit.get("commit", {}).get("committer", {}).get("email")
+                                        if committer_email and "@" in committer_email and not committer_email.endswith("@users.noreply.github.com"):
+                                            emails.add(committer_email)
 
                             except Exception as e:
                                 logger.warning(f"Failed to get commits for {login} in {repo_full_name}: {e}")

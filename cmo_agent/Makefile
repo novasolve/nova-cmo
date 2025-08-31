@@ -1,6 +1,6 @@
 # CMO Agent Makefile
 
-.PHONY: install run test clean
+.PHONY: install run test clean ux
 
 # Installation
 install:
@@ -98,6 +98,7 @@ help:
 	@echo "  make new-config NAME=config_name - Create new campaign config"
 	@echo "  make check-tools      - Validate tool availability/config"
 	@echo "  make smoke-tools      - Run toolbelt smoke tests"
+	@echo "  make ux VIEW=dashboard - Render UX view from latest checkpoint"
 
 # Validate toolbelt/tool availability
 check-tools:
@@ -106,3 +107,10 @@ check-tools:
 # Smoke test suite for tools
 smoke-tools:
 	PYTHONPATH=.. python -m cmo_agent.scripts.smoke_test_tools
+
+# UX CLI
+ux:
+	@if [ -z "$(VIEW)" ]; then \
+		VIEW=dashboard; \
+	fi; \
+	PYTHONPATH=.. python -m cmo_agent.ux.cli $$VIEW
