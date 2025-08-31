@@ -74,6 +74,25 @@ class ExecutionEngine:
                     file_config = yaml.safe_load(f)
                     config.update(file_config)
 
+            # Ensure directories exist (logs, checkpoints, artifacts, exports)
+            from core.state import DEFAULT_CONFIG as _DEF
+            dirs = config.get("directories", _DEF.get("directories", {}))
+            for key in ["logs", "checkpoints", "artifacts", "exports"]:
+                try:
+                    path = Path(dirs.get(key, _DEF["directories"].get(key, f"./{key}")))
+                    path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    logger.warning(f"Failed to ensure directory for {key}: {e}")
+
+            # Initialize queue with configured storage dir if provided
+            try:
+                q_cfg = config.get("queue", {})
+                storage_dir = q_cfg.get("storage_dir", "./data/jobs")
+                self.queue = PersistentJobQueue(storage_dir=storage_dir)
+            except Exception as e:
+                logger.warning(f"Falling back to default PersistentJobQueue: {e}
+")
+
             # Initialize CMO Agent
             self.agent = CMOAgent(config)
             logger.info("CMO Agent initialized")
@@ -85,6 +104,17 @@ class ExecutionEngine:
                 agent=self.agent
             )
             logger.info(f"Worker pool initialized with {self.num_workers} workers")
+
+            # Start artifact cleanup task if enabled
+            try:
+                from core.artifacts import get_artifact_manager
+                self._artifact_manager = get_artifact_manager(config)
+                artifacts_cfg = config.get("artifacts", {})
+                if artifacts_cfg.get("auto_cleanup", True):
+                    await self._artifact_manager.start_cleanup_task()
+                    logger.info("Artifact cleanup task started")
+            except Exception as e:
+                logger.warning(f"Artifact cleanup task not started: {e}")
 
             return True
 
@@ -104,9 +134,13 @@ class ExecutionEngine:
             # Start worker pool
             await self.worker_pool.start(self.agent)
 
-            # Start metrics logger
-            self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=60)
-            asyncio.create_task(self.metrics_logger.start_logging())
+            # Start metrics logger based on config
+            monitoring_cfg = getattr(self.agent, "config", {}).get("monitoring", {})
+            if monitoring_cfg.get("enabled", True):
+                interval = int(monitoring_cfg.get("metrics_interval", 60))
+                self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=interval)
+                asyncio.create_task(self.metrics_logger.start_logging())
+                logger.info(f"Metrics logger started (interval={interval}s)")
 
             # Start job processing loop
             await self._run_main_loop()
@@ -119,6 +153,12 @@ class ExecutionEngine:
                 await self.worker_pool.stop()
             if self.metrics_logger:
                 self.metrics_logger.stop_logging()
+            # Stop artifact cleanup task
+            try:
+                if hasattr(self, "_artifact_manager") and self._artifact_manager:
+                    await self._artifact_manager.stop_cleanup_task()
+            except Exception:
+                pass
             self.is_running = False
             logger.info("Execution engine stopped")
 

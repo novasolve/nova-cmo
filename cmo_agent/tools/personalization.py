@@ -5,7 +5,7 @@ import logging
 import sys
 import os
 import jinja2
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,7 +76,7 @@ class RenderCopy(BaseTool):
                 campaign = self._get_default_campaign()
 
             # Prepare template variables
-            template_vars = self._prepare_template_vars(lead)
+            template_vars = self._prepare_template_vars(lead, campaign)
 
             # Render subject line
             subject_template = self.env.from_string(campaign.get("subject_template", ""))
@@ -89,13 +89,43 @@ class RenderCopy(BaseTool):
             # Generate personalization payload (from spec)
             personalization = self._create_personalization_payload(lead)
 
+            # EmailPayload shape (non-breaking addition)
+            recipient_email = lead.get("best_email", lead.get("email"))
+            email_payload = {
+                "recipient": recipient_email or "",
+                "subject": subject,
+                "body_text": body,
+                # Prefer explicit sequence/seq id if provided, else fall back to campaign id
+                "sequence_id": campaign.get("sequence_id") or campaign.get("seq_id") or campaign.get("id", ""),
+                # Optional scheduling (ISO8601) if provided by caller
+                "schedule_at": campaign.get("schedule_at", ""),
+            }
+
+            # Instantly contact mapping (aligned with SendInstantly expectations)
+            first_name, last_name = self._split_name(self._extract_first_name(lead), lead.get("name", ""))
+            instantly_contact = {
+                "email": recipient_email or "",
+                "first_name": first_name,
+                "last_name": last_name,
+                "custom_subject": subject,
+                "custom_body": body,
+            }
+            if lead.get("company"):
+                instantly_contact["company"] = lead["company"]
+            if lead.get("linkedin"):
+                instantly_contact["linkedin"] = lead["linkedin"]
+
             result_data = {
-                "email": lead.get("best_email", lead.get("email")),
+                # Backward-compatible fields
+                "email": recipient_email,
                 "subject": subject,
                 "body": body,
                 "personalization": personalization,
                 "campaign_id": campaign.get("id", "default"),
                 "template_vars": template_vars,
+                # Additions
+                "email_payload": email_payload,
+                "instantly_contact": instantly_contact,
             }
 
             return ToolResult(success=True, data=result_data)
@@ -104,8 +134,11 @@ class RenderCopy(BaseTool):
             logger.error(f"Copy rendering failed: {e}")
             return ToolResult(success=False, error=str(e))
 
-    def _prepare_template_vars(self, lead: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare template variables from lead data"""
+    def _prepare_template_vars(self, lead: Dict[str, Any], campaign: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """Prepare template variables from lead and campaign data"""
+        unsub_link = ""  # default empty if not provided
+        if campaign:
+            unsub_link = campaign.get("unsub_link", "")
         return {
             "first_name": self._extract_first_name(lead),
             "full_name": lead.get("name", lead.get("login", "there")),
@@ -118,6 +151,7 @@ class RenderCopy(BaseTool):
             "recent_pr": lead.get("recent_pr_title", "performance improvements"),
             "why_now": lead.get("why_now", "recent activity in your project"),
             "hook": lead.get("hook", "Nova can help with your development workflow"),
+            "unsub_link": unsub_link,
         }
 
     def _extract_first_name(self, lead: Dict[str, Any]) -> str:
@@ -129,6 +163,16 @@ class RenderCopy(BaseTool):
         # Split on spaces and take first part
         first_name = name.split()[0]
         return first_name if first_name else "there"
+
+    def _split_name(self, fallback_first: str, full_name: str) -> Tuple[str, str]:
+        """Split a full name into (first, last) with sensible fallbacks."""
+        full_name = (full_name or "").strip()
+        if not full_name:
+            return fallback_first, ""
+        parts = full_name.split()
+        if len(parts) == 1:
+            return parts[0], ""
+        return parts[0], " ".join(parts[1:])
 
     def _get_default_campaign(self) -> Dict[str, str]:
         """Get default campaign templates"""
@@ -182,8 +226,6 @@ class SendInstantly(InstantlyTool):
     async def execute(self, contacts: List[Dict[str, Any]], seq_id: str, per_inbox_cap: int = 50, **kwargs) -> ToolResult:
         """Send emails via Instantly"""
         try:
-            dry_run: bool = bool(kwargs.get("dry_run", False))
-            job_id: str = (kwargs.get("job_id") or os.getenv("JOB_ID") or "job")
             # Validate inputs
             if not contacts:
                 return ToolResult(success=False, error="No contacts provided")
@@ -210,20 +252,11 @@ class SendInstantly(InstantlyTool):
 
                 instantly_contacts.append(instantly_contact)
 
-            # Idempotency key per contact: job_id + email + seq_id
-            for c in instantly_contacts:
-                email = c.get("email") or ""
-                c["idempotency_key"] = f"{job_id}:{seq_id}:{email}"
+            # Check if we have a campaign, if not create one
+            campaign_id = await self._get_or_create_campaign(seq_id)
 
-            # Dry-run: do not call Instantly; simulate a response
-            if dry_run:
-                campaign_id = f"dryrun-{seq_id}"
-                send_result = {"status": "dry_run", "accepted": len(instantly_contacts)}
-            else:
-                # Check if we have a campaign, if not create one
-                campaign_id = await self._get_or_create_campaign(seq_id)
-                # Send contacts to Instantly
-                send_result = await self._send_contacts(campaign_id, instantly_contacts)
+            # Send contacts to Instantly
+            send_result = await self._send_contacts(campaign_id, instantly_contacts)
 
             result_data = {
                 "campaign_id": campaign_id,
