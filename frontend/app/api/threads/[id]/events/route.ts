@@ -13,28 +13,36 @@ export async function GET(
     try {
       // Get the current job ID for this thread
       let currentJobId = getJobIdForThread(threadId);
+      console.log(`Thread ${threadId} mapped to job: ${currentJobId || 'none'}`);
       
       // If no mapping exists, try to find the latest job for this thread
       if (!currentJobId) {
         try {
-          const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`);
+          const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          });
+          
           if (jobsResp.ok) {
             const jobs = await jobsResp.json();
-            // Find the most recent job for this thread
-            const threadJob = jobs.find((job: any) => 
-              job.metadata?.threadId === threadId || 
-              job.goal?.includes(threadId) ||
-              job.id === threadId
-            );
-            if (threadJob) {
-              currentJobId = threadJob.id;
-              // Store the mapping for future requests
-              const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
-              storeThreadJobMapping(threadId, currentJobId);
+            // Find the most recent job that might match this thread
+            const recentJob = jobs.find((job: any) => 
+              job.goal && (
+                job.goal.includes(threadId.slice(-8)) || // partial thread ID match
+                job.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString() // within last 5 minutes
+              )
+            ) || jobs[0]; // fallback to latest job
+            
+            if (recentJob) {
+              currentJobId = recentJob.job_id;
+              console.log(`Auto-discovered job ID: ${currentJobId} for thread ${threadId}`);
             }
           }
         } catch (error) {
-          console.warn("Could not fetch jobs list:", error);
+          console.warn(`Failed to auto-discover job ID: ${error}`);
         }
       }
       
@@ -47,43 +55,39 @@ export async function GET(
             signal: request.signal,
           }
         );
-        
-        if (upstream.ok) {
-          // Transform job events to chat events
+
+        if (upstream.ok && upstream.body) {
+          // Transform the backend events to frontend format
           const transformStream = new TransformStream({
             transform(chunk, controller) {
-              const decoder = new TextDecoder();
-              const text = decoder.decode(chunk);
-              
-              // Parse SSE format: "data: {...}\n\n"
+              const text = new TextDecoder().decode(chunk);
               const lines = text.split('\n');
+              
               for (const line of lines) {
                 if (line.startsWith('data: ')) {
                   try {
-                    const jobEvent = JSON.parse(line.slice(6));
+                    const eventData = JSON.parse(line.slice(6));
                     
-                    // Transform job event to chat event format
-                    const chatEvent = {
-                      kind: "event",
-                      event: {
-                        ts: jobEvent.timestamp,
-                        node: extractNodeFromEvent(jobEvent),
-                        status: extractStatusFromEvent(jobEvent),
-                        latencyMs: jobEvent.data?.latency_ms,
-                        costUSD: jobEvent.data?.cost_usd,
-                        msg: jobEvent.data?.message || jobEvent.event
-                      }
+                    // Transform to frontend event format
+                    const frontendEvent = {
+                      id: Date.now().toString(),
+                      timestamp: new Date().toISOString(),
+                      type: 'job_event',
+                      node: extractNodeFromEvent(eventData),
+                      status: extractStatusFromEvent(eventData),
+                      message: eventData.message || eventData.event || 'Processing...',
+                      data: eventData
                     };
                     
-                    const transformed = `data: ${JSON.stringify(chatEvent)}\n\n`;
-                    controller.enqueue(new TextEncoder().encode(transformed));
+                    const transformedLine = `data: ${JSON.stringify(frontendEvent)}\n\n`;
+                    controller.enqueue(new TextEncoder().encode(transformedLine));
                   } catch (error) {
-                    // Pass through malformed events
+                    // Pass through malformed events as-is
                     controller.enqueue(chunk);
                   }
-                } else if (line.trim()) {
-                  // Pass through non-data lines (comments, etc.)
-                  controller.enqueue(new TextEncoder().encode(line + '\n'));
+                } else {
+                  // Pass through non-data lines (like event: types)
+                  controller.enqueue(chunk);
                 }
               }
             }
@@ -97,31 +101,54 @@ export async function GET(
               "Connection": "keep-alive",
             },
           });
+          } else {
+            console.warn(`Job events endpoint failed: ${upstream.status} ${upstream.statusText}`);
+          }
+        } catch (error) {
+          console.warn(`Error connecting to job events: ${error}`);
         }
+      } else {
+        console.log(`No job ID found for thread ${threadId}`);
       }
     } catch (error) {
       console.warn("Backend SSE not available:", error);
     }
   }
 
-  // Fallback: return empty stream if no job or backend unavailable
+  // Fallback: return mock stream if no job or backend unavailable
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
-      const welcomeEvent = {
-        kind: "message",
-        message: {
-          id: crypto.randomUUID(),
-          threadId,
-          role: "assistant",
-          createdAt: new Date().toISOString(),
-          text: "No active job for this thread. Send a message to start a campaign."
-        }
+      // Send a connection status message
+      const statusEvent = {
+        id: Date.now().toString(),
+        timestamp: new Date().toISOString(),
+        type: 'connection',
+        node: 'system',
+        status: 'info',
+        message: 'Connected to event stream (fallback mode)',
+        data: { threadId, fallback: true }
       };
       
-      controller.enqueue(
-        encoder.encode(`data: ${JSON.stringify(welcomeEvent)}\n\n`)
-      );
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify(statusEvent)}\n\n`));
+      
+      // Send periodic status updates
+      const statusInterval = setInterval(() => {
+        try {
+          const updateEvent = {
+            id: Date.now().toString(),
+            timestamp: new Date().toISOString(),
+            type: 'status',
+            node: 'system',
+            status: 'info',
+            message: 'Checking for updates...',
+            data: { threadId, mode: 'polling' }
+          };
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(updateEvent)}\n\n`));
+        } catch {
+          clearInterval(statusInterval);
+        }
+      }, 8000); // Every 8 seconds
       
       // Keep connection alive
       const keepAlive = setInterval(() => {
@@ -134,6 +161,7 @@ export async function GET(
 
       request.signal?.addEventListener('abort', () => {
         clearInterval(keepAlive);
+        clearInterval(statusInterval);
         controller.close();
       });
     },
@@ -165,5 +193,3 @@ function extractStatusFromEvent(jobEvent: any): string {
   if (jobEvent.event?.includes('retry')) return 'retry';
   return 'ok';
 }
-
-// Helper functions to extract info from job events
