@@ -1401,7 +1401,8 @@ Available tools: {', '.join(self.tools.keys())}
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
         """Extract progress information from RunState"""
         counters = state.get("counters", {})
-        current_stage = state.get("current_stage", "unknown")
+        # Default to a meaningful initial stage rather than "unknown"
+        current_stage = state.get("current_stage", "initialization")
 
         # Map stages to human-readable names
         stage_names = {

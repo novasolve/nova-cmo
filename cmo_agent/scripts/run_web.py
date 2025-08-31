@@ -4,6 +4,7 @@ Minimal web UI for CMO Agent (FastAPI + HTML form)
 """
 import os
 import sys
+import logging
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, Any
 from datetime import datetime
@@ -18,6 +19,13 @@ from fastapi.staticfiles import StaticFiles
 project_root = str(Path(__file__).resolve().parents[2])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+    
+from cmo_agent.obs.logging import configure_logging, log, with_job_context
+from cmo_agent.middleware import RequestLogMiddleware
+
+# Configure structured logging early
+configure_logging("INFO")
+logger = logging.getLogger(__name__)
 
 # Load /Users/seb/leads/cmo_agent/.env or nearest .env upward from CWD
 load_dotenv(find_dotenv(usecwd=True))
@@ -26,6 +34,7 @@ from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
 from cmo_agent.scripts.run_execution import ExecutionEngine
 
 app = FastAPI(title="CMO Agent - Minimal UI")
+app.add_middleware(RequestLogMiddleware)
 
 # Enable CORS for local Next.js dev UI
 app.add_middleware(
@@ -272,7 +281,19 @@ async def api_cancel_job(job_id: str):
 
 @app.get("/api/jobs/{job_id}/events")
 async def api_job_events(request: Request, job_id: str):
+    # Register active listener for accurate stats
+    try:
+        if engine and engine.queue and hasattr(engine.queue, "register_progress_listener"):
+            engine.queue.register_progress_listener(job_id)
+    except Exception:
+        pass
+
     async def event_stream() -> AsyncIterator[str]:
+        try:
+            client = f"{request.client.host}:{request.client.port}" if request.client else "unknown"
+            log.info("sse_open", evt="sse_open", jobId=job_id, client=client)
+        except Exception:
+            pass
         import asyncio, json as _json
         from datetime import datetime
         
@@ -288,6 +309,7 @@ async def api_job_events(request: Request, job_id: str):
                 "event": "job.engine_unavailable",
                 "data": {"message": "Execution engine not running - job may be queued"},
             }
+            yield "event: status\n"
             yield f"data: {_json.dumps(status_msg)}\n\n"
             
             # Keep connection alive with periodic status checks
@@ -307,6 +329,7 @@ async def api_job_events(request: Request, job_id: str):
                         "event": "job.engine_online",
                         "data": {"message": "Execution engine is now running"},
                     }
+                    yield "event: status\n"
                     yield f"data: {_json.dumps(online_msg)}\n\n"
                     break
             
@@ -325,12 +348,31 @@ async def api_job_events(request: Request, job_id: str):
             try:
                 status = await engine.get_job_status(job_id)
                 if status:
+                    # If job already terminal, send terminal frame and exit (late connect)
+                    if status["status"] in ["completed", "failed", "cancelled"]:
+                        yield "retry: 30000\n\n"
+                        final = {
+                            "job_id": status["job_id"],
+                            "timestamp": datetime.now().isoformat(),
+                            "event": f"job.{status['status']}",
+                            "data": {"progress": status.get("progress")},
+                        }
+                        yield f"data: {_json.dumps(final)}\n\n"
+                        eos = {
+                            "job_id": job_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "event": "job.stream_end",
+                            "data": None,
+                        }
+                        yield f"data: {_json.dumps(eos)}\n\n"
+                        return
                     initial = {
                         "job_id": status["job_id"],
                         "timestamp": datetime.now().isoformat(),
                         "event": f"job.{status['status']}",
                         "data": {"progress": status.get("progress")},
                     }
+                    yield "event: status\n"
                     yield f"data: {_json.dumps(initial)}\n\n"
             except Exception as e:
                 # Send error but continue streaming
@@ -340,14 +382,66 @@ async def api_job_events(request: Request, job_id: str):
                     "event": "job.status_error",
                     "data": {"error": str(e)},
                 }
+                yield "event: status\n"
                 yield f"data: {_json.dumps(error_msg)}\n\n"
 
             # Try to get progress stream
             try:
                 queue = await engine.queue.get_progress_stream(job_id)
+                
+                # Check if this is a dummy queue (returns None immediately)
+                # This happens when the job doesn't have an active progress stream
+                try:
+                    # Peek at the queue with a very short timeout
+                    first_item = await asyncio.wait_for(queue.get(), timeout=0.1)
+                    if first_item is None:
+                        # This is a completed/inactive job, fall back to status polling
+                        raise Exception("No active progress stream for job")
+                    else:
+                        # Put the item back for normal processing
+                        await queue.put(first_item)
+                except asyncio.TimeoutError:
+                    # Queue is empty but valid - proceed with normal streaming
+                    pass
+                    
             except Exception as e:
                 # If progress stream fails, fall back to polling
-                while True:
+                logger.info(f"No active progress stream for job {job_id}, using polling mode: {e}")
+                
+                # Send initial status
+                try:
+                    status = await engine.get_job_status(job_id)
+                    if status:
+                        initial_msg = {
+                            "job_id": job_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "event": f"job.status.{status['status']}",
+                            "data": {
+                                "status": status["status"], 
+                                "progress": status.get("progress"),
+                                "message": "Using polling mode - job may be completed or inactive"
+                            },
+                        }
+                        yield "event: status\n"
+                        yield f"data: {_json.dumps(initial_msg)}\n\n"
+                        
+                        # If job is already done, close the stream gracefully
+                        if status["status"] in ["completed", "failed", "cancelled"]:
+                            final_msg = {
+                                "job_id": job_id,
+                                "timestamp": datetime.now().isoformat(),
+                                "event": "job.stream_end",
+                                "data": {"reason": f"Job already {status['status']}"},
+                            }
+                            yield "event: done\n"
+                            yield f"data: {_json.dumps(final_msg)}\n\n"
+                            return
+                except Exception:
+                    pass
+                
+                # Poll for status updates
+                poll_count = 0
+                while poll_count < 60:  # Limit polling to 5 minutes (60 * 5s)
                     if await request.is_disconnected():
                         break
                     
@@ -360,6 +454,7 @@ async def api_job_events(request: Request, job_id: str):
                                 "event": "job.poll_status",
                                 "data": {"status": status["status"], "progress": status.get("progress")},
                             }
+                            yield "event: status\n"
                             yield f"data: {_json.dumps(poll_msg)}\n\n"
                             
                             # Exit if job is done
@@ -369,6 +464,17 @@ async def api_job_events(request: Request, job_id: str):
                         pass
                     
                     await asyncio.sleep(5)
+                    poll_count += 1
+                    
+                # Send final message before closing
+                close_msg = {
+                    "job_id": job_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "event": "job.stream_end",
+                    "data": {"reason": "Polling timeout reached"},
+                }
+                yield "event: done\n"
+                yield f"data: {_json.dumps(close_msg)}\n\n"
                 return
 
             # Normal progress streaming
@@ -390,6 +496,7 @@ async def api_job_events(request: Request, job_id: str):
                         "event": "job.stream_end",
                         "data": None,
                     }
+                    yield "event: done\n"
                     yield f"data: {_json.dumps(done)}\n\n"
                     break
 
@@ -400,6 +507,7 @@ async def api_job_events(request: Request, job_id: str):
                         "event": "job.progress",
                         "data": item.to_dict() if hasattr(item, "to_dict") else item,
                     }
+                    yield "event: progress\n"
                     yield f"data: {_json.dumps(payload)}\n\n"
                 except Exception:
                     # Skip malformed event
@@ -421,12 +529,47 @@ async def api_job_events(request: Request, job_id: str):
                     break
                 yield ": keep-alive\n\n"
                 await asyncio.sleep(15)
+        finally:
+            try:
+                reason = "client_abort" if await request.is_disconnected() else "completed"
+                log.info("sse_close", evt="sse_close", jobId=job_id, reason=reason)
+            except Exception:
+                pass
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+    async def on_close():
+        try:
+            if engine and engine.queue and hasattr(engine.queue, "unregister_progress_listener"):
+                engine.queue.unregister_progress_listener(job_id)
+        except Exception:
+            pass
+
+    response = StreamingResponse(event_stream(), media_type="text/event-stream", headers={
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     })
+
+    # Best-effort cleanup on disconnect
+    try:
+        # FastAPI doesn't provide a direct on_close for StreamingResponse.
+        # We poll the request for disconnect and cleanup in background.
+        import asyncio
+
+        async def _wait_and_cleanup():
+            while True:
+                try:
+                    if await request.is_disconnected():
+                        await on_close()
+                        break
+                    await asyncio.sleep(5)
+                except Exception:
+                    break
+
+        asyncio.create_task(_wait_and_cleanup())
+    except Exception:
+        pass
+
+    return response
 
 
 def main():

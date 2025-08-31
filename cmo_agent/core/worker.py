@@ -150,10 +150,35 @@ class JobWorker:
                 """Forward progress updates to the queue's progress stream"""
                 logger.info(f"🔄 Progress callback called for job {job.id}: {progress_info}")
                 
-                # Update the job's progress
+                # Normalize and update the job's progress
                 if isinstance(progress_info, dict):
-                    job.update_progress(**progress_info)
-                    logger.info(f"✅ Updated job progress: stage={progress_info.get('stage', 'unknown')}, step={progress_info.get('step', 0)}")
+                    current = job.progress or None
+                    # Choose a meaningful stage fallback
+                    normalized_stage = (
+                        progress_info.get("stage")
+                        or progress_info.get("node")
+                        or progress_info.get("event")
+                        or (current.stage if current else None)
+                        or "working"
+                    )
+                    # Auto-increment step when not provided
+                    try:
+                        current_step = int(progress_info.get("step")) if progress_info.get("step") is not None else None
+                    except Exception:
+                        current_step = None
+                    normalized_step = (
+                        current_step
+                        if current_step is not None
+                        else ((current.step + 1) if current else 0)
+                    )
+
+                    # Build update payload without overwriting with None
+                    update_payload = {k: v for k, v in progress_info.items() if v is not None}
+                    update_payload["stage"] = normalized_stage
+                    update_payload["step"] = normalized_step
+
+                    job.update_progress(**update_payload)
+                    logger.info(f"✅ Updated job progress: stage={normalized_stage}, step={normalized_step}")
                 else:
                     job.progress = progress_info
                     logger.info(f"✅ Set job progress object: {progress_info}")
