@@ -1,54 +1,91 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { ChatMessage, SSEEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
-import { 
-  demoBriefCard, 
-  demoSimCard, 
-  demoOutboxCard, 
+import {
+  demoBriefCard,
+  demoSimCard,
+  demoOutboxCard,
   demoRunSummaryCard,
   demoErrorCard,
-  demoPolicyCard 
+  demoPolicyCard
 } from "@/components/DemoCards";
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
   const { id } = params;
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: "welcome",
-      threadId: id,
-      role: "system",
-      createdAt: new Date().toISOString(),
-      text: "Welcome to the CMO Agent Console! Type a goal to get started, like: 'Find 2k Python maintainers active in the last 90 days, sequence 123. Preflight then run with $50/day cap.'"
-    }
-  ]);
-  const events = useSSE<SSEEvent>(`/api/threads/${id}/events`);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Append streamed events as assistant/tool messages or event chips
+  // Load initial thread history
   useEffect(() => {
-    for (const evt of events) {
-      // evt is already JSON; normalize to ChatMessage or event patch
-      if (evt.kind === "message") {
-        setMessages((prev) => [...prev, evt.message as ChatMessage]);
-      } else if (evt.kind === "event") {
-        // attach event to a synthetic tool line
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
+    const loadThreadHistory = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch(`/api/threads/${id}/messages`);
+
+        if (response.ok) {
+          const existingMessages = await response.json();
+          setMessages(existingMessages);
+        } else {
+          // If no history exists or API not implemented, start with welcome message
+          setMessages([{
+            id: "welcome",
             threadId: id,
-            role: "tool",
+            role: "system",
             createdAt: new Date().toISOString(),
-            event: evt.event,
-          },
-        ]);
+            text: "Welcome to the CMO Agent Console! Type a goal to get started, like: 'Find 2k Python maintainers active in the last 90 days, sequence 123. Preflight then run with $50/day cap.'"
+          }]);
+        }
+      } catch (error) {
+        console.warn("Failed to load thread history:", error);
+        // Fallback to welcome message
+        setMessages([{
+          id: "welcome",
+          threadId: id,
+          role: "system",
+          createdAt: new Date().toISOString(),
+          text: "Welcome to the CMO Agent Console! Type a goal to get started, like: 'Find 2k Python maintainers active in the last 90 days, sequence 123. Preflight then run with $50/day cap.'"
+        }]);
+      } finally {
+        setLoading(false);
       }
+    };
+
+    loadThreadHistory();
+  }, [id]);
+
+  // Handle SSE events without duplication
+  const handleSSEEvent = useCallback((evt: SSEEvent) => {
+    if (evt.kind === "message") {
+      setMessages((prev) => [...prev, evt.message as ChatMessage]);
+    } else if (evt.kind === "event") {
+      // attach event to a synthetic tool line
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          threadId: id,
+          role: "tool",
+          createdAt: new Date().toISOString(),
+          event: evt.event,
+        },
+      ]);
     }
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events, id]);
+    // Auto-scroll to bottom on new events
+    setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  }, [id]);
+
+  // Set up SSE connection
+  const { connectionStatus: sseStatus } = useSSE<SSEEvent>(`/api/threads/${id}/events`, {
+    onEvent: handleSSEEvent,
+    onConnectionChange: setConnectionStatus,
+  });
 
   const onSend = async (
     text: string,
@@ -107,26 +144,30 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ threadId: id, text, options }),
       });
+
       if (!res.ok) {
         const errorText = await res.text();
-        console.error("Chat API error:", errorText);
-        // Add error message
+        console.error("Chat API error:", res.status, errorText);
+
+        // Add user-friendly error message
         setMessages((prev) => [...prev, {
           id: crypto.randomUUID(),
           threadId: id,
-          role: "assistant",
+          role: "system",
           createdAt: new Date().toISOString(),
-          text: `Error: ${errorText}`,
+          text: `⚠️ **Error**: ${res.status === 500 ? 'Server error - please try again' : errorText || 'Unable to process request'}`,
         }]);
       }
     } catch (error) {
       console.error("Network error:", error);
+
+      // Add network error message
       setMessages((prev) => [...prev, {
         id: crypto.randomUUID(),
         threadId: id,
-        role: "assistant",
+        role: "system",
         createdAt: new Date().toISOString(),
-        text: `Network error: ${error}`,
+        text: `🔌 **Connection Error**: Unable to reach server. Please check your connection and try again.`,
       }]);
     }
   };
@@ -145,7 +186,30 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
               <option>Run: Latest</option>
             </select>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            {/* Connection Status Indicator */}
+            <div className="flex items-center gap-2">
+              <div
+                className={`w-2 h-2 rounded-full ${
+                  connectionStatus === 'connected'
+                    ? 'bg-green-500'
+                    : connectionStatus === 'connecting'
+                    ? 'bg-yellow-500 animate-pulse'
+                    : connectionStatus === 'error'
+                    ? 'bg-red-500'
+                    : 'bg-gray-400'
+                }`}
+              />
+              <span className="text-xs text-gray-600">
+                {connectionStatus === 'connected' && 'Live'}
+                {connectionStatus === 'connecting' && 'Connecting...'}
+                {connectionStatus === 'error' && 'Reconnecting...'}
+                {connectionStatus === 'disconnected' && 'Disconnected'}
+              </span>
+            </div>
+
+            <div className="h-4 w-px bg-gray-300" />
+
             <span className="text-sm text-gray-600">Budget: $50/day</span>
             <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
               Autopilot L0
@@ -156,9 +220,18 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
 
       {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
-        ))}
+        {loading ? (
+          <div className="flex justify-center items-center h-32">
+            <div className="flex items-center gap-2 text-gray-500">
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+              <span>Loading thread history...</span>
+            </div>
+          </div>
+        ) : (
+          messages.map((m) => (
+            <MessageBubble key={m.id} message={m} />
+          ))
+        )}
         <div ref={bottomRef} />
       </div>
 

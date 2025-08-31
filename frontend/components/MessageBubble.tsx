@@ -53,10 +53,19 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   if (isSystem) {
+    const isError = message.text?.includes('Error') || message.text?.includes('⚠️');
+    const isConnection = message.text?.includes('Connection') || message.text?.includes('🔌');
+
     return (
       <div className="flex justify-center">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 max-w-2xl">
-          {message.text}
+        <div className={`border rounded-lg p-3 text-sm max-w-2xl ${
+          isError
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : isConnection
+            ? 'bg-orange-50 border-orange-200 text-orange-800'
+            : 'bg-blue-50 border-blue-200 text-blue-800'
+        }`}>
+          <div className="whitespace-pre-wrap">{message.text}</div>
         </div>
       </div>
     );
@@ -92,7 +101,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         {message.card?.type === "policy_diff" && (
           <PolicyDiffCardView card={message.card} />
         )}
-        
+
         <div className="mt-2 text-xs text-gray-400">
           {new Date(message.createdAt).toLocaleTimeString()}
         </div>

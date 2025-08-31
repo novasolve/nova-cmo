@@ -68,16 +68,19 @@ export function OutboxCardView({ card }: { card: OutboxCard }) {
                 {sample.policy.map((policy, policyIdx) => (
                   <span
                     key={policyIdx}
-                    className={`text-xs px-2 py-1 rounded ${
+                    className={`text-xs px-2 py-1 rounded flex items-center gap-1 ${
                       policy.status === "ok"
-                        ? "bg-green-100 text-green-700"
+                        ? "bg-green-100 text-green-700 border border-green-200"
                         : policy.status === "warn"
-                        ? "bg-yellow-100 text-yellow-700"
-                        : "bg-red-100 text-red-700"
+                        ? "bg-yellow-100 text-yellow-700 border border-yellow-200"
+                        : "bg-red-100 text-red-700 border border-red-200"
                     }`}
-                    title={policy.note}
+                    title={policy.note || policy.rule}
                   >
-                    {policy.rule}
+                    <span className="text-xs">
+                      {policy.status === "ok" ? "✓" : policy.status === "warn" ? "⚠️" : "✗"}
+                    </span>
+                    <span>{policy.rule}</span>
                   </span>
                 ))}
               </div>
