@@ -83,12 +83,15 @@ async def run_campaign(goal: str, config_path: Optional[str] = None):
         # Print summary
         if result.get('success'):
             final_state = result.get('final_state') or {}
+            report = result.get('report') or {}
+            # Prefer summary from final report when available
+            summary = report.get('summary', {}) if isinstance(report, dict) else {}
             counters = final_state.get('counters', {}) if isinstance(final_state, dict) else {}
             stats = {
-                "steps": counters.get("steps", 0),
-                "api_calls": counters.get("api_calls", 0),
-                "leads": len(final_state.get("leads", [])) if isinstance(final_state.get("leads", []), list) else 0,
-                "emails_prepared": len(final_state.get("to_send", [])) if isinstance(final_state.get("to_send", []), list) else 0,
+                "steps": summary.get("steps_completed") or counters.get("steps", 0),
+                "api_calls": summary.get("api_calls_made") or counters.get("api_calls", 0),
+                "leads": summary.get("leads_processed") or (len(final_state.get("leads", [])) if isinstance(final_state.get("leads", []), list) else 0),
+                "emails_prepared": summary.get("emails_prepared") or (len(final_state.get("to_send", [])) if isinstance(final_state.get("to_send", []), list) else 0),
             }
 
             print("\n🎉 Campaign completed successfully!")

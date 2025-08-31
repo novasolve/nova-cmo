@@ -535,8 +535,26 @@ class CMOAgent:
             # Add current goal as human message
             messages.append(HumanMessage(content=state["goal"]))
 
-            # Get LLM response
-            response = await self.llm.ainvoke(messages)
+            # Get LLM response with timeout to avoid hangs
+            llm_timeout = (
+                self.config.get("timeouts", {}).get("openai_llm")
+                if isinstance(self.config.get("timeouts"), dict)
+                else None
+            ) or 60
+            try:
+                response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=llm_timeout)
+            except asyncio.TimeoutError:
+                logger.error(f"LLM timed out after {llm_timeout}s; continuing with auto-progression")
+                state.setdefault("errors", []).append({
+                    "stage": "agent_step",
+                    "error": f"LLM timeout after {llm_timeout}s",
+                    "error_type": "TimeoutError",
+                    "timestamp": datetime.now().isoformat(),
+                })
+                # Bump step counter and fall through to auto-progression block
+                state.setdefault("counters", {})
+                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
+                response = type("Resp", (), {"content": "", "tool_calls": []})()
 
             # Parse tool calls
             if hasattr(response, 'tool_calls') and response.tool_calls:
@@ -1033,6 +1051,41 @@ class CMOAgent:
             note = None
             # Shallow copy to avoid mutating original
             hydrated = dict(args or {})
+
+            if tool_name == "enrich_github_users":
+                # Prefer candidates from state over LLM-supplied examples
+                if not hydrated.get("logins"):
+                    candidates = state.get("candidates", [])
+                    unique_logins = []
+                    seen = set()
+                    for c in candidates:
+                        login = c.get("login")
+                        if login and login not in seen:
+                            unique_logins.append(login)
+                            seen.add(login)
+                    if unique_logins:
+                        # Cap batch size conservatively
+                        hydrated["logins"] = unique_logins[:25]
+                        note = f"[auto] Filled enrich_github_users logins from candidates: {len(hydrated['logins'])}"
+                    else:
+                        return None, "[auto] enrich_github_users skipped: no candidates available."
+                return hydrated, note
+
+            if tool_name == "find_commit_emails_batch":
+                # Build pairs from candidates if not provided
+                if not hydrated.get("user_repo_pairs"):
+                    pairs = []
+                    for c in state.get("candidates", []):
+                        login = c.get("login")
+                        repo_full_name = c.get("from_repo")
+                        if login and repo_full_name:
+                            pairs.append({"login": login, "repo_full_name": repo_full_name})
+                    if pairs:
+                        hydrated["user_repo_pairs"] = pairs[:50]
+                        note = f"[auto] Filled find_commit_emails_batch pairs: {len(hydrated['user_repo_pairs'])}"
+                    else:
+                        return None, "[auto] find_commit_emails_batch skipped: no candidate repo pairs available."
+                return hydrated, note
 
             if tool_name == "export_csv":
                 # Requires rows and path
