@@ -162,7 +162,19 @@ class GitHubTool(BaseTool):
                         raise Exception(f"Rate limited until {reset_datetime or 'later'}")
 
                     response.raise_for_status()
-                    result = await response.json()
+                    
+                    # Handle 204 No Content responses (empty body)
+                    if response.status == 204:
+                        result = {}
+                    else:
+                        # Only try to decode JSON if there's content
+                        content_type = response.headers.get('content-type', '')
+                        if 'application/json' in content_type:
+                            result = await response.json()
+                        else:
+                            # Handle non-JSON responses
+                            text = await response.text()
+                            result = {"text": text} if text else {}
 
                     # Record successful API call
                     if record_api_call_attempted:

@@ -182,10 +182,22 @@ class ExtractPeople(GitHubTool):
                     repo_topics = repo.get("topics", []) or []
 
                     # Get contributors for this repo
-                    contributors = await self._github_request(
+                    contributors_response = await self._github_request(
                         f"/repos/{repo_full_name}/contributors",
                         params={"per_page": top_authors_per_repo * 2}  # Get more to filter bots
                     )
+
+                    # Handle empty or malformed responses
+                    if not contributors_response or not isinstance(contributors_response, (list, dict)):
+                        logger.warning(f"Empty or invalid contributors response for {repo_full_name}")
+                        continue
+                    
+                    # If response is a dict (e.g., error response), extract list if available
+                    contributors = contributors_response if isinstance(contributors_response, list) else contributors_response.get("contributors", [])
+                    
+                    if not contributors:
+                        logger.info(f"No contributors found for {repo_full_name}")
+                        continue
 
                     # Filter out bots and get top contributors
                     human_contributors = [

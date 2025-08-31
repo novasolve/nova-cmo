@@ -273,13 +273,8 @@ class ExecutionEngine:
             # Record job submission
             record_job_submitted()
 
-            # Add progress callback
-            async def progress_callback(progress_info):
-                job.update_progress(**progress_info)
-
-            # Set progress callback on agent (if supported)
-            if hasattr(self.agent, 'set_progress_callback'):
-                self.agent.set_progress_callback(progress_callback)
+            # Note: Progress callbacks are handled by individual workers
+            # Don't set global progress callback here as it conflicts with worker callbacks
 
             # Enqueue job
             job_id = await self.queue.enqueue_job(job, priority)

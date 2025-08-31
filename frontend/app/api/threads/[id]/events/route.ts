@@ -29,23 +29,14 @@ export async function GET(
           }
         });
         
-        console.log(`Jobs API response: ${jobsResp.status} ${jobsResp.statusText}`);
-        
         if (jobsResp.ok) {
           const jobs = await jobsResp.json();
-          console.log(`Found ${jobs.length} jobs`);
-          
-          // Find the most recent job that could belong to this thread
-          console.log(`Searching for thread ${threadId} in ${jobs.length} jobs`);
           
           // Try multiple strategies to find the right job
           let threadJob = null;
           
           // Strategy 1: Exact threadId match in metadata
           threadJob = jobs.find((job: any) => job.metadata?.threadId === threadId);
-          if (threadJob) {
-            console.log(`Found job via metadata.threadId: ${threadJob.job_id || threadJob.id}`);
-          }
           
           // Strategy 2: Recent job created in last 5 minutes (fallback)
           if (!threadJob) {
@@ -60,27 +51,15 @@ export async function GET(
             });
             
             threadJob = recentJobs[0];
-            if (threadJob) {
-              console.log(`Found recent job as fallback: ${threadJob.job_id || threadJob.id}`);
-            }
           }
           
           if (threadJob) {
             currentJobId = threadJob.job_id || threadJob.id; // Handle both field names
-            console.log(`Mapped thread ${threadId} to job ${currentJobId}`);
             // Store the mapping for future requests
             if (currentJobId) {
               const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
               storeThreadJobMapping(threadId, currentJobId);
             }
-          } else {
-            console.log(`No suitable job found for thread ${threadId}`);
-            console.log(`Available jobs:`, jobs.slice(0, 3).map((j: any) => ({
-              id: j.job_id || j.id,
-              goal: j.goal?.substring(0, 50),
-              threadId: j.metadata?.threadId,
-              created: j.created_at || j.metadata?.created_at
-            })));
           }
         } else {
           console.warn(`Jobs API failed: ${jobsResp.status} ${jobsResp.statusText}`);
@@ -158,6 +137,12 @@ export async function GET(
           });
         } else {
           console.warn(`Job events endpoint failed: ${upstream.status} ${upstream.statusText}`);
+          
+          // If events endpoint fails (503), create a polling fallback
+          if (upstream.status === 503) {
+            return createPollingFallback(currentJobId, threadId, request);
+          }
+          
           return new Response(`Job events not available: ${upstream.statusText}`, { status: upstream.status });
         }
       } catch (error) {
@@ -165,13 +150,101 @@ export async function GET(
         return new Response("Error connecting to job events", { status: 500 });
       }
     } else {
-      console.log(`No job ID found for thread ${threadId}`);
+      // Don't log repeatedly for threads without jobs - this is normal
       return new Response("No active job for this thread", { status: 404 });
     }
   } catch (error) {
     console.error("Backend SSE error:", error);
     return new Response("Internal server error", { status: 500 });
   }
+}
+
+// Polling fallback when SSE events are unavailable (503 error)
+function createPollingFallback(jobId: string, threadId: string, request: Request) {
+  const encoder = new TextEncoder();
+  
+  const stream = new ReadableStream({
+    start(controller) {
+      console.log(`Creating polling fallback for job ${jobId}`);
+      
+      // Send initial message
+      const initialEvent = {
+        kind: "message",
+        message: {
+          id: crypto.randomUUID(),
+          threadId,
+          role: "system",
+          createdAt: new Date().toISOString(),
+          text: `⚡ **Live Events Unavailable** - Using polling fallback for job ${jobId}\n\nThe job is running, but live events aren't available. Check the backend logs for progress.`
+        }
+      };
+      
+      controller.enqueue(
+        encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`)
+      );
+
+      // Poll job status every 10 seconds
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResp = await fetch(`${process.env.API_URL}/api/jobs/${jobId}`);
+          if (statusResp.ok) {
+            const jobStatus = await statusResp.json();
+            
+            const statusEvent = {
+              kind: "event",
+              event: {
+                ts: new Date().toISOString(),
+                node: "job_status_poll",
+                status: jobStatus.status === "completed" ? "ok" : "start",
+                msg: `Job ${jobId}: ${jobStatus.status}${jobStatus.progress ? ` - ${jobStatus.progress}` : ""}`
+              }
+            };
+            
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify(statusEvent)}\n\n`)
+            );
+            
+            // If job completed, send final message and close
+            if (jobStatus.status === "completed" || jobStatus.status === "failed") {
+              const finalEvent = {
+                kind: "message",
+                message: {
+                  id: `completion-${Date.now()}`,
+                  threadId,
+                  role: "assistant",
+                  createdAt: new Date().toISOString(),
+                  text: `✅ **Job ${jobId} ${jobStatus.status}**\n\nCheck your exports folder for results!`
+                }
+              };
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(finalEvent)}\n\n`)
+              );
+              
+              clearInterval(pollInterval);
+              controller.close();
+            }
+          }
+        } catch (error) {
+          console.warn("Polling failed:", error);
+        }
+      }, 10000);
+
+      // Clean up on client disconnect
+      request.signal?.addEventListener('abort', () => {
+        clearInterval(pollInterval);
+        controller.close();
+      });
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+    },
+  });
 }
 
 // Helper functions to extract info from job events

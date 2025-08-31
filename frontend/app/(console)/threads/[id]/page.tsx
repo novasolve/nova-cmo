@@ -111,16 +111,8 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     }, 100);
   }, [id, jobState.events, jobState.currentNode, jobState.progress, jobState.metrics, updateJobState]);
 
-  // Set up SSE connection with job ID if available
-  const [sseUrl, setSseUrl] = useState(`/api/threads/${id}/events`);
-  
-  // Update SSE URL when job ID changes
-  useEffect(() => {
-    const newUrl = currentJobId 
-      ? `/api/threads/${id}/events?jobId=${currentJobId}`
-      : `/api/threads/${id}/events`;
-    setSseUrl(newUrl);
-  }, [currentJobId, id]);
+  // Only establish SSE connection when there's an active job
+  const sseUrl = currentJobId ? `/api/threads/${id}/events?jobId=${currentJobId}` : null;
     
   const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,

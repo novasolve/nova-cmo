@@ -33,10 +33,23 @@ import { getThread, createThread, updateThread, generateThreadName } from "@/lib
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { threadId, text, options } = body;
+    const { threadId, text, message, options } = body;
+    const messageText = text || message; // Support both 'text' and 'message' parameters
+    
+    // Validate required parameters
+    if (!threadId || !messageText) {
+      return new Response(JSON.stringify({
+        success: false,
+        error: "Missing required parameters: threadId and text/message",
+        timestamp: new Date().toISOString()
+      }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Check if this is a conversational message first
-    if (isConversationalMessage(text)) {
+    if (isConversationalMessage(messageText)) {
       // Route to conversation endpoint
       const convResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000'}/api/chat-conversation`, {
         method: "POST",
@@ -63,14 +76,14 @@ export async function POST(req: Request) {
     // Ensure thread exists in storage
     let thread = getThread(threadId);
     if (!thread) {
-      const threadName = generateThreadName(text);
+      const threadName = generateThreadName(messageText);
       thread = createThread(threadId, threadName);
       console.log(`Created new thread: ${threadId} - ${threadName}`);
     }
     
     // Update thread with latest message
     updateThread(threadId, {
-      lastActivity: text.length > 50 ? text.substring(0, 50) + "..." : text
+      lastActivity: messageText.length > 50 ? messageText.substring(0, 50) + "..." : messageText
     });
     
     // Convert autonomy level to numeric autopilot for backend compatibility
@@ -80,10 +93,10 @@ export async function POST(req: Request) {
     if (process.env.API_URL) {
       try {
         // Detect if this is a smoke test
-        const isSmokeTest = text.toLowerCase().includes('smoke test');
+        const isSmokeTest = messageText.toLowerCase().includes('smoke test');
         
         const jobPayload = {
-          goal: text,
+          goal: messageText,
           dryRun: autopilot === 0, // L0 = dry run, L1+ = real execution
           config_path: isSmokeTest ? "cmo_agent/config/smoke.yaml" : null,
           metadata: {
