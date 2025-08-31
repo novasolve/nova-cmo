@@ -1,0 +1,116 @@
+"use client";
+import { useState } from "react";
+
+export function Sidebar() {
+  const [activeTab, setActiveTab] = useState<"campaigns" | "threads">("threads");
+
+  const mockThreads = [
+    { id: "default", name: "General Chat", lastMessage: "Welcome to the CMO Agent Console!", timestamp: "2 min ago" },
+    { id: "campaign-123", name: "Python Maintainers", lastMessage: "Preflight complete - 2.1k leads found", timestamp: "1 hour ago" },
+    { id: "campaign-124", name: "JS Framework Leads", lastMessage: "Running at L1 - $45/day", timestamp: "3 hours ago" },
+  ];
+
+  const mockCampaigns = [
+    { id: "py-maintainers", name: "Python Maintainers", status: "running", budget: "$50/day" },
+    { id: "js-frameworks", name: "JS Framework Leads", status: "paused", budget: "$30/day" },
+    { id: "go-developers", name: "Go Developers", status: "completed", budget: "$25/day" },
+  ];
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="mb-4">
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">CMO Agent</h2>
+        
+        <div className="flex bg-gray-100 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab("threads")}
+            className={`flex-1 text-sm px-3 py-1.5 rounded ${
+              activeTab === "threads"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Threads
+          </button>
+          <button
+            onClick={() => setActiveTab("campaigns")}
+            className={`flex-1 text-sm px-3 py-1.5 rounded ${
+              activeTab === "campaigns"
+                ? "bg-white text-gray-900 shadow-sm"
+                : "text-gray-600 hover:text-gray-900"
+            }`}
+          >
+            Campaigns
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "threads" && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-700">Chat Threads</h3>
+              <button className="text-xs text-blue-600 hover:text-blue-800">
+                + New
+              </button>
+            </div>
+            {mockThreads.map((thread) => (
+              <a
+                key={thread.id}
+                href={`/threads/${thread.id}`}
+                className="block p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors"
+              >
+                <div className="font-medium text-sm text-gray-900 mb-1">
+                  {thread.name}
+                </div>
+                <div className="text-xs text-gray-500 line-clamp-2 mb-1">
+                  {thread.lastMessage}
+                </div>
+                <div className="text-xs text-gray-400">
+                  {thread.timestamp}
+                </div>
+              </a>
+            ))}
+          </div>
+        )}
+
+        {activeTab === "campaigns" && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-medium text-gray-700">Campaigns</h3>
+              <button className="text-xs text-blue-600 hover:text-blue-800">
+                + New
+              </button>
+            </div>
+            {mockCampaigns.map((campaign) => (
+              <div
+                key={campaign.id}
+                className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-medium text-sm text-gray-900">
+                    {campaign.name}
+                  </div>
+                  <span
+                    className={`text-xs px-2 py-1 rounded ${
+                      campaign.status === "running"
+                        ? "bg-green-100 text-green-800"
+                        : campaign.status === "paused"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-gray-100 text-gray-800"
+                    }`}
+                  >
+                    {campaign.status}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-500">
+                  Budget: {campaign.budget}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
