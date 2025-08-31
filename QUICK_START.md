@@ -70,5 +70,3 @@ head -5 data/prospects_latest.csv | cut -d',' -f1-10
 ## 🔑 Need a Token?
 
 Run `./setup_token.sh` for step-by-step instructions.
-
-

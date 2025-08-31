@@ -1,7 +1,6 @@
 # 🚀 Phase 1: GitHub Lead Intelligence Data Collection
 
 ## Table of Contents
-
 - [Overview](#overview)
 - [Architecture](#architecture)
 - [How It Works](#how-it-works)
@@ -39,36 +38,36 @@ graph TB
         GH[GitHub API]
         CACHE[Local Cache]
     end
-
+    
     subgraph "Core Engine"
         SCRAPER[GitHub Scraper]
         COLLECTOR[Data Collector]
         ENRICHER[Repo Enricher]
         SCORER[Lead Scorer]
     end
-
+    
     subgraph "Intelligence Layer"
         ICP[ICP Matcher]
         SIGNAL[Signal Detector]
         DEDUP[Deduplication]
     end
-
+    
     subgraph "Output"
         CSV[CSV Export]
         JSON[JSON Data]
         ATTIO[Attio CRM]
     end
-
+    
     GH --> SCRAPER
     CACHE --> SCRAPER
     SCRAPER --> COLLECTOR
     COLLECTOR --> ENRICHER
     ENRICHER --> SCORER
-
+    
     ICP --> COLLECTOR
     SIGNAL --> COLLECTOR
     DEDUP --> COLLECTOR
-
+    
     SCORER --> CSV
     SCORER --> JSON
     SCORER --> ATTIO
@@ -82,12 +81,11 @@ The system starts by searching GitHub for repositories that match specific crite
 
 ```python
 # Example search query
-"language:python stars:100..500 pushed:>2024-01-01
+"language:python stars:100..500 pushed:>2024-01-01 
  topics:ai OR topics:ml OR topics:data-science"
 ```
 
 **Key Filters:**
-
 - **Language**: Python, JavaScript, Go, etc.
 - **Activity**: Recent commits/PRs (last 30-90 days)
 - **Quality**: Star count thresholds
@@ -104,7 +102,7 @@ graph TD
     B --> D[Recent Commits<br/>Active Development]
     B --> E[Issue Comments<br/>Community Engagement]
     B --> F[Core Contributors<br/>Long-term Investment]
-
+    
     C --> G[Lead Score +30]
     D --> G[Lead Score +20]
     E --> G[Lead Score +15]
@@ -123,7 +121,7 @@ Lead Profile:
   - Location (if US-based)
   - Bio & professional info
   - Twitter/LinkedIn (if available)
-
+  
 Activity Metrics:
   - Contribution frequency
   - Repository engagement
@@ -139,7 +137,7 @@ sequenceDiagram
     participant Cache as Local Cache
     participant Enricher as Enrichment Engine
     participant Scorer as Lead Scorer
-
+    
     API->>Cache: Check cache (24hr TTL)
     Cache-->>API: Miss
     API->>Enricher: Fetch user details
@@ -153,7 +151,6 @@ sequenceDiagram
 ## Data Collection Pipeline
 
 ### Stage 1: Repository Search
-
 ```
 ┌─────────────────┐
 │ Search Criteria │
@@ -180,7 +177,6 @@ sequenceDiagram
 ```
 
 ### Stage 2: Prospect Discovery
-
 ```
 ┌─────────────────┐
 │   Repository    │
@@ -209,7 +205,6 @@ PR Authors    Commit Authors  Issue Authors  Contributors
 ```
 
 ### Stage 3: Scoring & Qualification
-
 ```
 Lead Score Calculation:
 
@@ -238,21 +233,21 @@ The system supports multiple ICPs with custom search criteria:
 
 ```yaml
 ICP Examples:
-
+  
 1. PyPI Package Maintainers:
-  - Search: "language:python topics:pypi"
-  - Signals: Package updates, release activity
-  - Target: DevTool buyers
-
+   - Search: "language:python topics:pypi"
+   - Signals: Package updates, release activity
+   - Target: DevTool buyers
+   
 2. ML/AI Engineers:
-  - Search: "language:python topics:machine-learning"
-  - Signals: Model training repos, dataset usage
-  - Target: MLOps tool users
-
+   - Search: "language:python topics:machine-learning"
+   - Signals: Model training repos, dataset usage
+   - Target: MLOps tool users
+   
 3. Startup CTOs:
-  - Search: "language:python stars:>100"
-  - Signals: Repo ownership, team size
-  - Target: Infrastructure buyers
+   - Search: "language:python stars:>100"
+   - Signals: Repo ownership, team size
+   - Target: Infrastructure buyers
 ```
 
 ### 🔄 **Intelligent Deduplication**
@@ -298,13 +293,13 @@ Processing repos: 100%|████████████| 200/200 [05:32<00:0
 
 ### Signal Types & Weights
 
-| Signal Type          | Weight | Description               | Intent Level |
-| -------------------- | ------ | ------------------------- | ------------ |
-| **Pull Request**     | 30     | Authored PR to repo       | 🔥 High      |
-| **Core Contributor** | 40     | >10 commits in 90 days    | 🔥 High      |
-| **Recent Commit**    | 20     | Committed in last 30 days | 🟡 Medium    |
-| **Issue Comment**    | 15     | Active in discussions     | 🟡 Medium    |
-| **Star/Fork**        | 10     | Showed interest           | 🟢 Low       |
+| Signal Type | Weight | Description | Intent Level |
+|------------|--------|-------------|--------------|
+| **Pull Request** | 30 | Authored PR to repo | 🔥 High |
+| **Core Contributor** | 40 | >10 commits in 90 days | 🔥 High |
+| **Recent Commit** | 20 | Committed in last 30 days | 🟡 Medium |
+| **Issue Comment** | 15 | Active in discussions | 🟡 Medium |
+| **Star/Fork** | 10 | Showed interest | 🟢 Low |
 
 ### Signal Quality Indicators
 
@@ -322,17 +317,15 @@ pie title "Lead Distribution by Signal Type"
 ### Pre-configured ICPs
 
 1. **🏢 B2B SaaS Companies**
-
    ```yaml
    Criteria:
      - Company: Has organization
-     - Size: 10-500 employees
+     - Size: 10-500 employees  
      - Activity: High commit frequency
      - Tech: Modern stack (Python, Node.js, Go)
    ```
 
 2. **📦 Open Source Maintainers**
-
    ```yaml
    Criteria:
      - Repos: Owns popular packages
@@ -359,7 +352,7 @@ graph TB
         A --> B[ICP 1: B2B SaaS<br/>2,100 leads]
         A --> C[ICP 2: OSS Maintainers<br/>1,800 leads]
         A --> D[ICP 3: Startups<br/>1,100 leads]
-
+        
         B --> E[High Score: 420<br/>20%]
         C --> F[High Score: 540<br/>30%]
         D --> G[High Score: 220<br/>20%]
@@ -377,7 +370,7 @@ graph LR
         C[4 Workers] --> D[180 repos/hour]
         E[8 Workers] --> F[320 repos/hour]
     end
-
+    
     subgraph "With Caching"
         G[Cache Hit 40%] --> H[+60% throughput]
     end
@@ -385,13 +378,13 @@ graph LR
 
 ### Resource Utilization
 
-| Metric             | Value     | Notes               |
-| ------------------ | --------- | ------------------- |
-| **API Calls/Hour** | 5,000     | GitHub limit        |
-| **Repos/Hour**     | 200-400   | With 4 workers      |
-| **Leads/Hour**     | 500-1,500 | Varies by repo      |
-| **Cache Hit Rate** | 40-60%    | 24hr TTL            |
-| **Memory Usage**   | <500MB    | Efficient streaming |
+| Metric | Value | Notes |
+|--------|-------|-------|
+| **API Calls/Hour** | 5,000 | GitHub limit |
+| **Repos/Hour** | 200-400 | With 4 workers |
+| **Leads/Hour** | 500-1,500 | Varies by repo |
+| **Cache Hit Rate** | 40-60% | 24hr TTL |
+| **Memory Usage** | <500MB | Efficient streaming |
 
 ## Usage Guide
 
@@ -416,22 +409,21 @@ python lead_intelligence/scripts/run_intelligence.py \
 
 ```yaml
 # config.yaml
-search_days: 60 # Look back period
-max_repos: 300 # Total repos to process
-max_leads: 1000 # Stop after N leads
-us_only: true # Geographic filter
-english_only: true # Language filter
+search_days: 60          # Look back period
+max_repos: 300          # Total repos to process
+max_leads: 1000         # Stop after N leads
+us_only: true           # Geographic filter
+english_only: true      # Language filter
 
 concurrency:
   enabled: true
-  max_workers: 4 # Parallel processing
-  cache_ttl_hours: 24 # Cache duration
+  max_workers: 4        # Parallel processing
+  cache_ttl_hours: 24   # Cache duration
 ```
 
 ### Output Formats
 
 1. **CSV Export** (Attio-ready)
-
    ```
    exports/attio/people.csv
    exports/attio/repos.csv
@@ -439,7 +431,6 @@ concurrency:
    ```
 
 2. **JSON Data** (Full details)
-
    ```
    lead_intelligence/data/leads_enriched.json
    lead_intelligence/data/job_metadata.json
@@ -498,13 +489,13 @@ graph TD
 
 ## Success Metrics
 
-| Metric                 | Target         | Typical Result |
-| ---------------------- | -------------- | -------------- |
-| **Lead Quality Score** | >70/100        | 75.2 avg       |
-| **Email Coverage**     | >50%           | 58.3%          |
-| **ICP Match Rate**     | >60%           | 67.5%          |
-| **Processing Speed**   | <2s/repo       | 1.6s/repo      |
-| **API Efficiency**     | <25 calls/lead | 22.1 calls     |
+| Metric | Target | Typical Result |
+|--------|--------|----------------|
+| **Lead Quality Score** | >70/100 | 75.2 avg |
+| **Email Coverage** | >50% | 58.3% |
+| **ICP Match Rate** | >60% | 67.5% |
+| **Processing Speed** | <2s/repo | 1.6s/repo |
+| **API Efficiency** | <25 calls/lead | 22.1 calls |
 
 ---
 
