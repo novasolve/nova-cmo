@@ -132,3 +132,5 @@ lead_intelligence/data/dedup.sqlite3
 *.parquet
 *.feather
 *.hdf5
+
+_nova-cmo_mirror.git/
