@@ -239,7 +239,17 @@ class SendInstantly(InstantlyTool):
         import aiohttp
         try:
             base = self.base_url
-            headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+            headers = {
+                "X-API-KEY": self.api_key,
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+
+            # If INSTANTLY_CAMPAIGN_ID is set, prefer it directly
+            forced_id = os.getenv("INSTANTLY_CAMPAIGN_ID")
+            if forced_id:
+                return forced_id
 
             # Try to find by name
             list_url = f"{base}/campaigns"
@@ -253,7 +263,8 @@ class SendInstantly(InstantlyTool):
 
             # Create campaign
             create_url = f"{base}/campaigns"
-            payload = {"name": seq_id}
+            # Minimal required fields – some accounts require schedule; default to draft
+            payload = {"name": seq_id, "campaign_schedule": {"status": "paused"}}
             async with aiohttp.ClientSession() as session:
                 async with session.post(create_url, headers=headers, json=payload) as resp:
                     data = await resp.json()

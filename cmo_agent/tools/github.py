@@ -135,6 +135,12 @@ class SearchGitHubRepos(GitHubTool):
                     repos.append(repo_data)
 
                 page += 1
+                # Small pause between pages to avoid secondary rate limits
+                try:
+                    import asyncio
+                    await asyncio.sleep(0.2)
+                except Exception:
+                    pass
                 if page > 10:  # Safety limit
                     break
 

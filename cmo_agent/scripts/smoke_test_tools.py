@@ -40,7 +40,12 @@ def print_header(title: str):
 
 async def test_github_tools(config: Dict[str, Any]) -> Dict[str, Any]:
     results: Dict[str, Any] = {"skipped": True}
-    token = os.getenv("GITHUB_TOKEN") or config.get("GITHUB_TOKEN")
+    token = (
+        os.getenv("GITHUB_TOKEN")
+        or config.get("GITHUB_TOKEN")
+        or os.getenv("GITHUB_API_KEY")  # alias
+        or config.get("GITHUB_API_KEY")
+    )
     if not token:
         print("GitHub: SKIP (missing GITHUB_TOKEN)")
         return results
@@ -127,14 +132,24 @@ async def test_personalization_tools(config: Dict[str, Any]) -> Dict[str, Any]:
         results["tests"]["render_copy"] = ok
         print(f"render_copy: {'OK' if ok else 'FAIL'}")
 
-        api_key = os.getenv("INSTANTLY_API_KEY") or config.get("INSTANTLY_API_KEY")
+        api_key = (
+            os.getenv("INSTANTLY_API_KEY")
+            or config.get("INSTANTLY_API_KEY")
+            or os.getenv("INSTANTLY_API_TOKEN")  # alias
+            or config.get("INSTANTLY_API_TOKEN")
+        )
         if not api_key:
             results["skipped_send"] = True
-            print("send_instantly: SKIP (missing INSTANTLY_API_KEY)")
+            print("send_instantly: SKIP (missing INSTANTLY_API_KEY/INSTANTLY_API_TOKEN)")
         else:
             send = SendInstantly(api_key)
             contact = {"email": "octo@example.com", "subject": "Hi", "body": "Test"}
-            s_res = await send.execute([contact], seq_id="smoke_seq", per_inbox_cap=1)
+            seq_name = (
+                os.getenv("INSTANTLY_CAMPAIGN_NAME")
+                or config.get("INSTANTLY_CAMPAIGN_NAME")
+                or "My Campaign"
+            )
+            s_res = await send.execute([contact], seq_id=seq_name, per_inbox_cap=1)
             ok = bool(s_res.success and s_res.data.get("contacts_sent") == 1)
             results["tests"]["send_instantly"] = ok
             print(f"send_instantly: {'OK' if ok else 'FAIL'}")
