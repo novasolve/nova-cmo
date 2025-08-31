@@ -78,6 +78,63 @@ start_api() {
     fi
 }
 
+# Start everything in foreground with live logs
+start_dev() {
+    log "Starting development environment..."
+    stop_all
+    
+    cd "$(dirname "$0")"
+    
+    # Start API in background
+    log "🚀 Starting API server..."
+    python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
+    local api_pid=$!
+    echo $api_pid > "$PIDFILE_API"
+    
+    # Wait for API
+    sleep 3
+    if ! curl -s http://localhost:$API_PORT/ >/dev/null 2>&1; then
+        error "API failed to start. Check logs: tail -f /tmp/cmo_api.log"
+        return 1
+    fi
+    success "API running at http://localhost:$API_PORT"
+    
+    # Start frontend in background  
+    log "🎨 Starting frontend..."
+    cd frontend
+    if [[ ! -d "node_modules" ]]; then
+        log "Installing dependencies..."
+        npm install
+    fi
+    npm run dev > /tmp/cmo_frontend.log 2>&1 &
+    local frontend_pid=$!
+    echo $frontend_pid > "$PIDFILE_FRONTEND"
+    cd ..
+    
+    # Wait for frontend
+    sleep 5
+    if ! curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
+        warn "Frontend may still be starting..."
+    else
+        success "Frontend running at http://localhost:$FRONTEND_PORT"
+    fi
+    
+    success "🎉 Development environment ready!"
+    echo ""
+    echo "📱 Frontend: http://localhost:$FRONTEND_PORT"
+    echo "🔧 API:      http://localhost:$API_PORT"
+    echo "📚 API Docs: http://localhost:$API_PORT/docs"
+    echo ""
+    log "Press Ctrl+C to stop all services"
+    echo ""
+    
+    # Setup trap to cleanup on exit
+    trap 'log "Shutting down..."; kill $api_pid $frontend_pid 2>/dev/null; stop_all; exit 0' INT TERM
+    
+    # Follow logs in foreground
+    tail -f /tmp/cmo_api.log /tmp/cmo_frontend.log
+}
+
 start_frontend() {
     log "Starting frontend server on port $FRONTEND_PORT..."
     cd "$(dirname "$0")/frontend"
@@ -155,8 +212,11 @@ logs() {
     esac
 }
 
-case "${1:-help}" in
-    start)
+case "${1:-dev}" in
+    dev|start)
+        start_dev
+        ;;
+    bg|background)
         stop_all
         start_api
         start_frontend
@@ -168,9 +228,7 @@ case "${1:-help}" in
     restart)
         stop_all
         sleep 2
-        start_api
-        start_frontend
-        status
+        start_dev
         ;;
     status)
         status
@@ -195,25 +253,33 @@ case "${1:-help}" in
         esac
         ;;
     help|*)
-        echo "CMO Agent Development Server Manager"
+        echo "🚀 CMO Agent Development Server Manager"
         echo ""
-        echo "Usage: $0 <command> [options]"
+        echo "Usage: $0 [command]"
         echo ""
-        echo "Commands:"
-        echo "  start          Start both API and frontend servers"
-        echo "  stop           Stop all services"
-        echo "  restart        Restart all services"
-        echo "  status         Show service status"
-        echo "  logs [service] Show logs (api|frontend|both)"
+        echo "Single-pane commands:"
+        echo "  ./dev.sh                   # Start everything with live logs (default)"
+        echo "  ./dev.sh dev               # Same as above"
+        echo "  ./dev.sh restart           # Restart everything with live logs"
+        echo ""
+        echo "Background mode:"
+        echo "  ./dev.sh bg                # Start in background, return to shell"
+        echo "  ./dev.sh stop              # Stop all services"
+        echo "  ./dev.sh status            # Check what's running"
+        echo "  ./dev.sh logs              # Follow logs"
         echo ""
         echo "Service-specific:"
-        echo "  api start|stop|restart|logs"
-        echo "  frontend start|stop|restart|logs"
+        echo "  ./dev.sh api restart       # Restart just API"
+        echo "  ./dev.sh frontend logs     # Just frontend logs"
         echo ""
         echo "Examples:"
-        echo "  $0 start                    # Start everything"
-        echo "  $0 api restart             # Restart just API"
-        echo "  $0 logs api                # Follow API logs"
-        echo "  $0 status                  # Check what's running"
+        echo "  ./dev.sh                   # One command - start everything!"
+        echo "  ./dev.sh bg                # Background mode"
+        echo "  ./dev.sh api restart       # Fix API issues"
+        echo ""
+        echo "🌐 URLs:"
+        echo "  Frontend: http://localhost:3000"
+        echo "  API:      http://localhost:8000"
+        echo "  API Docs: http://localhost:8000/docs"
         ;;
 esac
