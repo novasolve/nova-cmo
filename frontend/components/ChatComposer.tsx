@@ -91,15 +91,18 @@ export function ChatComposer({
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                if (text.trim()) {
-                  onSend(text, { autonomy, budget });
-                  setText("");
+              if (e.key === "Enter") {
+                if (e.shiftKey) {
+                  // Shift+Enter: Allow new line (default behavior)
+                  return;
+                } else {
+                  // Enter: Send message
+                  e.preventDefault();
+                  if (text.trim()) {
+                    onSend(text, { autonomy, budget });
+                    setText("");
+                  }
                 }
-              } else if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
-                // Allow Enter for new line, but provide hint about Cmd+Enter
-                // Don't prevent default - let user add new lines normally
               }
             }}
             aria-describedby="message-help"
@@ -120,7 +123,7 @@ export function ChatComposer({
         </button>
       </div>
       <div id="message-help" className="text-xs text-gray-500">
-        <span>💡 Press Cmd/Ctrl + Enter to send</span>
+        <span>💡 Press Enter to send</span>
         <span className="mx-2">•</span>
         <span>Shift + Enter for new line</span>
       </div>
