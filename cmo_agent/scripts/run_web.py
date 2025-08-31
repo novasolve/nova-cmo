@@ -5,11 +5,12 @@ Minimal web UI for CMO Agent (FastAPI + HTML form)
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, AsyncIterator, Dict, Any
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form, HTTPException
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 # Ensure project root on sys.path for absolute imports
@@ -20,8 +21,21 @@ if project_root not in sys.path:
 load_dotenv()
 
 from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
+from cmo_agent.scripts.run_execution import ExecutionEngine
 
 app = FastAPI(title="CMO Agent - Minimal UI")
+
+# Enable CORS for local Next.js dev UI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
@@ -81,6 +95,42 @@ def render_index(result_html: str = "") -> HTMLResponse:
     return HTMLResponse(html)
 
 
+# -----------------------
+# Background engine wiring
+# -----------------------
+engine: Optional[ExecutionEngine] = None
+
+
+@app.on_event("startup")
+async def on_startup():
+    global engine
+    try:
+        engine = ExecutionEngine()
+        ok = await engine.initialize()
+        if not ok:
+            raise RuntimeError("Failed to initialize execution engine")
+        import asyncio
+        asyncio.create_task(engine.start())
+    except Exception as e:
+        # If engine fails, API endpoints will raise 503s
+        print(f"[startup] ExecutionEngine error: {e}")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    global engine
+    try:
+        if engine and engine.worker_pool:
+            await engine.worker_pool.stop()
+        if engine and engine.metrics_logger:
+            engine.metrics_logger.stop_logging()
+    except Exception:
+        pass
+
+
+# -----------------------
+# Minimal HTML UI routes
+# -----------------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return render_index()
@@ -121,6 +171,143 @@ async def run(request: Request, goal: str = Form(...), dry_run: Optional[bool] =
     except Exception as e:
         result_html = f"<div class=card><strong>Result:</strong> ❌ Error: {e}</div>"
         return render_index(result_html)
+
+
+# -----------------------
+# JSON API for Chat UI
+# -----------------------
+
+def _require_engine() -> ExecutionEngine:
+    if not engine or not engine.is_running:
+        raise HTTPException(status_code=503, detail="Execution engine not running")
+    return engine
+
+
+@app.post("/api/jobs")
+async def api_create_job(payload: Dict[str, Any]):
+    eng = _require_engine()
+    goal = (payload or {}).get("goal")
+    if not goal or not isinstance(goal, str):
+        raise HTTPException(status_code=400, detail="Missing 'goal'")
+
+    # Optional dryRun flag affects agent config globally for now
+    dry_run = bool((payload or {}).get("dryRun", True))
+    try:
+        eng.agent.config = eng.agent.config or {}
+        features = eng.agent.config.get("features", {}) if isinstance(eng.agent.config.get("features"), dict) else {}
+        features["dry_run"] = dry_run
+        eng.agent.config["features"] = features
+    except Exception:
+        pass
+
+    job_id = await eng.submit_job(goal)
+    status = await eng.get_job_status(job_id)
+    if not status:
+        return JSONResponse(status_code=201, content={"id": job_id, "status": "queued", "goal": goal, "created_at": None})
+    return {
+        "id": status["job_id"],
+        "status": status["status"],
+        "goal": status["goal"],
+        "created_at": status["created_at"],
+    }
+
+
+@app.get("/api/jobs/{job_id}")
+async def api_get_job(job_id: str):
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "id": status["job_id"],
+        "status": status["status"],
+        "goal": status["goal"],
+        "created_at": status["created_at"],
+    }
+
+
+@app.post("/api/jobs/{job_id}/pause")
+async def api_pause_job(job_id: str):
+    eng = _require_engine()
+    ok = await eng.pause_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Cannot pause job")
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/resume")
+async def api_resume_job(job_id: str):
+    eng = _require_engine()
+    ok = await eng.resume_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Cannot resume job")
+    return {"ok": True}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def api_cancel_job(job_id: str):
+    eng = _require_engine()
+    ok = await eng.cancel_job(job_id)
+    if not ok:
+        raise HTTPException(status_code=409, detail="Cannot cancel job")
+    return {"ok": True}
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def api_job_events(request: Request, job_id: str):
+    eng = _require_engine()
+
+    async def event_stream() -> AsyncIterator[str]:
+        import asyncio, json as _json
+        # Send an initial status snapshot if available
+        try:
+            status = await eng.get_job_status(job_id)
+            if status:
+                initial = {
+                    "job_id": status["job_id"],
+                    "timestamp": datetime.now().isoformat(),
+                    "event": f"job.{status['status']}",
+                    "data": {"progress": status.get("progress")},
+                }
+                yield f"data: {_json.dumps(initial)}\n\n"
+        except Exception:
+            pass
+
+        queue = await eng.queue.get_progress_stream(job_id)  # asyncio.Queue of ProgressInfo or None
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=15.0)
+            except asyncio.TimeoutError:
+                # keep-alive comment to prevent proxies from closing connection
+                yield ": keep-alive\n\n"
+                continue
+
+            if item is None:
+                # Stream end signal
+                done = {
+                    "job_id": job_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "event": "job.stream_end",
+                    "data": None,
+                }
+                yield f"data: {_json.dumps(done)}\n\n"
+                break
+
+            try:
+                payload = {
+                    "job_id": job_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "event": "job.progress",
+                    "data": item.to_dict() if hasattr(item, "to_dict") else item,
+                }
+                yield f"data: {_json.dumps(payload)}\n\n"
+            except Exception:
+                # Skip malformed event
+                continue
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 def main():

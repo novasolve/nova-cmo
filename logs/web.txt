@@ -1,0 +1,564 @@
+INFO:     Started server process [14151]
+INFO:     Waiting for application startup.
+2025-08-31 14:04:22,501 INFO Loaded 15 artifacts from registry
+2025-08-31 14:04:22,501 INFO CMO Agent initialized
+2025-08-31 14:04:22,501 INFO Worker pool initialized with 3 workers
+2025-08-31 14:04:22,502 WARNING Artifact cleanup task not started: attempted relative import beyond top-level package
+2025-08-31 14:04:22,502 INFO Starting CMO Agent Execution Engine...
+2025-08-31 14:04:22,502 INFO Starting worker pool with 3 workers
+2025-08-31 14:04:22,503 INFO Worker pool started with 3 workers
+2025-08-31 14:04:22,503 INFO Metrics logger started (interval=60s)
+2025-08-31 14:04:22,503 INFO Execution engine running. Press Ctrl+C to stop.
+2025-08-31 14:04:22,503 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+INFO:     Application startup complete.
+2025-08-31 14:04:22,503 INFO Worker worker-01 started
+2025-08-31 14:04:22,503 INFO Worker worker-01 performing crash recovery check
+2025-08-31 14:04:22,503 INFO Worker worker-02 started
+2025-08-31 14:04:22,503 INFO Worker worker-02 performing crash recovery check
+2025-08-31 14:04:22,503 INFO Worker worker-03 started
+2025-08-31 14:04:22,503 INFO Worker worker-03 performing crash recovery check
+2025-08-31 14:04:22,503 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:04:23,507 INFO Metrics snapshot collected
+2025-08-31 14:04:23,507 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+2025-08-31 14:04:24,509 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:25,510 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:26,510 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:27,512 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:28,513 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:29,514 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:30,516 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:31,517 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:32,518 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:33,519 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+INFO:     127.0.0.1:51594 - "POST /api/jobs HTTP/1.1" 422 Unprocessable Entity
+2025-08-31 14:04:34,520 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:35,521 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:36,523 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:37,524 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:38,525 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:39,526 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:40,528 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:41,529 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:42,530 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:43,532 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:44,533 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:45,534 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:46,535 INFO Queue stats: {'total_jobs': 2, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2}, 'active_streams': 0}
+2025-08-31 14:04:46,841 INFO Job submitted: cmo-e6988c48 - Find 2 Python repos active 30d...
+INFO:     127.0.0.1:51859 - "POST /api/jobs HTTP/1.1" 200 OK
+2025-08-31 14:04:47,537 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 1, 'jobs_by_status': {'completed': 2, 'queued': 1}, 'active_streams': 0}
+2025-08-31 14:04:47,538 INFO Worker worker-01 processing job cmo-e6988c48: Find 2 Python repos active 30d...
+2025-08-31 14:04:47,539 INFO Starting CMO Agent job: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:04:48,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:49,428 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:04:49,436 INFO Executing tool: search_github_repos
+2025-08-31 14:04:49,436 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:04:49,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:49,691 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+sort:stars&sort=stars&order=desc&per_page=100&page=1'
+2025-08-31 14:04:50,541 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:50,868 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+sort:stars&sort=stars&order=desc&per_page=100&page=1'
+2025-08-31 14:04:51,542 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:52,504 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:04:52,543 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:53,036 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+sort:stars&sort=stars&order=desc&per_page=100&page=1'
+2025-08-31 14:04:53,037 INFO Business event: tool_completed
+2025-08-31 14:04:53,037 INFO Tool search_github_repos executed successfully
+2025-08-31 14:04:53,037 INFO Agent step completed - executed 1 tools, ended: False, steps: 1
+2025-08-31 14:04:53,038 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140453.json
+2025-08-31 14:04:53,544 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:54,434 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:04:54,437 INFO Executing tool: search_github_repos
+2025-08-31 14:04:54,437 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:04:54,545 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:54,612 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:04:55,546 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:55,787 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:04:56,548 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:57,549 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:57,987 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:04:57,987 INFO Business event: tool_completed
+2025-08-31 14:04:57,987 INFO Tool search_github_repos executed successfully
+2025-08-31 14:04:57,987 INFO Agent step completed - executed 1 tools, ended: False, steps: 2
+2025-08-31 14:04:57,988 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140457.json
+2025-08-31 14:04:58,551 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:59,552 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:04:59,816 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:04:59,818 INFO Executing tool: search_github_repos
+2025-08-31 14:04:59,818 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:04:59,990 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:00,554 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:01,165 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:01,555 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:02,556 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:03,353 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:03,353 INFO Business event: tool_completed
+2025-08-31 14:05:03,354 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:03,354 INFO Agent step completed - executed 1 tools, ended: False, steps: 3
+2025-08-31 14:05:03,355 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140503.json
+2025-08-31 14:05:03,557 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:04,563 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:05,564 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:06,426 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:06,443 INFO Executing tool: search_github_repos
+2025-08-31 14:05:06,444 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:06,565 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:06,611 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:07,567 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:07,771 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:08,568 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:09,569 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:09,934 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:09,934 INFO Business event: tool_completed
+2025-08-31 14:05:09,934 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:09,934 INFO Agent step completed - executed 1 tools, ended: False, steps: 4
+2025-08-31 14:05:09,936 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140509.json
+2025-08-31 14:05:10,569 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:11,571 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:11,699 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:11,705 INFO Executing tool: search_github_repos
+2025-08-31 14:05:11,705 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:11,911 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:12,572 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:13,088 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:13,573 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:14,574 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:15,249 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:15,250 INFO Business event: tool_completed
+2025-08-31 14:05:15,250 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:15,250 INFO Agent step completed - executed 1 tools, ended: False, steps: 5
+2025-08-31 14:05:15,252 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140515.json
+2025-08-31 14:05:15,576 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:16,577 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:16,982 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:16,990 INFO Executing tool: search_github_repos
+2025-08-31 14:05:16,990 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:17,142 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:17,578 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:18,311 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:18,583 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:19,585 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:20,471 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:20,471 INFO Business event: tool_completed
+2025-08-31 14:05:20,471 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:20,471 INFO Agent step completed - executed 1 tools, ended: False, steps: 6
+2025-08-31 14:05:20,473 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140520.json
+2025-08-31 14:05:20,586 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:21,587 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:21,922 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:21,927 INFO Executing tool: search_github_repos
+2025-08-31 14:05:21,927 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:22,099 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:22,505 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:05:22,588 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:23,272 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:24,514 INFO Metrics snapshot collected
+2025-08-31 14:05:24,514 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:25,460 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:25,460 INFO Business event: tool_completed
+2025-08-31 14:05:25,460 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:25,460 INFO Agent step completed - executed 1 tools, ended: False, steps: 7
+2025-08-31 14:05:25,461 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140525.json
+2025-08-31 14:05:25,515 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:26,516 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:27,332 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:27,339 INFO Executing tool: search_github_repos
+2025-08-31 14:05:27,339 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:27,516 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:27,530 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:28,517 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:28,693 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:29,519 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:30,519 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:30,876 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:30,876 INFO Business event: tool_completed
+2025-08-31 14:05:30,876 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:30,876 INFO Agent step completed - executed 1 tools, ended: False, steps: 8
+2025-08-31 14:05:30,878 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140530.json
+2025-08-31 14:05:31,521 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:32,432 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:32,438 INFO Executing tool: search_github_repos
+2025-08-31 14:05:32,438 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:32,522 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:32,599 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:33,523 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:33,768 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:34,524 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:35,526 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:35,929 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:35,929 INFO Business event: tool_completed
+2025-08-31 14:05:35,929 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:35,929 INFO Agent step completed - executed 1 tools, ended: False, steps: 9
+2025-08-31 14:05:35,931 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140535.json
+2025-08-31 14:05:36,527 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:37,160 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:37,164 INFO Executing tool: search_github_repos
+2025-08-31 14:05:37,164 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:37,326 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:37,528 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:38,489 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:38,529 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:39,530 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:40,531 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:40,700 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:40,700 INFO Business event: tool_completed
+2025-08-31 14:05:40,700 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:40,700 INFO Agent step completed - executed 1 tools, ended: False, steps: 10
+2025-08-31 14:05:40,702 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140540.json
+2025-08-31 14:05:41,533 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:42,145 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:42,148 INFO Executing tool: search_github_repos
+2025-08-31 14:05:42,148 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:42,319 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:42,534 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:43,485 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:43,535 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:44,537 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:45,537 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:45,647 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:45,647 INFO Business event: tool_completed
+2025-08-31 14:05:45,647 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:45,647 INFO Agent step completed - executed 1 tools, ended: False, steps: 11
+2025-08-31 14:05:45,648 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140545.json
+2025-08-31 14:05:46,538 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:47,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:48,540 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:49,542 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:49,632 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:49,634 INFO Executing tool: search_github_repos
+2025-08-31 14:05:49,634 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:49,870 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:50,543 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:51,043 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:51,545 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:52,506 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:05:52,546 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:53,213 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:53,213 INFO Business event: tool_completed
+2025-08-31 14:05:53,213 INFO Tool search_github_repos executed successfully
+2025-08-31 14:05:53,213 INFO Agent step completed - executed 1 tools, ended: False, steps: 12
+2025-08-31 14:05:53,215 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140553.json
+2025-08-31 14:05:53,547 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:54,548 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:55,550 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:56,551 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:56,805 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:05:56,811 INFO Executing tool: search_github_repos
+2025-08-31 14:05:56,812 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:05:56,984 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:57,552 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:58,160 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:05:58,553 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:05:59,554 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:00,349 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:00,349 INFO Business event: tool_completed
+2025-08-31 14:06:00,349 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:00,349 INFO Agent step completed - executed 1 tools, ended: False, steps: 13
+2025-08-31 14:06:00,350 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140600.json
+2025-08-31 14:06:00,556 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:01,557 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:01,905 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:01,908 INFO Executing tool: search_github_repos
+2025-08-31 14:06:01,908 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:02,078 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:02,558 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:03,248 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:03,559 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:04,560 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:05,444 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:05,445 INFO Business event: tool_completed
+2025-08-31 14:06:05,445 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:05,445 INFO Agent step completed - executed 1 tools, ended: False, steps: 14
+2025-08-31 14:06:05,449 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140605.json
+2025-08-31 14:06:05,561 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:06,561 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:06,762 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:06,764 INFO Executing tool: search_github_repos
+2025-08-31 14:06:06,764 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:06,955 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:07,563 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:08,107 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:08,564 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:09,564 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:10,274 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:10,275 INFO Business event: tool_completed
+2025-08-31 14:06:10,275 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:10,275 INFO Agent step completed - executed 1 tools, ended: False, steps: 15
+2025-08-31 14:06:10,276 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140610.json
+2025-08-31 14:06:10,566 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:11,566 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:11,567 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:11,569 INFO Executing tool: search_github_repos
+2025-08-31 14:06:11,569 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:11,740 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:12,566 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:12,902 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:13,568 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:14,569 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:15,197 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:15,197 INFO Business event: tool_completed
+2025-08-31 14:06:15,197 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:15,197 INFO Agent step completed - executed 1 tools, ended: False, steps: 16
+2025-08-31 14:06:15,199 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140615.json
+2025-08-31 14:06:15,570 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:16,323 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:16,326 INFO Executing tool: search_github_repos
+2025-08-31 14:06:16,326 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:16,501 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:16,571 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:17,575 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:17,688 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:18,577 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:19,578 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:19,846 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:19,847 INFO Business event: tool_completed
+2025-08-31 14:06:19,847 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:19,847 INFO Agent step completed - executed 1 tools, ended: False, steps: 17
+2025-08-31 14:06:19,848 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140619.json
+2025-08-31 14:06:20,579 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:21,150 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:21,157 INFO Executing tool: search_github_repos
+2025-08-31 14:06:21,157 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:21,326 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:21,579 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:22,506 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:06:22,512 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:22,580 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:23,582 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:25,520 INFO Metrics snapshot collected
+2025-08-31 14:06:25,520 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:25,707 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:25,707 INFO Business event: tool_completed
+2025-08-31 14:06:25,707 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:25,707 INFO Agent step completed - executed 1 tools, ended: False, steps: 18
+2025-08-31 14:06:25,708 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140625.json
+2025-08-31 14:06:26,522 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:27,057 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:27,058 INFO Executing tool: search_github_repos
+2025-08-31 14:06:27,058 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:27,210 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:27,523 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:28,384 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:28,524 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:29,525 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:30,527 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:30,550 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:30,551 INFO Business event: tool_completed
+2025-08-31 14:06:30,551 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:30,551 INFO Agent step completed - executed 1 tools, ended: False, steps: 19
+2025-08-31 14:06:30,552 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140630.json
+2025-08-31 14:06:31,528 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:31,710 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:31,713 INFO Executing tool: search_github_repos
+2025-08-31 14:06:31,713 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:31,883 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:32,530 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:33,051 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:33,531 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:34,532 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:35,225 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:35,225 INFO Business event: tool_completed
+2025-08-31 14:06:35,225 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:35,225 INFO Agent step completed - executed 1 tools, ended: False, steps: 20
+2025-08-31 14:06:35,227 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140635.json
+2025-08-31 14:06:35,534 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:36,535 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:36,648 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:36,651 INFO Executing tool: search_github_repos
+2025-08-31 14:06:36,651 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:36,823 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:37,536 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:37,989 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:38,538 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:39,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:40,159 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:40,159 INFO Business event: tool_completed
+2025-08-31 14:06:40,159 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:40,159 INFO Agent step completed - executed 1 tools, ended: False, steps: 21
+2025-08-31 14:06:40,161 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140640.json
+2025-08-31 14:06:40,540 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:41,388 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:41,390 INFO Executing tool: search_github_repos
+2025-08-31 14:06:41,390 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:41,542 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:41,844 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:42,543 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:43,047 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:43,544 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:44,545 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:45,225 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:45,225 INFO Business event: tool_completed
+2025-08-31 14:06:45,225 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:45,225 INFO Agent step completed - executed 1 tools, ended: False, steps: 22
+2025-08-31 14:06:45,227 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140645.json
+2025-08-31 14:06:45,546 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:46,547 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:46,595 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:46,600 INFO Executing tool: search_github_repos
+2025-08-31 14:06:46,600 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:46,763 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:47,548 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:47,972 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:48,548 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:49,549 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:50,133 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:50,134 INFO Business event: tool_completed
+2025-08-31 14:06:50,134 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:50,134 INFO Agent step completed - executed 1 tools, ended: False, steps: 23
+2025-08-31 14:06:50,135 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140650.json
+2025-08-31 14:06:50,550 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:51,551 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:51,650 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:51,655 INFO Executing tool: search_github_repos
+2025-08-31 14:06:51,656 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:51,823 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:52,508 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:06:52,552 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:52,995 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:53,553 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:54,554 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:55,190 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:55,190 INFO Business event: tool_completed
+2025-08-31 14:06:55,191 INFO Tool search_github_repos executed successfully
+2025-08-31 14:06:55,192 INFO Agent step completed - executed 1 tools, ended: False, steps: 24
+2025-08-31 14:06:55,196 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140655.json
+2025-08-31 14:06:55,555 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:56,552 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:06:56,555 INFO Executing tool: search_github_repos
+2025-08-31 14:06:56,555 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:06:56,556 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:56,729 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:57,557 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:57,892 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:06:58,558 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:06:59,558 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:00,072 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:00,072 INFO Business event: tool_completed
+2025-08-31 14:07:00,072 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:00,072 INFO Agent step completed - executed 1 tools, ended: False, steps: 25
+2025-08-31 14:07:00,074 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140700.json
+2025-08-31 14:07:00,559 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:01,560 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:01,568 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:01,569 INFO Executing tool: search_github_repos
+2025-08-31 14:07:01,569 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:01,734 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:02,562 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:02,917 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:03,563 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:04,564 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:05,081 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:05,081 INFO Business event: tool_completed
+2025-08-31 14:07:05,081 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:05,081 INFO Agent step completed - executed 1 tools, ended: False, steps: 26
+2025-08-31 14:07:05,083 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140705.json
+2025-08-31 14:07:05,566 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:06,146 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:06,148 INFO Executing tool: search_github_repos
+2025-08-31 14:07:06,148 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:06,344 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:06,566 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:07,509 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:07,567 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:08,569 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:09,569 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:09,685 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:09,685 INFO Business event: tool_completed
+2025-08-31 14:07:09,685 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:09,685 INFO Agent step completed - executed 1 tools, ended: False, steps: 27
+2025-08-31 14:07:09,686 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140709.json
+2025-08-31 14:07:10,570 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:10,836 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:10,839 INFO Executing tool: search_github_repos
+2025-08-31 14:07:10,839 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:11,035 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:11,571 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:12,202 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:12,572 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:13,572 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:14,383 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:14,383 INFO Business event: tool_completed
+2025-08-31 14:07:14,383 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:14,384 INFO Agent step completed - executed 1 tools, ended: False, steps: 28
+2025-08-31 14:07:14,386 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140714.json
+2025-08-31 14:07:14,574 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:15,508 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:15,510 INFO Executing tool: search_github_repos
+2025-08-31 14:07:15,510 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:15,575 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:15,661 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:16,576 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:16,828 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:17,578 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:18,579 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:18,981 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:18,981 INFO Business event: tool_completed
+2025-08-31 14:07:18,981 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:18,981 INFO Agent step completed - executed 1 tools, ended: False, steps: 29
+2025-08-31 14:07:18,985 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140718.json
+2025-08-31 14:07:19,579 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:20,214 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:20,224 INFO Executing tool: search_github_repos
+2025-08-31 14:07:20,224 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:20,390 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:20,580 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:21,571 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:21,582 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:22,508 INFO Worker pool stats: 0 processed, 0 failed, 3 active workers
+2025-08-31 14:07:22,583 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:23,584 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:23,734 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:23,734 INFO Business event: tool_completed
+2025-08-31 14:07:23,734 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:23,735 INFO Agent step completed - executed 1 tools, ended: False, steps: 30
+2025-08-31 14:07:23,737 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140723.json
+2025-08-31 14:07:24,585 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:24,894 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:24,896 INFO Executing tool: search_github_repos
+2025-08-31 14:07:24,897 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:25,078 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:26,527 INFO Metrics snapshot collected
+2025-08-31 14:07:26,527 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:26,709 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:27,529 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:28,529 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:28,877 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:28,877 INFO Business event: tool_completed
+2025-08-31 14:07:28,877 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:28,877 INFO Agent step completed - executed 1 tools, ended: False, steps: 31
+2025-08-31 14:07:28,878 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140728.json
+2025-08-31 14:07:29,531 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:29,933 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:29,939 INFO Executing tool: search_github_repos
+2025-08-31 14:07:29,940 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:30,140 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:30,532 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:31,319 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:31,533 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:32,534 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:33,496 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:33,496 INFO Business event: tool_completed
+2025-08-31 14:07:33,496 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:33,496 INFO Agent step completed - executed 1 tools, ended: False, steps: 32
+2025-08-31 14:07:33,498 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140733.json
+2025-08-31 14:07:33,536 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:34,537 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:34,674 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:34,680 INFO Executing tool: search_github_repos
+2025-08-31 14:07:34,680 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
+2025-08-31 14:07:34,854 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:35,538 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:36,030 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:36,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:37,539 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:38,214 ERROR GitHub repo search failed: 401, message='Unauthorized', url='https://api.github.com/search/repositories?q=python+is:public+archived:false+fork:false+pushed:%3E2023-09-01+sort:stars&sort=stars&order=desc&per_page=2&page=1'
+2025-08-31 14:07:38,214 INFO Business event: tool_completed
+2025-08-31 14:07:38,214 INFO Tool search_github_repos executed successfully
+2025-08-31 14:07:38,214 INFO Agent step completed - executed 1 tools, ended: False, steps: 33
+2025-08-31 14:07:38,216 INFO Checkpoint saved: checkpoints/cmo-20250831-140447-539070-f7c69c_periodic_20250831_140738.json
+2025-08-31 14:07:38,541 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:39,542 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:40,544 INFO Queue stats: {'total_jobs': 3, 'queued_jobs': 0, 'jobs_by_status': {'completed': 2, 'running': 1}, 'active_streams': 0}
+2025-08-31 14:07:40,647 INFO HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-08-31 14:07:40,648 INFO Executing tool: search_github_repos
+2025-08-31 14:07:40,648 INFO Job tool_started: cmo-20250831-140447-539070-f7c69c
