@@ -12,17 +12,18 @@ export async function POST(req: Request) {
     if (process.env.API_URL) {
       try {
         const smokeJobPayload = {
-          goal: SMOKE_TEST_FIXTURES.goal,
-          dryRun: true, // Always dry run for smoke tests
-          config_path: "cmo_agent/config/smoke.yaml",
+          goal: "Find 5 active Python maintainers from the last 30 days for smoke test validation",
+          dryRun: false, // Make it a REAL run so we can see live progress
+          config_path: null, // Use default config for real execution
           metadata: {
             threadId,
-            autopilot_level: 0,
-            budget_per_day: SMOKE_TEST_FIXTURES.budget_cap_usd,
-            created_by: "smoke_test",
-            test_type: "smoke_test",
-            fixtures: SMOKE_TEST_FIXTURES.fixtures,
-            inject_alerts: SMOKE_TEST_FIXTURES.inject.alerts,
+            autopilot_level: 0, // L0 for safety but real execution
+            autonomy_level: "L0",
+            budget_per_day: 10, // Small budget for real run
+            created_by: "smoke_test_real",
+            test_type: "smoke_test_real",
+            campaign_type: "smoke_test",
+            max_leads: 5, // Limit scope for quick test
             created_at: new Date().toISOString()
           }
         };

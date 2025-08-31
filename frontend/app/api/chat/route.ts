@@ -2,11 +2,26 @@ export const runtime = "nodejs";
 
 import { storeThreadJobMapping } from "@/lib/threadJobMapping";
 import { autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
+import { getThread, createThread, updateThread, generateThreadName } from "@/lib/threadStorage";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { threadId, text, options } = body;
+    
+    // Ensure thread exists in storage
+    let thread = getThread(threadId);
+    if (!thread) {
+      const threadName = generateThreadName(text);
+      thread = createThread(threadId, threadName);
+      console.log(`Created new thread: ${threadId} - ${threadName}`);
+    }
+    
+    // Update thread with latest message
+    updateThread(threadId, {
+      lastMessage: text.length > 50 ? text.substring(0, 50) + "..." : text,
+      timestamp: "just now"
+    });
     
     // Convert autonomy level to numeric autopilot for backend compatibility
     const autopilot = options?.autonomy ? autonomyToAutopilot(options.autonomy) : 0;
@@ -42,7 +57,14 @@ export async function POST(req: Request) {
           const jobResult = await resp.json();
           
           // Store the mapping so the events endpoint knows which job to stream
+          console.log(`Storing thread mapping: ${threadId} -> ${jobResult.id}`);
           storeThreadJobMapping(threadId, jobResult.id);
+          
+          // Update thread with job status
+          updateThread(threadId, {
+            lastMessage: `🚀 Job started: ${jobResult.id}`,
+            timestamp: "just now"
+          });
           
           return new Response(JSON.stringify({
             success: true,

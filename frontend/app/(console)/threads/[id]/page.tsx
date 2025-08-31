@@ -5,15 +5,9 @@ import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
 import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
-import { 
-  demoBriefCard, 
-  demoSimCard, 
-  demoOutboxCard, 
-  demoRunSummaryCard,
-  demoErrorCard,
-  demoPolicyCard,
-  demoSmokeTestCard
-} from "@/components/DemoCards";
+import { getThread, createThread, updateThread } from "@/lib/threadStorage";
+// Demo cards removed - using real data only
+
 import { useSmokeTestEvaluator } from "@/lib/useSmokeTestEvaluator";
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
@@ -21,10 +15,18 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // Load initial thread history
   useEffect(() => {
+    // Ensure thread exists in storage when navigating to it
+    let thread = getThread(id);
+    if (!thread) {
+      thread = createThread(id, `Thread ${id}`);
+      console.log(`Created thread on navigation: ${id}`);
+    }
+    
     const loadThreadHistory = async () => {
       try {
         setLoading(true);
@@ -84,8 +86,18 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     }, 100);
   }, [id]);
 
-  // Set up SSE connection
-  const { connectionStatus: sseStatus } = useSSE<SSEEvent>(`/api/threads/${id}/events`, {
+  // Set up SSE connection with job ID if available
+  const [sseUrl, setSseUrl] = useState(`/api/threads/${id}/events`);
+  
+  // Update SSE URL when job ID changes
+  useEffect(() => {
+    const newUrl = currentJobId 
+      ? `/api/threads/${id}/events?jobId=${currentJobId}`
+      : `/api/threads/${id}/events`;
+    setSseUrl(newUrl);
+  }, [currentJobId, id]);
+    
+  const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,
     onConnectionChange: setConnectionStatus,
   });
@@ -117,12 +129,25 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         const smokeResult = await smokeRes.json();
         
         if (smokeRes.ok && smokeResult.success) {
+          // Set the current job ID for SSE streaming
+          setCurrentJobId(smokeResult.jobId);
+          
+          // Update thread storage for smoke test
+          updateThread(id, { 
+            currentJobId: smokeResult.jobId,
+            campaignType: 'smoke_test',
+            metadata: {
+              autonomyLevel: 'L0',
+              budget: 10
+            }
+          });
+          
           setMessages((prev) => [...prev, {
             id: crypto.randomUUID(),
             threadId: id,
             role: "assistant", 
             createdAt: new Date().toISOString(),
-            text: `🧪 **Smoke Test Started**: ${smokeResult.jobId}\n\nRunning 1-minute end‑to‑end check...\n\n**Mode**: 🤝 Co‑pilot (Sandbox)\n**Daily Cap**: $${smokeResult.budget || 1}\n**Fixtures**: 3 synthetic Python maintainers`,
+            text: `🧪 **Real Smoke Test Started**: ${smokeResult.jobId}\n\nRunning live campaign validation with real GitHub data...\n\n**Mode**: 🤝 Co‑pilot (Real Run)\n**Daily Cap**: $10\n**Target**: 5 Python maintainers\n**Scope**: Last 30 days\n\n*This will make real GitHub API calls and show live progress in the Inspector →*`,
           }]);
         } else {
           setMessages((prev) => [...prev, {
@@ -145,43 +170,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       return;
     }
 
-    // Handle demo command locally
-    if (text.toLowerCase().includes("demo all cards")) {
-      const demoCards = [
-        { card: demoBriefCard, delay: 500 },
-        { card: demoSimCard, delay: 1000 },
-        { card: demoOutboxCard, delay: 1500 },
-        { card: demoRunSummaryCard, delay: 2000 },
-        { card: demoErrorCard, delay: 2500 },
-        { card: demoPolicyCard, delay: 3000 },
-        { card: demoSmokeTestCard, delay: 3500 },
-      ];
 
-      demoCards.forEach(({ card, delay }) => {
-        setTimeout(() => {
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(),
-            threadId: id,
-            role: "assistant",
-            createdAt: new Date().toISOString(),
-            card,
-          }]);
-        }, delay);
-      });
-
-      // Add completion message
-      setTimeout(() => {
-        setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
-          threadId: id,
-          role: "assistant",
-          createdAt: new Date().toISOString(),
-          text: "Demo complete! All card types are now displayed, including the new Smoke Test Results. Try the action buttons to see how they work.",
-        }]);
-      }, 4000);
-
-      return;
-    }
 
     try {
       const res = await fetch(`/api/chat`, {
@@ -193,6 +182,19 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       const result = await res.json();
 
       if (res.ok && result.success) {
+        // Set the current job ID for SSE streaming
+        setCurrentJobId(result.jobId);
+        
+        // Update thread storage with the new job
+        updateThread(id, { 
+          currentJobId: result.jobId,
+          campaignType: text.includes('smoke test') ? 'smoke_test' : 'real_campaign',
+          metadata: {
+            autonomyLevel: options?.autonomy || 'L0',
+            budget: options?.budget || 50
+          }
+        });
+        
         // Add success message showing job was created
         setMessages((prev) => [...prev, {
           id: crypto.randomUUID(),

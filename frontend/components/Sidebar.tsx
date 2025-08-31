@@ -1,26 +1,40 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { getAllThreads, getAllCampaigns, createThread, generateThreadName, type Thread, type Campaign } from "@/lib/threadStorage";
 
 export function Sidebar() {
   const [activeTab, setActiveTab] = useState<"campaigns" | "threads">("threads");
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const router = useRouter();
 
-  const mockThreads = [
-    { id: "default", name: "General Chat", lastMessage: "Welcome to the CMO Agent Console!", timestamp: "2 min ago" },
-    { id: "campaign-123", name: "Python Maintainers", lastMessage: "Preflight complete - 2.1k leads found", timestamp: "1 hour ago" },
-    { id: "campaign-124", name: "JS Framework Leads", lastMessage: "Running at L1 - $45/day", timestamp: "3 hours ago" },
-  ];
+  // Load threads and campaigns on mount
+  useEffect(() => {
+    setThreads(getAllThreads());
+    setCampaigns(getAllCampaigns());
+  }, []);
 
-  const mockCampaigns = [
-    { id: "py-maintainers", name: "Python Maintainers", status: "running", budget: "$50/day" },
-    { id: "js-frameworks", name: "JS Framework Leads", status: "paused", budget: "$30/day" },
-    { id: "go-developers", name: "Go Developers", status: "completed", budget: "$25/day" },
-  ];
+  // Refresh threads periodically to pick up new ones
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setThreads(getAllThreads());
+      setCampaigns(getAllCampaigns());
+    }, 2000); // Refresh every 2 seconds
+
+    return () => clearInterval(interval);
+  }, []);
 
   const handleNewThread = () => {
     // Generate a unique thread ID
     const newThreadId = `thread-${Date.now()}`;
+    
+    // Create the thread in storage
+    const newThread = createThread(newThreadId, "New Thread");
+    
+    // Update local state immediately
+    setThreads(getAllThreads());
+    
     // Navigate to the new thread
     router.push(`/threads/${newThreadId}`);
   };
@@ -28,6 +42,13 @@ export function Sidebar() {
   const handleNewCampaign = () => {
     // Generate a unique campaign ID  
     const newCampaignId = `campaign-${Date.now()}`;
+    
+    // Create the campaign thread in storage
+    const newThread = createThread(newCampaignId, "New Campaign");
+    
+    // Update local state immediately
+    setThreads(getAllThreads());
+    
     // Navigate to the new campaign thread
     router.push(`/threads/${newCampaignId}`);
   };
@@ -73,7 +94,7 @@ export function Sidebar() {
                 + New
               </button>
             </div>
-            {mockThreads.map((thread) => (
+            {threads.map((thread) => (
               <a
                 key={thread.id}
                 href={`/threads/${thread.id}`}
@@ -104,7 +125,7 @@ export function Sidebar() {
                 + New
               </button>
             </div>
-            {mockCampaigns.map((campaign) => (
+            {campaigns.map((campaign) => (
               <div
                 key={campaign.id}
                 className="p-3 rounded-lg border border-gray-200 hover:bg-gray-50 transition-colors cursor-pointer"
