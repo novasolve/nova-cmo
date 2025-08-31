@@ -4,7 +4,7 @@ export interface Thread {
   name: string;
   currentJobId?: string;
   lastActivity?: string;
-  campaignType?: 'smoke_test' | 'real_campaign' | 'demo';
+  campaignType?: 'smoke_test' | 'real_campaign';
   metadata?: {
     autonomyLevel?: string;
     budget?: number;
@@ -25,7 +25,7 @@ export function createThread(id: string, name: string, campaignType?: Thread['ca
       totalJobs: 0
     }
   };
-  
+
   threads.set(id, thread);
   return thread;
 }
@@ -37,13 +37,13 @@ export function getThread(id: string): Thread | null {
 export function updateThread(id: string, updates: Partial<Thread>): Thread | null {
   const thread = threads.get(id);
   if (!thread) return null;
-  
+
   const updatedThread = {
     ...thread,
     ...updates,
     lastActivity: new Date().toISOString()
   };
-  
+
   threads.set(id, updatedThread);
   return updatedThread;
 }
@@ -51,7 +51,7 @@ export function updateThread(id: string, updates: Partial<Thread>): Thread | nul
 export function setThreadJobId(threadId: string, jobId: string): void {
   const thread = getThread(threadId);
   if (thread) {
-    updateThread(threadId, { 
+    updateThread(threadId, {
       currentJobId: jobId,
       metadata: {
         ...thread.metadata,
@@ -62,7 +62,7 @@ export function setThreadJobId(threadId: string, jobId: string): void {
 }
 
 export function getAllThreads(): Thread[] {
-  return Array.from(threads.values()).sort((a, b) => 
+  return Array.from(threads.values()).sort((a, b) =>
     new Date(b.lastActivity || 0).getTime() - new Date(a.lastActivity || 0).getTime()
   );
 }
@@ -76,10 +76,25 @@ export function deleteThread(id: string): boolean {
   return threads.delete(id);
 }
 
+export function clearTestThreads(): void {
+  // Remove any threads that look like test threads
+  const threadsToDelete: string[] = [];
+
+  for (const [id, thread] of threads.entries()) {
+    if (id.includes('test') ||
+        thread.name.toLowerCase().includes('test')) {
+      threadsToDelete.push(id);
+    }
+  }
+
+  threadsToDelete.forEach(id => threads.delete(id));
+  console.log(`Cleared ${threadsToDelete.length} test threads:`, threadsToDelete);
+}
+
 // Helper function to generate a friendly thread name from the goal
 export function generateThreadName(goal: string): string {
   if (!goal || goal.trim().length === 0) return "New Thread";
-  
+
   // Extract key information from the goal
   if (goal.toLowerCase().includes("python")) {
     return "Python Maintainers";
@@ -89,18 +104,14 @@ export function generateThreadName(goal: string): string {
     return "React Developers";
   } else if (goal.toLowerCase().includes("smoke test")) {
     return "Smoke Test";
-  } else if (goal.toLowerCase().includes("demo")) {
-    return "Demo Session";
   }
-  
+
   // Fallback: use first few words
   const words = goal.split(' ').slice(0, 3);
   return words.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
 }
 
-// Add some initial threads for demo purposes
+// Initialize with a single default thread
 if (threads.size === 0) {
   createThread("default", "General Chat");
-  createThread("campaign-123", "Python Maintainers");
-  createThread("campaign-124", "JS Framework Leads");
 }

@@ -61,7 +61,6 @@ Visit [http://localhost:3000](http://localhost:3000) to see the console.
 
 - **Real Mode**: Send actual goals like "Find 50 Python maintainers active 90d" - creates real jobs
 - **Smoke Test**: Click **🧪 Smoke Test** for 1-minute validation with stub data (zero risk)
-- **Demo Mode**: Click **Demo** button to see all card types with sample data
 
 ### 🧪 **Smoke Test - Zero Risk Validation**
 

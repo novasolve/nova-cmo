@@ -59,8 +59,6 @@ export function ChatComposer({
                     const smokeTestGoal = "Find 3 Python maintainers active in the last 30 days for smoke test";
                     onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
                   }
-                } else if (action.id === "demo_mode") {
-                  setText("demo all cards");
                 } else if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {
                   setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
                 } else {
@@ -69,10 +67,8 @@ export function ChatComposer({
                 }
               }}
               className={`text-xs px-2 py-1 border rounded hover:bg-gray-50 transition-colors ${
-                action.id === "smoke_test" 
+                action.id === "smoke_test"
                   ? "bg-green-100 text-green-700 border-green-300 hover:bg-green-200"
-                  : action.id === "demo_mode"
-                  ? "bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200"
                   : "border-gray-300"
               }`}
               title={action.tooltip}

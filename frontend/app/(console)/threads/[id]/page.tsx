@@ -6,7 +6,7 @@ import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
 import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
 import { getThread, createThread, updateThread } from "@/lib/threadStorage";
-// Demo cards removed - using real data only
+
 
 import { useSmokeTestEvaluator } from "@/lib/useSmokeTestEvaluator";
 
@@ -132,16 +132,6 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           // Set the current job ID for SSE streaming
           setCurrentJobId(smokeResult.jobId);
           
-          // Update thread storage for smoke test
-          updateThread(id, { 
-            currentJobId: smokeResult.jobId,
-            campaignType: 'smoke_test',
-            metadata: {
-              autonomyLevel: 'L0',
-              budget: 10
-            }
-          });
-          
           setMessages((prev) => [...prev, {
             id: crypto.randomUUID(),
             threadId: id,
@@ -184,16 +174,6 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       if (res.ok && result.success) {
         // Set the current job ID for SSE streaming
         setCurrentJobId(result.jobId);
-        
-        // Update thread storage with the new job
-        updateThread(id, { 
-          currentJobId: result.jobId,
-          campaignType: text.includes('smoke test') ? 'smoke_test' : 'real_campaign',
-          metadata: {
-            autonomyLevel: options?.autonomy || 'L0',
-            budget: options?.budget || 50
-          }
-        });
         
         // Add success message showing job was created
         setMessages((prev) => [...prev, {
