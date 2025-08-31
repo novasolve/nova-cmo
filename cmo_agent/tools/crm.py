@@ -71,22 +71,33 @@ class SyncAttio(AttioTool):
         - Best-effort add to a list and create a note
         """
         try:
+            dry_run: bool = bool(kwargs.get("dry_run", False))
+            job_id: str = (kwargs.get("job_id") or os.getenv("JOB_ID") or "job")
             synced_people: List[Dict[str, Any]] = []
             errors: List[Dict[str, str]] = []
 
             for person in people:
                 try:
-                    record = await self._upsert_person(person)
+                    # Idempotency key for CRM upsert
+                    email = person.get("email") or ""
+                    idem_key = f"{job_id}:{email}" if email else f"{job_id}:noemail:{person.get('login','') }"
+
+                    if dry_run:
+                        record = {"id": f"dryrun-{email or 'unknown'}", "created": False}
+                    else:
+                        record = await self._upsert_person(person)
 
                     # Best-effort list add and note
                     if record["id"] and record["id"] != "unknown":
                         if list_id:
                             try:
-                                await self._add_to_list(record["id"], list_id)
+                                if not dry_run:
+                                    await self._add_to_list(record["id"], list_id)
                             except Exception as e:
                                 logger.warning(f"Attio list add failed: {e}")
                         try:
-                            await self._create_signal_note(record["id"], person)
+                            if not dry_run:
+                                await self._create_signal_note(record["id"], person)
                         except Exception as e:
                             logger.warning(f"Attio note create failed: {e}")
 
@@ -94,6 +105,7 @@ class SyncAttio(AttioTool):
                         "original_email": person.get("email"),
                         "attio_id": record["id"],
                         "status": "synced",
+                        "idempotency_key": idem_key,
                     })
                 except Exception as e:
                     logger.error(f"Failed to sync person {person.get('email')}: {e}")
@@ -226,6 +238,8 @@ class SyncLinear(LinearTool):
 
     async def execute(self, parent_title: str, events: List[Dict[str, Any]], **kwargs) -> ToolResult:
         try:
+            dry_run: bool = bool(kwargs.get("dry_run", False))
+            job_id: str = (kwargs.get("job_id") or os.getenv("JOB_ID") or "job")
             team_key = kwargs.get("team_key") or os.getenv("LINEAR_TEAM_KEY")
             team_id = kwargs.get("team_id") or os.getenv("LINEAR_TEAM_ID")
             if not team_id and team_key:
@@ -233,12 +247,20 @@ class SyncLinear(LinearTool):
             if not team_id:
                 raise Exception("Missing LINEAR_TEAM_ID/LINEAR_TEAM_KEY")
 
-            parent_issue = await self._create_parent_issue(parent_title, team_id)
+            if dry_run:
+                parent_issue = {"id": f"dryrun-parent-{job_id}", "title": parent_title, "url": ""}
+            else:
+                parent_issue = await self._create_parent_issue(parent_title, team_id)
 
             child_issues = []
             for event in events:
                 try:
-                    child = await self._create_child_issue(parent_issue["id"], team_id, event)
+                    if dry_run:
+                        # Stable idempotency key per event
+                        key = f"{job_id}:{event.get('type','event')}:{event.get('error_type') or event.get('event_type') or ''}"
+                        child = {"id": f"dryrun-{key}", "parent_id": parent_issue["id"], "title": parent_title}
+                    else:
+                        child = await self._create_child_issue(parent_issue["id"], team_id, event)
                     child_issues.append(child)
                 except Exception as e:
                     logger.error(f"Failed to create child issue: {e}")

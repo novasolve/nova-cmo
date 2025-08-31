@@ -182,6 +182,8 @@ class SendInstantly(InstantlyTool):
     async def execute(self, contacts: List[Dict[str, Any]], seq_id: str, per_inbox_cap: int = 50, **kwargs) -> ToolResult:
         """Send emails via Instantly"""
         try:
+            dry_run: bool = bool(kwargs.get("dry_run", False))
+            job_id: str = (kwargs.get("job_id") or os.getenv("JOB_ID") or "job")
             # Validate inputs
             if not contacts:
                 return ToolResult(success=False, error="No contacts provided")
@@ -208,11 +210,20 @@ class SendInstantly(InstantlyTool):
 
                 instantly_contacts.append(instantly_contact)
 
-            # Check if we have a campaign, if not create one
-            campaign_id = await self._get_or_create_campaign(seq_id)
+            # Idempotency key per contact: job_id + email + seq_id
+            for c in instantly_contacts:
+                email = c.get("email") or ""
+                c["idempotency_key"] = f"{job_id}:{seq_id}:{email}"
 
-            # Send contacts to Instantly
-            send_result = await self._send_contacts(campaign_id, instantly_contacts)
+            # Dry-run: do not call Instantly; simulate a response
+            if dry_run:
+                campaign_id = f"dryrun-{seq_id}"
+                send_result = {"status": "dry_run", "accepted": len(instantly_contacts)}
+            else:
+                # Check if we have a campaign, if not create one
+                campaign_id = await self._get_or_create_campaign(seq_id)
+                # Send contacts to Instantly
+                send_result = await self._send_contacts(campaign_id, instantly_contacts)
 
             result_data = {
                 "campaign_id": campaign_id,

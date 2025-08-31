@@ -620,6 +620,10 @@ class CMOAgent:
                             logger.info(f"Skipping tool {tool_name} due to insufficient arguments after hydration")
                             continue
 
+                        # Pass through job_id and dry_run for idempotency and gating
+                        hydrated_args = dict(hydrated_args)
+                        hydrated_args.setdefault("job_id", state.get("job_id"))
+                        hydrated_args.setdefault("dry_run", bool(self.config.get("features", {}).get("dry_run", False)))
                         result = await tool.execute(**hydrated_args)
 
                         # Store result

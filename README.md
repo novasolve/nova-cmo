@@ -242,6 +242,8 @@ def agent_step(state: dict):
 
 ## 9) Rate Limits, Retries, Idempotency
 
+- See the detailed guide: [Rate Limits, Retries, Idempotency](docs/09-rate-limits-retries-idempotency.md)
+
 - **GitHub**: backoff on `403` with `X-RateLimit-Reset`; support token pool round‑robin.
 - **Instantly**: enforce `per_inbox_daily` + pacing; de‑duplicate by `{email, seq_id}`.
 - **Attio**: upsert by email; write idempotency key = `job_id:email`.
@@ -252,29 +254,83 @@ def agent_step(state: dict):
 
 ## 10) Config & Secrets
 
-**Env**
+**Precedence (highest → lowest)**: CLI flags → YAML `--config` → Environment variables → Built-in defaults
 
-```
-OPENAI_API_KEY=...
-GITHUB_TOKEN=...
-INSTANTLY_API_KEY=...
-ATTIO_API_KEY=...
-LINEAR_API_KEY=...
-STATE_DB_URL=postgres://...
-BLOB_DIR=/var/lib/cmo/artifacts
+### .env (recommended)
+
+```bash
+cp cmo_agent/env.example cmo_agent/.env
+# Edit cmo_agent/.env with your keys
+
+# Load into current shell (safe for local dev)
+set -a; source cmo_agent/.env; set +a
 ```
 
-**Defaults (overridable per job)**
+Never commit `.env`. Prefer a secrets manager in CI (e.g., GitHub Actions secrets) or `op run --env-file cmo_agent/.env -- …` with 1Password.
+
+### Required environment variables
+
+- OPENAI_API_KEY: LLM planning/personalization
+- GITHUB_TOKEN: GitHub API access (read public; optionally `user:email`)
+- INSTANTLY_API_KEY: Email sending
+- ATTIO_API_KEY: Attio REST API
+- LINEAR_API_KEY: Linear issues/projects
+
+### Optional environment variables
+
+- STATE_DB_URL: `postgres://…` or `sqlite:///…` when using DB persistence
+- BLOB_DIR: Directory for large artifacts (CSV, JSONL)
+- LANGFUSE_SERVER_URL, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY: Enable traces if `features.enable_langfuse=true`
+
+### YAML configuration (overrides defaults)
+
+Copy and customize:
+
+```bash
+cp cmo_agent/config/default.yaml cmo_agent/config/my_campaign.yaml
+```
+
+Example overrides:
 
 ```yaml
+# cmo_agent/config/my_campaign.yaml
 max_steps: 40
-max_repos: 600
-max_people: 3000
-per_inbox_daily: 50
-activity_days: 90
-stars_range: "100..2000"
-languages: [python]
-include_topics: [ci, testing, pytest, devtools, llm]
+default_icp:
+  languages: ["python"]
+  topics: ["ci", "testing", "pytest", "devtools", "llm"]
+rate_limits:
+  github_per_hour: 5000
+features:
+  dry_run: false
+  enable_langfuse: false
+persistence:
+  type: json # json|postgres|sqlite|redis
+export_dir: "./exports"
+```
+
+Run with a profile:
+
+```bash
+python cmo_agent/scripts/run_execution.py \
+  --config cmo_agent/config/my_campaign.yaml \
+  --job "Find 2k Python maintainers" --start-workers
+```
+
+### Secrets hygiene (production)
+
+- Store secrets in a manager (GitHub Actions, 1Password, AWS Secrets Manager)
+- Use least-privilege scopes for tokens; rotate regularly
+- Do not echo keys in logs; mask env in CI
+- Ensure `.env`, `*.env*`, and `config/*-secrets*.yaml` are gitignored
+
+### Quick verification
+
+```bash
+# Validate that required env vars are present and tools are reachable
+python cmo_agent/scripts/check_tools.py
+
+# Optional smoke test against non-destructive endpoints
+python cmo_agent/scripts/smoke_test_tools.py
 ```
 
 ---

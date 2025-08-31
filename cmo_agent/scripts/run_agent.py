@@ -63,7 +63,7 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     return config
 
 
-async def run_campaign(goal: str, config_path: Optional[str] = None):
+async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bool = False):
     """Run a CMO Agent campaign"""
     try:
         logger.info(f"Starting CMO Agent campaign: {goal}")
@@ -77,6 +77,12 @@ async def run_campaign(goal: str, config_path: Optional[str] = None):
         logger.info("CMO Agent initialized successfully")
 
         # Run the job
+        if dry_run:
+            # Ensure dry_run flag is visible to the agent/tools via config
+            cfg_features = config.get('features') if isinstance(config.get('features'), dict) else {}
+            cfg_features = {**cfg_features, 'dry_run': True}
+            config['features'] = cfg_features
+            agent.config = config
         result = await agent.run_job(goal)
         logger.info(f"Campaign completed: {result['success']}")
 
@@ -143,7 +149,7 @@ def main():
     Path("./logs").mkdir(exist_ok=True)
 
     # Run the campaign
-    result = asyncio.run(run_campaign(args.goal, args.config))
+    result = asyncio.run(run_campaign(args.goal, args.config, dry_run=args.dry_run))
 
     # Exit with appropriate code
     sys.exit(0 if result.get('success', False) else 1)
