@@ -7,13 +7,23 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom
+.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom run run-config dry-run
 
 # Default target
 help: ## Show this help message
 	@echo "Lead Intelligence System - Available Commands:"
 	@echo "=============================================="
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+# Delegate CMO Agent commands from repo root
+run: ## Run CMO Agent campaign (from repo root, pass GOAL="...")
+	@$(MAKE) -C cmo_agent run GOAL="$(GOAL)"
+
+run-config: ## Run CMO Agent with custom config (CONFIG=path, GOAL="...")
+	@$(MAKE) -C cmo_agent run-config CONFIG="$(CONFIG)" GOAL="$(GOAL)"
+
+dry-run: ## Run CMO Agent in dry-run mode (no sending)
+	@$(MAKE) -C cmo_agent dry-run GOAL="$(GOAL)"
 
 # Setup
 install: ## Install dependencies
