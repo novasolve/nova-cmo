@@ -13,51 +13,51 @@ dev-setup: install
 
 # Run agent
 run:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent "$(GOAL)"
+	python scripts/run_agent.py "$(GOAL)"
 
 # Run with custom config
 run-config:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent --config $(CONFIG) "$(GOAL)"
+	python scripts/run_agent.py --config $(CONFIG) "$(GOAL)"
 
 # Dry run
 dry-run:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent --dry-run "$(GOAL)"
+	python scripts/run_agent.py --dry-run "$(GOAL)"
 
 # Test campaign (small scale)
 test-campaign: dev-setup
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent --dry-run "Find 10 Python repos with CI, extract 5 maintainers each"
+	python scripts/run_agent.py --dry-run "Find 10 Python repos with CI, extract 5 maintainers each"
 
 # Test execution engine persistence
 test-persistence:
-	PYTHONPATH=.. python -m cmo_agent.scripts.test_execution_with_persistence
+	python scripts/test_execution_with_persistence.py
 
 # Test persistent queue functionality
 test-queue:
-	PYTHONPATH=.. python -m cmo_agent.scripts.test_persistent_queue
+	python scripts/test_persistent_queue.py
 
 # Demo job processing (shows actual execution)
 demo-processing:
-	PYTHONPATH=.. python -m cmo_agent.scripts.demo_job_processing
+	python scripts/demo_job_processing.py
 
 # Submit a job to execution engine (just queue it)
 submit-job:
-	PYTHONPATH=.. python -m cmo_agent.scripts.submit_job_simple "$(GOAL)"
+	python scripts/submit_job_simple.py "$(GOAL)"
 
 # Submit and process a job immediately
 run-job:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_execution --job "$(GOAL)" --start-workers
+	python scripts/run_execution.py --job "$(GOAL)" --start-workers
 
 # Start worker pool only (no job submission)
 start-workers:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_execution --workers-only
+	python scripts/run_execution.py --workers-only
 
 # Check job status
 job-status:
-	PYTHONPATH=.. python -m cmo_agent.scripts.check_job_status $(JOB_ID)
+	python scripts/check_job_status.py $(JOB_ID)
 
 # List all jobs
 list-jobs:
-	PYTHONPATH=.. python -m cmo_agent.scripts.check_job_status
+	python scripts/check_job_status.py
 
 # Clean up generated files
 clean:
@@ -96,13 +96,3 @@ help:
 	@echo "  make list-jobs        - List all jobs"
 	@echo "  make clean            - Clean generated files"
 	@echo "  make new-config NAME=config_name - Create new campaign config"
-	@echo "  make check-tools      - Validate tool availability/config"
-	@echo "  make smoke-tools      - Run toolbelt smoke tests"
-
-# Validate toolbelt/tool availability
-check-tools:
-	PYTHONPATH=.. python -m cmo_agent.scripts.check_tools
-
-# Smoke test suite for tools
-smoke-tools:
-	PYTHONPATH=.. python -m cmo_agent.scripts.smoke_test_tools
