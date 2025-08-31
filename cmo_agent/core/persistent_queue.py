@@ -116,21 +116,33 @@ class PersistentJobQueue(JobQueue):
             return job.id
 
     async def dequeue_job(self) -> Optional[Job]:
-        """Get next job to process"""
+        """Get next job to process (respects simple scheduling if set)"""
         async with self._lock:
-            while self._queue:
-                queue_item = self._queue.pop(0)  # FIFO for simplicity
+            # Iterate to find the first ready job
+            for idx, queue_item in enumerate(list(self._queue)):
                 job = queue_item.job
 
-                # Check if job is still valid
+                # Skip if scheduled in the future
+                try:
+                    if getattr(queue_item, "scheduled_at", None):
+                        if datetime.now() < queue_item.scheduled_at:
+                            continue
+                except Exception:
+                    pass
+
+                # Check if job is still valid and queued
                 if job.id in self._jobs and job.status == JobStatus.QUEUED:
-                    # Mark as running
+                    # Remove from queue and mark as running
+                    try:
+                        self._queue.pop(idx)
+                    except Exception:
+                        # Fallback: remove by id filter
+                        self._queue = [it for it in self._queue if it.job.id != job.id]
                     job.update_status(JobStatus.RUNNING)
                     self._save_job_to_disk(job)
                     return job
-                # If job was cancelled or already processed, continue to next
 
-            return None  # No jobs available
+            return None  # No ready jobs available
 
     async def update_job_status(self, job_id: str, status: JobStatus) -> None:
         """Update job status"""
@@ -232,3 +244,55 @@ class PersistentJobQueue(JobQueue):
                 "jobs_by_status": jobs_by_status,
                 "active_streams": len([s for s in self._progress_streams.values() if not s.empty()]),
             }
+
+    async def retry_job(self, job_id: str) -> bool:
+        """Retry a failed job by re-queuing it with a basic retry counter."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.status != JobStatus.FAILED:
+                return False
+
+            # Locate existing queue item
+            queue_item = None
+            for item in self._queue:
+                if item.job.id == job_id:
+                    queue_item = item
+                    break
+
+            if not queue_item:
+                # Create a minimal QueueItem if missing
+                queue_item = QueueItem(job=job, priority=0)
+
+            # Increment retry bookkeeping
+            try:
+                queue_item.retry_count = getattr(queue_item, "retry_count", 0) + 1
+            except Exception:
+                pass
+
+            # Re-queue as QUEUED
+            job.update_status(JobStatus.QUEUED)
+            self._save_job_to_disk(job)
+            self._queue.append(queue_item)
+            return True
+
+    async def schedule_job(self, job_id: str, scheduled_at: datetime) -> None:
+        """Schedule a job for future execution (best-effort)."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return
+
+            # Find queue item or create one
+            queue_item = None
+            for item in self._queue:
+                if item.job.id == job_id:
+                    queue_item = item
+                    break
+
+            if not queue_item:
+                queue_item = QueueItem(job=job, priority=0)
+                self._queue.append(queue_item)
+
+            queue_item.scheduled_at = scheduled_at
+            # Persist current job state (metadata remains in memory)
+            self._save_job_to_disk(job)

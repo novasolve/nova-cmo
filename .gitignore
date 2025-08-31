@@ -134,3 +134,23 @@ lead_intelligence/data/dedup.sqlite3
 *.hdf5
 
 _nova-cmo_mirror.git/
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/.vercel/
+frontend/.pnpm-store/
+frontend/.cache/
+frontend/coverage/
+
+# Video system binaries and artifacts
+video_system/tools/ffmpeg
+video_system/tools/ffmpeg.exe
+video_system/tools/ffmpeg.tar.*
+video_system/outputs/
+video_system/assets/base_videos/
+video_system/assets/final_outputs/
+video_system/assets/intros/
+

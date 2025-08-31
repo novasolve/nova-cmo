@@ -1496,7 +1496,11 @@ Available tools: {', '.join(self.tools.keys())}
             return None
 
     async def _should_checkpoint(self, state: RunState) -> bool:
-        """Determine if we should create a checkpoint using hybrid strategy"""
+        """Determine if we should create a checkpoint using hybrid strategy.
+
+        Adds throttling and configurability to stage-based checkpoints to avoid
+        excessive checkpointing on rapid stage transitions in short runs.
+        """
         import time
 
         counters = state.get("counters", {})
@@ -1509,6 +1513,14 @@ Available tools: {', '.join(self.tools.keys())}
         time_interval = checkpoint_config.get("time_interval", 300)  # 5 minutes default
         step_interval = checkpoint_config.get("step_interval", 50)   # Every 50 steps
         volume_interval = checkpoint_config.get("volume_interval", 1000)  # Every 1000 leads
+
+        # New: stage-based controls
+        stage_enabled = checkpoint_config.get("enable_stage", True)
+        stage_min_interval = checkpoint_config.get("stage_min_interval", 120)  # 2 minutes
+        stages_only = checkpoint_config.get("stages")  # Optional: list[str]
+        if isinstance(stages_only, list) and not stages_only:
+            # Treat empty list as "no stage restriction"
+            stages_only = None
 
         # Time-based checkpointing
         # Use per-job last checkpoint time to avoid cross-job interference
@@ -1537,13 +1549,22 @@ Available tools: {', '.join(self.tools.keys())}
             logger.debug(f"Volume-based checkpoint triggered at {total_volume} items")
             return True
 
-        # Stage transition checkpointing
-        last_checkpointed_stage = self._last_checkpointed_stage_by_job.get(job_id)
-        if last_checkpointed_stage != current_stage and current_stage:
-            if job_id:
-                self._last_checkpointed_stage_by_job[job_id] = current_stage
-            logger.debug(f"Stage transition checkpoint triggered: {current_stage}")
-            return True
+        # Stage transition checkpointing (now configurable + throttled)
+        if stage_enabled and current_stage:
+            # Optional allowlist of stages to checkpoint on
+            if stages_only is None or current_stage in stages_only:
+                last_checkpointed_stage = self._last_checkpointed_stage_by_job.get(job_id)
+                if last_checkpointed_stage != current_stage:
+                    # Throttle: ensure a minimum time since last checkpoint
+                    if current_time - last_checkpoint_time >= stage_min_interval:
+                        if job_id:
+                            self._last_checkpointed_stage_by_job[job_id] = current_stage
+                            # Update last checkpoint time to enforce throttle going forward
+                            self._last_checkpoint_time_by_job[job_id] = current_time
+                        logger.debug(
+                            f"Stage transition checkpoint triggered: {current_stage} (min_interval={stage_min_interval}s)"
+                        )
+                        return True
 
         # Milestone-based checkpointing
         if self._is_significant_milestone(state):

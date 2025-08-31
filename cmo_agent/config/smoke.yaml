@@ -1,0 +1,14 @@
+max_steps: 40
+features:
+  dry_run: true
+logging:
+  level: INFO
+directories:
+  logs: ./logs
+  checkpoints: ./checkpoints
+  artifacts: ./artifacts
+  exports: ./exports
+job_config:
+  checkpoints:
+    enable_stage: false
+    time_interval: 900 # 15 minutes for smoke runs to avoid frequent writes

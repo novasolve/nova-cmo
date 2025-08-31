@@ -13,6 +13,10 @@ from typing import Optional
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)
 sys.path.insert(0, parent_dir)
+# Also add project root to path to support absolute imports when invoked from subdir
+project_root = str(Path(__file__).resolve().parents[2])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from core.job import JobManager, JobStatus, ProgressInfo
 from core.queue import InMemoryJobQueue, JobController
@@ -20,9 +24,19 @@ from core.persistent_queue import PersistentJobQueue
 from core.worker import WorkerPool
 from core.monitoring import record_job_submitted, MetricsLogger, get_global_collector
 try:
-    from agents.cmo_agent import CMOAgent
-except ImportError:
-    from ..agents.cmo_agent import CMOAgent
+    # Prefer absolute package import to ensure relative imports inside module resolve
+    from cmo_agent.agents.cmo_agent import CMOAgent
+except Exception:
+    try:
+        from agents.cmo_agent import CMOAgent
+    except Exception:
+        # Avoid relative import beyond top-level package - use absolute import instead
+        import sys
+        from pathlib import Path
+        project_root = str(Path(__file__).resolve().parents[2])
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        from cmo_agent.agents.cmo_agent import CMOAgent
 from core.state import DEFAULT_CONFIG
 from dotenv import load_dotenv
 

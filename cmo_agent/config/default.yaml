@@ -144,6 +144,10 @@ job_config:
     volume_interval: 1000 # Every 1000 leads
     enabled: true
     adaptive: true # Use adaptive checkpointing based on job progress
+    # New: control stage-based checkpointing frequency
+    enable_stage: true
+    stage_min_interval: 180 # Minimum seconds between stage-triggered checkpoints
+    # stages: ["enrichment", "validation", "completed"] # Optional allowlist
 
 # Monitoring and metrics
 monitoring:

@@ -13,7 +13,11 @@ from .monitoring import record_job_completed, record_job_failed, record_error
 try:
     from ..agents.cmo_agent import CMOAgent
 except ImportError:
-    from agents.cmo_agent import CMOAgent
+    try:
+        from agents.cmo_agent import CMOAgent
+    except ImportError:
+        # Use absolute import to avoid relative import issues
+        from cmo_agent.agents.cmo_agent import CMOAgent
 
 logger = logging.getLogger(__name__)
 
