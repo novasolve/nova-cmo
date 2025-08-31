@@ -21,9 +21,11 @@ def get_auth_header(token: str) -> str:
         return f'Bearer {token}'
 
 def test_github_token():
-    token = os.environ.get('GITHUB_TOKEN')
+    # Get token from environment
+    token = os.environ.get('GITHUB_TOKEN', '')
     if not token:
-        print("❌ GITHUB_TOKEN not set")
+        print("❌ No GITHUB_TOKEN environment variable set!")
+        print("Please run: export GITHUB_TOKEN=your_token_here")
         return
 
     print(f"🔑 Token: {token[:10]}...{token[-4:]}")

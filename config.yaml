@@ -154,7 +154,10 @@ icps:
 
 # Legacy compatibility - will be removed in v3
 github:
-  token: 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
+  # Token is now loaded from environment variable GITHUB_TOKEN
+  # Set with: export GITHUB_TOKEN=your_token_here
+  # Or add to .env file
+  token: ${GITHUB_TOKEN}
   endpoint: https://api.github.com
   respect_rate_limits: true
   concurrency: 2
@@ -375,8 +378,8 @@ target_segments:
 
 concurrency:
   enabled: true
-  max_workers: 8
-  requests_per_hour: 4800 # Stay under 5000/hour limit
+  max_workers: 1 # Set to 1 to avoid rate limiting issues
+  requests_per_hour: 1000 # Further reduced for safety
   cache_dir: ".cache"
 
 dedupe:

@@ -3,10 +3,16 @@
 Quick test to verify your hardcoded GitHub token works
 """
 
+import os
 import requests
 
 # ⚠️ REPLACE THIS WITH YOUR ACTUAL GITHUB TOKEN ⚠️
-GITHUB_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
+# Get token from environment
+GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+if not GITHUB_TOKEN:
+    print("❌ No GITHUB_TOKEN environment variable set!")
+    print("Please run: export GITHUB_TOKEN=your_token_here")
+    exit(1)
 
 def test_token():
     """Test if the GitHub token is valid"""

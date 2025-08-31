@@ -438,7 +438,7 @@ class SmartICPMatcher:
                 reasons.append(f"Primary language ({prospect.language}) matches ICP requirements")
 
         # Company size inference
-        if prospect.followers and icp.firmographics.get('size'):
+        if prospect.followers is not None and icp.firmographics.get('size'):
             follower_indicators = {
                 'startup': prospect.followers < 50,
                 'small': prospect.followers < 200,

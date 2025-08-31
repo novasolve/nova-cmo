@@ -335,11 +335,11 @@ BODY: [optimized body]
             # Estimate experience from various signals
             experience_score = 0
 
-            if prospect.contributions_last_year and prospect.contributions_last_year > 50:
+            if prospect.contributions_last_year is not None and prospect.contributions_last_year > 50:
                 experience_score += 2
-            if prospect.followers and prospect.followers > 100:
+            if prospect.followers is not None and prospect.followers > 100:
                 experience_score += 1
-            if prospect.public_repos and prospect.public_repos > 20:
+            if prospect.public_repos is not None and prospect.public_repos > 20:
                 experience_score += 1
 
             if experience_score >= 3:
