@@ -1,42 +1,39 @@
 "use client";
 import { useState } from "react";
+import { AUTONOMY, QUICK_ACTIONS, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
 
 export function ChatComposer({
   onSend,
+  onSmokeTest,
 }: {
   onSend: (text: string, options?: any) => void;
+  onSmokeTest?: () => void;
 }) {
   const [text, setText] = useState("");
-  const [autopilot, setAutopilot] = useState(0);
+  const [autonomy, setAutonomy] = useState<AutonomyLevel>("L0");
   const [budget, setBudget] = useState<number | undefined>(undefined);
 
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 flex-wrap">
-        <label className="text-xs text-gray-600">Autopilot:</label>
-        {[
-          { level: 0, label: "L0", tooltip: "Manual: Review and approve all actions" },
-          { level: 1, label: "L1", tooltip: "Stage-gated: Approve at key stages" },
-          { level: 2, label: "L2", tooltip: "Budgeted: Run within hard caps" },
-          { level: 3, label: "L3", tooltip: "Self-tuning: Adjust within policy" },
-          { level: 4, label: "L4", tooltip: "Fully autonomous with reports" },
-        ].map(({ level, label, tooltip }) => (
+        <label className="text-xs text-gray-600">Autonomy:</label>
+        {(Object.keys(AUTONOMY) as AutonomyLevel[]).map((level) => (
           <button
             key={level}
-            onClick={() => setAutopilot(level)}
-            title={tooltip}
-            aria-pressed={autopilot === level}
-            aria-label={`${label}: ${tooltip}`}
+            onClick={() => setAutonomy(level)}
+            title={AUTONOMY[level].tooltip}
+            aria-pressed={autonomy === level}
+            aria-label={`${AUTONOMY[level].chip}: ${AUTONOMY[level].tooltip}`}
             className={`text-xs px-2 py-1 rounded border transition-colors ${
-              autopilot === level
-                ? "bg-black text-white border-black"
+              autonomy === level
+                ? AUTONOMY_COLORS[level]
                 : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"
             }`}
           >
-            {label}
+{AUTONOMY_ICONS[level]} {AUTONOMY[level].chip}
           </button>
         ))}
-        <label htmlFor="budget-input" className="text-xs ml-3 text-gray-600">Budget ($/day):</label>
+        <label htmlFor="budget-input" className="text-xs ml-3 text-gray-600">Daily Cap ($):</label>
         <input
           id="budget-input"
           type="number"
@@ -51,25 +48,38 @@ export function ChatComposer({
           }
         />
         <div className="ml-auto flex gap-1">
-          {["Brief", "Preflight", "Outbox", "Errors"].map((t) => (
+          {Object.values(QUICK_ACTIONS).map((action) => (
             <button
-              key={t}
-              onClick={() =>
-                setText((prev) => (prev ? prev + " " : "") + t.toLowerCase())
-              }
-              className="text-xs px-2 py-1 border border-gray-300 rounded hover:bg-gray-50"
+              key={action.id}
+              onClick={() => {
+                if (action.id === "smoke_test") {
+                  if (onSmokeTest) {
+                    onSmokeTest();
+                  } else {
+                    const smokeTestGoal = "Find 3 Python maintainers active in the last 30 days for smoke test";
+                    onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
+                  }
+                } else if (action.id === "demo_mode") {
+                  setText("demo all cards");
+                } else if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {
+                  setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
+                } else {
+                  // Handle guide and other actions
+                  setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
+                }
+              }}
+              className={`text-xs px-2 py-1 border rounded hover:bg-gray-50 transition-colors ${
+                action.id === "smoke_test" 
+                  ? "bg-green-100 text-green-700 border-green-300 hover:bg-green-200"
+                  : action.id === "demo_mode"
+                  ? "bg-blue-100 text-blue-700 border-blue-300 hover:bg-blue-200"
+                  : "border-gray-300"
+              }`}
+              title={action.tooltip}
             >
-              {t}
+              {action.label}
             </button>
           ))}
-          <button
-            onClick={() =>
-              setText("demo all cards")
-            }
-            className="text-xs px-2 py-1 bg-blue-100 text-blue-700 border border-blue-300 rounded hover:bg-blue-200"
-          >
-            Demo
-          </button>
         </div>
       </div>
 
@@ -88,7 +98,7 @@ export function ChatComposer({
               if (e.key === "Enter" && !e.shiftKey && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 if (text.trim()) {
-                  onSend(text, { autopilot, budget });
+                  onSend(text, { autonomy, budget });
                   setText("");
                 }
               } else if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
@@ -100,17 +110,17 @@ export function ChatComposer({
           />
         </div>
         <button
-          className="px-4 py-2 rounded bg-black text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="px-4 py-2 rounded bg-black text-white hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
           onClick={() => {
             if (text.trim()) {
-              onSend(text, { autopilot, budget });
+              onSend(text, { autonomy, budget });
               setText("");
             }
           }}
           disabled={!text.trim()}
-          aria-label="Send message"
+          aria-label="Run job with specified goal and settings"
         >
-          Send
+          Run Job
         </button>
       </div>
       <div id="message-help" className="text-xs text-gray-500">

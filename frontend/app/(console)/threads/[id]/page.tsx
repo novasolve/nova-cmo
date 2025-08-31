@@ -4,14 +4,17 @@ import { ChatMessage, SSEEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
-import {
-  demoBriefCard,
-  demoSimCard,
-  demoOutboxCard,
+import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
+import { 
+  demoBriefCard, 
+  demoSimCard, 
+  demoOutboxCard, 
   demoRunSummaryCard,
   demoErrorCard,
-  demoPolicyCard
+  demoPolicyCard,
+  demoSmokeTestCard
 } from "@/components/DemoCards";
+import { useSmokeTestEvaluator } from "@/lib/useSmokeTestEvaluator";
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -89,7 +92,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
 
   const onSend = async (
     text: string,
-    options?: { autopilot?: number; budget?: number }
+    options?: { autonomy?: AutonomyLevel; budget?: number }
   ) => {
     // Add user message immediately
     const userMessage: ChatMessage = {
@@ -101,6 +104,47 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     };
     setMessages((prev) => [...prev, userMessage]);
 
+    // Handle smoke test command locally  
+    if (text.toLowerCase().includes("smoke test")) {
+      // Start smoke test
+      try {
+        const smokeRes = await fetch(`/api/smoke-test`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ threadId: id }),
+        });
+        
+        const smokeResult = await smokeRes.json();
+        
+        if (smokeRes.ok && smokeResult.success) {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "assistant", 
+            createdAt: new Date().toISOString(),
+            text: `🧪 **Smoke Test Started**: ${smokeResult.jobId}\n\nRunning 1-minute end‑to‑end check...\n\n**Mode**: 🤝 Co‑pilot (Sandbox)\n**Daily Cap**: $${smokeResult.budget || 1}\n**Fixtures**: 3 synthetic Python maintainers`,
+          }]);
+        } else {
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "system",
+            createdAt: new Date().toISOString(),
+            text: `⚠️ Smoke Test Failed to Start: ${smokeResult.error}`,
+          }]);
+        }
+      } catch (error) {
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          threadId: id,
+          role: "system",
+          createdAt: new Date().toISOString(),
+          text: `🔌 Smoke Test Error: Unable to reach backend for smoke test`,
+        }]);
+      }
+      return;
+    }
+
     // Handle demo command locally
     if (text.toLowerCase().includes("demo all cards")) {
       const demoCards = [
@@ -110,6 +154,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         { card: demoRunSummaryCard, delay: 2000 },
         { card: demoErrorCard, delay: 2500 },
         { card: demoPolicyCard, delay: 3000 },
+        { card: demoSmokeTestCard, delay: 3500 },
       ];
 
       demoCards.forEach(({ card, delay }) => {
@@ -131,9 +176,9 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           threadId: id,
           role: "assistant",
           createdAt: new Date().toISOString(),
-          text: "Demo complete! All card types are now displayed. Try the action buttons to see how they work.",
+          text: "Demo complete! All card types are now displayed, including the new Smoke Test Results. Try the action buttons to see how they work.",
         }]);
-      }, 3500);
+      }, 4000);
 
       return;
     }
@@ -145,29 +190,35 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         body: JSON.stringify({ threadId: id, text, options }),
       });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Chat API error:", res.status, errorText);
+      const result = await res.json();
 
-        // Add user-friendly error message
+      if (res.ok && result.success) {
+        // Add success message showing job was created
+        setMessages((prev) => [...prev, {
+          id: crypto.randomUUID(),
+          threadId: id,
+          role: "assistant",
+          createdAt: new Date().toISOString(),
+          text: `🚀 **Job Started**: ${result.jobId}\n\n${result.message}\n\n**Autonomy Level**: ${options?.autonomy || 'L0'} ${options?.autonomy === 'L0' ? '(Dry Run)' : '(Live)'}  \n**Daily Cap**: $${options?.budget || 50}`,
+        }]);
+      } else {
+        // Add error message
         setMessages((prev) => [...prev, {
           id: crypto.randomUUID(),
           threadId: id,
           role: "system",
           createdAt: new Date().toISOString(),
-          text: `⚠️ **Error**: ${res.status === 500 ? 'Server error - please try again' : errorText || 'Unable to process request'}`,
+          text: `⚠️ Error: ${result.error || 'Failed to create job'}`,
         }]);
       }
     } catch (error) {
       console.error("Network error:", error);
-
-      // Add network error message
       setMessages((prev) => [...prev, {
         id: crypto.randomUUID(),
         threadId: id,
         role: "system",
         createdAt: new Date().toISOString(),
-        text: `🔌 **Connection Error**: Unable to reach server. Please check your connection and try again.`,
+        text: `🔌 Connection Error: Unable to reach CMO Agent backend. Make sure it's running on port 8000.`,
       }]);
     }
   };
@@ -175,45 +226,74 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   return (
     <div className="flex flex-col h-full">
       {/* Top Bar */}
-      <div className="border-b border-gray-200 p-4 bg-gray-50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">Thread: {id}</h1>
-            <select className="text-sm border border-gray-300 rounded px-2 py-1">
-              <option>Campaign: Default</option>
-            </select>
-            <select className="text-sm border border-gray-300 rounded px-2 py-1">
-              <option>Run: Latest</option>
-            </select>
+      <div className="border-b border-gray-200 bg-white">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6">
+              <h1 className="text-xl font-semibold text-gray-900">Thread: {id}</h1>
+              
+              <div className="flex items-center gap-3 text-sm">
+                <select className="border border-gray-300 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option>Campaign: Default</option>
+                </select>
+                <select className="border border-gray-300 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option>Run: Latest</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => {
+                  const smokeTestGoal = "🧪 smoke test";
+                  onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
+                }}
+                className="text-sm px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors font-medium"
+                title="Run 1-minute vertical slice test with stub data. No sends. No spend."
+              >
+                Smoke Test
+              </button>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Connection Status Indicator */}
-            <div className="flex items-center gap-2">
-              <div
-                className={`w-2 h-2 rounded-full ${
-                  connectionStatus === 'connected'
-                    ? 'bg-green-500'
-                    : connectionStatus === 'connecting'
-                    ? 'bg-yellow-500 animate-pulse'
-                    : connectionStatus === 'error'
-                    ? 'bg-red-500'
-                    : 'bg-gray-400'
-                }`}
-              />
-              <span className="text-xs text-gray-600">
-                {connectionStatus === 'connected' && 'Live'}
-                {connectionStatus === 'connecting' && 'Connecting...'}
-                {connectionStatus === 'error' && 'Reconnecting...'}
-                {connectionStatus === 'disconnected' && 'Disconnected'}
+        </div>
+        
+        {/* Status Bar */}
+        <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-6 text-sm">
+              {/* Connection Status */}
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected'
+                      ? 'bg-green-500'
+                      : connectionStatus === 'connecting'
+                      ? 'bg-yellow-500 animate-pulse'
+                      : connectionStatus === 'error'
+                      ? 'bg-red-500'
+                      : 'bg-gray-400'
+                  }`}
+                />
+                <span className="text-gray-600 font-medium">
+                  {connectionStatus === 'connected' && 'Live'}
+                  {connectionStatus === 'connecting' && 'Connecting...'}
+                  {connectionStatus === 'error' && 'Reconnecting...'}
+                  {connectionStatus === 'disconnected' && 'Disconnected'}
+                </span>
+              </div>
+              
+              {/* Budget Status */}
+              <span className="text-gray-600">
+                <span className="font-medium">Daily Cap:</span> $50
               </span>
             </div>
-
-            <div className="h-4 w-px bg-gray-300" />
-
-            <span className="text-sm text-gray-600">Budget: $50/day</span>
-            <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
-              Autopilot L0
-            </span>
+            
+            <div className="flex items-center gap-3">
+              {/* Current Autonomy Level */}
+              <span className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-300 rounded-full font-medium">
+                🤝 Co‑pilot
+              </span>
+            </div>
           </div>
         </div>
       </div>

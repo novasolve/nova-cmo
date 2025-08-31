@@ -6,6 +6,9 @@ import { OutboxCardView } from "./cards/OutboxCardView";
 import { RunSummaryCardView } from "./cards/RunSummaryCardView";
 import { ErrorGroupCardView } from "./cards/ErrorGroupCardView";
 import { PolicyDiffCardView } from "./cards/PolicyDiffCardView";
+import { SmokeTestResultsCardView } from "./cards/SmokeTestResultsCardView";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 export function MessageBubble({ message }: { message: ChatMessage }) {
   const isUser = message.role === "user";
@@ -72,15 +75,36 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
   }
 
   return (
-    <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} message-bubble`}>
       <div
         className={`max-w-[720px] rounded-lg border p-3 ${
           isUser ? "bg-gray-50 border-gray-200" : "bg-white border-gray-200"
-        }`}
+        } ${message.card ? "card-container" : ""}`}
       >
         {!message.card && message.text && (
-          <div className="prose prose-sm max-w-none">
-            <div className="whitespace-pre-wrap">{message.text}</div>
+          <div className="text-sm leading-relaxed">
+            {isUser ? (
+              // User messages as plain text
+              <div className="whitespace-pre-wrap streaming-text">{message.text}</div>
+            ) : (
+              // Assistant/system messages with markdown rendering
+              <ReactMarkdown 
+                remarkPlugins={[remarkGfm]}
+                className="prose prose-sm prose-gray max-w-none streaming-text"
+                components={{
+                  // Custom components for better styling
+                  p: ({ children }) => <div className="mb-2 last:mb-0">{children}</div>,
+                  strong: ({ children }) => <span className="font-semibold text-gray-900">{children}</span>,
+                  em: ({ children }) => <span className="italic text-gray-700">{children}</span>,
+                  code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">{children}</code>,
+                  ul: ({ children }) => <ul className="list-disc list-inside space-y-1 my-2">{children}</ul>,
+                  ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 my-2">{children}</ol>,
+                  li: ({ children }) => <li className="text-sm">{children}</li>,
+                }}
+              >
+                {message.text}
+              </ReactMarkdown>
+            )}
           </div>
         )}
         {message.card?.type === "simulation" && (
@@ -98,10 +122,13 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         {message.card?.type === "error_group" && (
           <ErrorGroupCardView card={message.card} />
         )}
-        {message.card?.type === "policy_diff" && (
+                {message.card?.type === "policy_diff" && (
           <PolicyDiffCardView card={message.card} />
         )}
-
+        {message.card?.type === "smoke_test_results" && (
+          <SmokeTestResultsCardView card={message.card} />
+        )}
+        
         <div className="mt-2 text-xs text-gray-400">
           {new Date(message.createdAt).toLocaleTimeString()}
         </div>

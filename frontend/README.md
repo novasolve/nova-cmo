@@ -41,11 +41,58 @@ NEXT_PUBLIC_API_BASE=http://localhost:3000
 
 ### 3. Run Development Server
 
+**Option A: With Real CMO Agent Backend (Recommended)**
+
+```bash
+./run-with-backend.sh
+```
+
+This automatically starts both backend and frontend with proper integration.
+
+**Option B: Frontend Only (Demo Mode)**
+
 ```bash
 npm run dev
 ```
 
 Visit [http://localhost:3000](http://localhost:3000) to see the console.
+
+### 🎯 **Modes Available**
+
+- **Real Mode**: Send actual goals like "Find 50 Python maintainers active 90d" - creates real jobs
+- **Smoke Test**: Click **🧪 Smoke Test** for 1-minute validation with stub data (zero risk)
+- **Demo Mode**: Click **Demo** button to see all card types with sample data
+
+### 🧪 **Smoke Test - Zero Risk Validation**
+
+The smoke test runs a complete vertical slice in under 60 seconds:
+
+**What it tests:**
+
+- ✅ Queue & Stream (job creation, SSE connection, event flow)
+- ✅ Brief Rendered (Campaign Brief card with goal/limits/risks)
+- ✅ Simulation Rendered (Simulation Pack with forecasts)
+- ✅ Drafts Rendered (≥2 draft emails with scores ≥80)
+- ✅ Budget Guardrail (Used ≤ Cap, pauses correctly)
+- ✅ Alerts Captured (Injected error + Alerts card)
+- ✅ Policy Preview (Policy change proposal)
+- ✅ Summary Rendered (Run Summary with metrics)
+- ✅ Latency Check (All cards within 60s)
+- ✅ Determinism Check (Fixture hash validation)
+
+**Fixtures used:**
+
+- 3 synthetic Python maintainers (@example.com emails)
+- Stubbed GitHub responses
+- Mock rate limit injection
+- $1 budget cap (no real spend)
+
+**CLI Usage:**
+
+```bash
+npm run smoke          # UI smoke test
+npm run smoke:headless # Headless for CI/CD
+```
 
 ## Architecture
 

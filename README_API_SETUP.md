@@ -10,16 +10,19 @@ Your setup correctly uses two separate env files:
 ## Running the Services
 
 ### Terminal 1 (Backend API)
+
 ```bash
 cd api && uvicorn api.main:app --reload --port 8000
 ```
 
 **Alternative (direct method):**
+
 ```bash
 python cmo_agent/scripts/run_web.py
 ```
 
 ### Terminal 2 (Frontend)
+
 ```bash
 cd frontend && npm install && npm run dev
 ```
@@ -33,7 +36,7 @@ cd frontend && npm install && npm run dev
 ## Environment Loading Details
 
 - Backend uses `load_dotenv(find_dotenv(usecwd=True))` to walk up and find `cmo_agent/.env`
-- Frontend automatically reads `frontend/.env.local` 
+- Frontend automatically reads `frontend/.env.local`
 - CORS enabled for localhost:3000 in FastAPI
 - No secrets exposed to browser (only server-side env vars)
 

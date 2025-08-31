@@ -5,7 +5,8 @@ import {
   OutboxCard, 
   RunSummaryCard,
   ErrorGroupCard,
-  PolicyDiffCard 
+  PolicyDiffCard,
+  SmokeTestResultsCard 
 } from "@/types";
 
 // Demo data for showcasing the console
@@ -45,7 +46,7 @@ limits:
   actions: [
     { id: "simulate", label: "Simulate", style: "primary" },
     { id: "edit-yaml", label: "Edit YAML", style: "secondary" },
-    { id: "run-l1", label: "Run L1", style: "primary" }
+    { id: "run-assisted", label: "Start in Assisted Mode", style: "primary" }
   ]
 };
 
@@ -66,7 +67,7 @@ export const demoSimCard: SimulationCard = {
     "Consider A/B testing subject lines for better open rates"
   ],
   actions: [
-    { id: "run-l1", label: "Run L1", style: "primary" },
+    { id: "run-assisted", label: "Start in Assisted Mode", style: "primary" },
     { id: "open-outbox", label: "Preview Outbox", style: "secondary" },
     { id: "explain-forecast", label: "Explain Forecast", style: "secondary" }
   ]
@@ -126,7 +127,7 @@ export const demoRunSummaryCard: RunSummaryCard = {
     costUSD: 156.78
   },
   actions: [
-    { id: "export-results", label: "Export Results", style: "primary" },
+    { id: "download-csv", label: "Download CSV", style: "primary" },
     { id: "view-replies", label: "View Replies", style: "secondary" },
     { id: "create-followup", label: "Create Follow-up", style: "secondary" }
   ]
@@ -177,5 +178,34 @@ export const demoPolicyCard: PolicyDiffCard = {
     { id: "apply-changes", label: "Apply Changes", style: "primary" },
     { id: "preview-impact", label: "Preview Impact", style: "secondary" },
     { id: "revert-changes", label: "Revert", style: "danger" }
+  ]
+};
+
+export const demoSmokeTestCard: SmokeTestResultsCard = {
+  type: "smoke_test_results",
+  status: "passed",
+  duration: 41000, // 41 seconds
+  checks: [
+    { id: "queue_stream", name: "Queue & Stream", required: true, passed: true, details: "Job created, SSE connected, events flowing" },
+    { id: "brief_rendered", name: "Brief Rendered", required: true, passed: true, details: "Campaign Brief card with goal/limits/risks" },
+    { id: "simulation_rendered", name: "Simulation Rendered", required: true, passed: true, details: "Simulation Pack with forecasts" },
+    { id: "drafts_rendered", name: "Drafts Rendered", required: true, passed: true, details: "3 drafts, all with score ≥80" },
+    { id: "budget_guardrail", name: "Budget Guardrail", required: true, passed: true, details: "Used $0.23 of $1.00 cap" },
+    { id: "alerts_captured", name: "Alerts Captured", required: true, passed: true, details: "1 error group captured (rate limit)" },
+    { id: "policy_preview", name: "Policy Preview", required: true, passed: true, details: "Policy change proposal rendered" },
+    { id: "summary_rendered", name: "Summary Rendered", required: true, passed: true, details: "Run Summary with valid metrics" },
+    { id: "latency_check", name: "Latency Check", required: false, passed: true, details: "Completed in 41.0s" },
+    { id: "determinism_check", name: "Determinism Check", required: false, passed: true, details: "Fixture hash matches expected" }
+  ],
+  metrics: {
+    eventsStreamed: 47,
+    cardsRendered: 7,
+    draftsCount: 3,
+    budgetUsed: 0.23
+  },
+  actions: [
+    { id: "view-logs", label: "View Logs", style: "secondary" },
+    { id: "retry-smoke", label: "Retry", style: "primary" },
+    { id: "download-csv", label: "Download CSV", style: "secondary" }
   ]
 };

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, Any
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,7 +18,8 @@ project_root = str(Path(__file__).resolve().parents[2])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-load_dotenv()
+# Load /Users/seb/leads/cmo_agent/.env or nearest .env upward from CWD
+load_dotenv(find_dotenv(usecwd=True))
 
 from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
 from cmo_agent.scripts.run_execution import ExecutionEngine
@@ -212,6 +213,14 @@ async def api_create_job(payload: Dict[str, Any]):
     }
 
 
+@app.get("/api/jobs")
+async def api_list_jobs():
+    """List all jobs"""
+    eng = _require_engine()
+    jobs = await eng.list_jobs()
+    return jobs
+
+
 @app.get("/api/jobs/{job_id}")
 async def api_get_job(job_id: str):
     eng = _require_engine()
@@ -223,6 +232,7 @@ async def api_get_job(job_id: str):
         "status": status["status"],
         "goal": status["goal"],
         "created_at": status["created_at"],
+        "metadata": status.get("metadata", {}),
     }
 
 

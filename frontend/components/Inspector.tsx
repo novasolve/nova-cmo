@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS } from "@/lib/autonomy";
 
 export function Inspector() {
   const [activeTab, setActiveTab] = useState<"runstate" | "graph" | "metrics" | "events">("runstate");
@@ -7,7 +8,7 @@ export function Inspector() {
   const mockRunState = {
     currentNode: "enrich_github_user",
     progress: "Processing lead 147/2100",
-    autopilotLevel: 1,
+    autonomyLevel: "L1" as const,
     budget: { used: 23.45, limit: 50, currency: "USD" },
     status: "running"
   };
@@ -30,7 +31,7 @@ export function Inspector() {
   return (
     <div className="h-full flex flex-col">
       <div className="mb-4">
-        <h2 className="text-lg font-semibold text-gray-900 mb-3">Inspector</h2>
+        <h2 className="text-lg font-semibold text-gray-900 mb-3">Run Monitor</h2>
         
         <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-lg p-1 text-xs">
           <button
@@ -91,9 +92,9 @@ export function Inspector() {
                   <span className="text-gray-900">{mockRunState.progress}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">Autopilot:</span>
-                  <span className="text-xs px-2 py-1 bg-blue-100 text-blue-800 rounded">
-                    L{mockRunState.autopilotLevel}
+                  <span className="text-gray-600">Autonomy:</span>
+                  <span className={`text-xs px-2 py-1 rounded ${AUTONOMY_COLORS[mockRunState.autonomyLevel]}`}>
+                    {AUTONOMY_ICONS[mockRunState.autonomyLevel]} {AUTONOMY[mockRunState.autonomyLevel].chip}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -106,24 +107,16 @@ export function Inspector() {
             </div>
 
             <div className="bg-white rounded-lg border p-3">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Budget</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Daily Cap</h4>
               <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Used:</span>
-                  <span className="text-gray-900">${mockRunState.budget.used}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Limit:</span>
-                  <span className="text-gray-900">${mockRunState.budget.limit}</span>
+                <div className="text-sm text-gray-900 font-medium">
+                  Used ${mockRunState.budget.used} of ${mockRunState.budget.limit} ({((mockRunState.budget.used / mockRunState.budget.limit) * 100).toFixed(0)}%)
                 </div>
                 <div className="w-full bg-gray-200 rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full"
                     style={{ width: `${(mockRunState.budget.used / mockRunState.budget.limit) * 100}%` }}
                   ></div>
-                </div>
-                <div className="text-xs text-gray-500 text-center">
-                  {((mockRunState.budget.used / mockRunState.budget.limit) * 100).toFixed(1)}% used
                 </div>
               </div>
             </div>

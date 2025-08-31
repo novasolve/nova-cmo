@@ -16,7 +16,8 @@ export type UICard =
   | OutboxCard
   | RunSummaryCard
   | ErrorGroupCard
-  | PolicyDiffCard;
+  | PolicyDiffCard
+  | SmokeTestResultsCard;
 
 export interface CampaignBriefCard {
   type: "campaign_brief";
@@ -92,6 +93,26 @@ export interface PolicyDiffCard {
     newValue: string;
     impact: string;
   }>;
+  actions: ActionButton[];
+}
+
+export interface SmokeTestResultsCard {
+  type: "smoke_test_results";
+  status: "passed" | "failed" | "running";
+  duration?: number;
+  checks: Array<{
+    id: string;
+    name: string;
+    required: boolean;
+    passed: boolean;
+    details?: string;
+  }>;
+  metrics: {
+    eventsStreamed: number;
+    cardsRendered: number;
+    draftsCount: number;
+    budgetUsed: number;
+  };
   actions: ActionButton[];
 }
 

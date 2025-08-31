@@ -1,8 +1,10 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 export function Sidebar() {
   const [activeTab, setActiveTab] = useState<"campaigns" | "threads">("threads");
+  const router = useRouter();
 
   const mockThreads = [
     { id: "default", name: "General Chat", lastMessage: "Welcome to the CMO Agent Console!", timestamp: "2 min ago" },
@@ -15,6 +17,20 @@ export function Sidebar() {
     { id: "js-frameworks", name: "JS Framework Leads", status: "paused", budget: "$30/day" },
     { id: "go-developers", name: "Go Developers", status: "completed", budget: "$25/day" },
   ];
+
+  const handleNewThread = () => {
+    // Generate a unique thread ID
+    const newThreadId = `thread-${Date.now()}`;
+    // Navigate to the new thread
+    router.push(`/threads/${newThreadId}`);
+  };
+
+  const handleNewCampaign = () => {
+    // Generate a unique campaign ID  
+    const newCampaignId = `campaign-${Date.now()}`;
+    // Navigate to the new campaign thread
+    router.push(`/threads/${newCampaignId}`);
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -50,7 +66,10 @@ export function Sidebar() {
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-700">Chat Threads</h3>
-              <button className="text-xs text-blue-600 hover:text-blue-800">
+              <button 
+                onClick={handleNewThread}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
                 + New
               </button>
             </div>
@@ -78,7 +97,10 @@ export function Sidebar() {
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-700">Campaigns</h3>
-              <button className="text-xs text-blue-600 hover:text-blue-800">
+              <button 
+                onClick={handleNewCampaign}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
                 + New
               </button>
             </div>
