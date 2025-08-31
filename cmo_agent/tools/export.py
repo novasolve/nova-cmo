@@ -63,6 +63,7 @@ class ExportCSV(BaseTool):
     async def execute(self, rows: List[Dict[str, Any]], path: str, **kwargs) -> ToolResult:
         """Export data to CSV"""
         try:
+            dry_run: bool = bool(kwargs.get("dry_run", False))
             if not rows:
                 return ToolResult(success=False, error="No data to export")
 
@@ -79,11 +80,23 @@ class ExportCSV(BaseTool):
                 headers.update(row.keys())
             headers = sorted(list(headers))
 
-            # Write CSV file
-            with open(full_path, 'w', newline='', encoding='utf-8') as csvfile:
-                writer = csv.DictWriter(csvfile, fieldnames=headers)
-                writer.writeheader()
-                writer.writerows(rows)
+            if dry_run:
+                # Simulate export in dry-run
+                result_data = {
+                    "path": str(full_path),
+                    "count": len(rows),
+                    "headers": headers,
+                    "file_size_bytes": 0,
+                    "file_size_mb": 0.0,
+                    "status": "dry_run",
+                }
+                return ToolResult(success=True, data=result_data)
+            else:
+                # Write CSV file
+                with open(full_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    writer = csv.DictWriter(csvfile, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(rows)
 
             # Get file stats
             file_stats = full_path.stat()
