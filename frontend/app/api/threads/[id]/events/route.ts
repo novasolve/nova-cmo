@@ -26,81 +26,98 @@ export async function GET(
             }
           });
           
+          console.log(`Jobs API response: ${jobsResp.status} ${jobsResp.statusText}`);
+          
           if (jobsResp.ok) {
             const jobs = await jobsResp.json();
-            // Find the most recent job that might match this thread
-            const recentJob = jobs.find((job: any) => 
-              job.goal && (
-                job.goal.includes(threadId.slice(-8)) || // partial thread ID match
-                job.created_at > new Date(Date.now() - 5 * 60 * 1000).toISOString() // within last 5 minutes
-              )
-            ) || jobs[0]; // fallback to latest job
+            console.log(`Found ${jobs.length} jobs`);
             
-            if (recentJob) {
-              currentJobId = recentJob.job_id;
-              console.log(`Auto-discovered job ID: ${currentJobId} for thread ${threadId}`);
+            // Find the most recent job for this thread
+            const threadJob = jobs.find((job: any) => 
+              job.metadata?.threadId === threadId || 
+              job.goal?.includes(threadId) ||
+              job.id === threadId
+            );
+            if (threadJob) {
+              currentJobId = threadJob.id;
+              console.log(`Mapped thread ${threadId} to job ${currentJobId}`);
+              // Store the mapping for future requests
+              const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
+              storeThreadJobMapping(threadId, currentJobId);
             }
+          } else {
+            console.warn(`Jobs API failed: ${jobsResp.status} ${jobsResp.statusText}`);
+            const errorText = await jobsResp.text();
+            console.warn(`Error response: ${errorText}`);
           }
         } catch (error) {
-          console.warn(`Failed to auto-discover job ID: ${error}`);
+          console.warn("Could not fetch jobs list:", error);
         }
       }
       
       if (currentJobId) {
-        // Stream from the real job events endpoint
-        const upstream = await fetch(
-          `${process.env.API_URL}/api/jobs/${currentJobId}/events`,
-          {
-            headers: { Accept: "text/event-stream" },
-            signal: request.signal,
-          }
-        );
-
-        if (upstream.ok && upstream.body) {
-          // Transform the backend events to frontend format
-          const transformStream = new TransformStream({
-            transform(chunk, controller) {
-              const text = new TextDecoder().decode(chunk);
-              const lines = text.split('\n');
-              
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                  try {
-                    const eventData = JSON.parse(line.slice(6));
-                    
-                    // Transform to frontend event format
-                    const frontendEvent = {
-                      id: Date.now().toString(),
-                      timestamp: new Date().toISOString(),
-                      type: 'job_event',
-                      node: extractNodeFromEvent(eventData),
-                      status: extractStatusFromEvent(eventData),
-                      message: eventData.message || eventData.event || 'Processing...',
-                      data: eventData
-                    };
-                    
-                    const transformedLine = `data: ${JSON.stringify(frontendEvent)}\n\n`;
-                    controller.enqueue(new TextEncoder().encode(transformedLine));
-                  } catch (error) {
-                    // Pass through malformed events as-is
-                    controller.enqueue(chunk);
+        try {
+          console.log(`Attempting to stream from job ${currentJobId}`);
+          // Stream from the real job events endpoint
+          const upstream = await fetch(
+            `${process.env.API_URL}/api/jobs/${currentJobId}/events`,
+            {
+              headers: { Accept: "text/event-stream" },
+              signal: request.signal,
+            }
+          );
+          
+          console.log(`Job events response: ${upstream.status} ${upstream.statusText}`);
+          
+          if (upstream.ok) {
+            // Transform job events to chat events
+            const transformStream = new TransformStream({
+              transform(chunk, controller) {
+                const decoder = new TextDecoder();
+                const text = decoder.decode(chunk);
+                
+                // Parse SSE format: "data: {...}\n\n"
+                const lines = text.split('\n');
+                for (const line of lines) {
+                  if (line.startsWith('data: ')) {
+                    try {
+                      const jobEvent = JSON.parse(line.slice(6));
+                      
+                      // Transform job event to chat event format
+                      const chatEvent = {
+                        kind: "event",
+                        event: {
+                          ts: jobEvent.timestamp,
+                          node: extractNodeFromEvent(jobEvent),
+                          status: extractStatusFromEvent(jobEvent),
+                          latencyMs: jobEvent.data?.latency_ms,
+                          costUSD: jobEvent.data?.cost_usd,
+                          msg: jobEvent.data?.message || jobEvent.event
+                        }
+                      };
+                      
+                      const transformed = `data: ${JSON.stringify(chatEvent)}\n\n`;
+                      controller.enqueue(new TextEncoder().encode(transformed));
+                    } catch (error) {
+                      // Pass through malformed events
+                      controller.enqueue(chunk);
+                    }
+                  } else if (line.trim()) {
+                    // Pass through non-data lines (comments, etc.)
+                    controller.enqueue(new TextEncoder().encode(line + '\n'));
                   }
-                } else {
-                  // Pass through non-data lines (like event: types)
-                  controller.enqueue(chunk);
                 }
               }
-            }
-          });
-          
-          return new Response(upstream.body?.pipeThrough(transformStream), {
-            status: upstream.status,
-            headers: {
-              "Content-Type": "text/event-stream",
-              "Cache-Control": "no-cache",
-              "Connection": "keep-alive",
-            },
-          });
+            });
+            
+            return new Response(upstream.body?.pipeThrough(transformStream), {
+              status: upstream.status,
+              headers: {
+                "Content-Type": "text/event-stream",
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+              },
+            });
           } else {
             console.warn(`Job events endpoint failed: ${upstream.status} ${upstream.statusText}`);
           }
@@ -115,65 +132,8 @@ export async function GET(
     }
   }
 
-  // Fallback: return mock stream if no job or backend unavailable
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    start(controller) {
-      // Send a connection status message
-      const statusEvent = {
-        id: Date.now().toString(),
-        timestamp: new Date().toISOString(),
-        type: 'connection',
-        node: 'system',
-        status: 'info',
-        message: 'Connected to event stream (fallback mode)',
-        data: { threadId, fallback: true }
-      };
-      
-      controller.enqueue(encoder.encode(`data: ${JSON.stringify(statusEvent)}\n\n`));
-      
-      // Send periodic status updates
-      const statusInterval = setInterval(() => {
-        try {
-          const updateEvent = {
-            id: Date.now().toString(),
-            timestamp: new Date().toISOString(),
-            type: 'status',
-            node: 'system',
-            status: 'info',
-            message: 'Checking for updates...',
-            data: { threadId, mode: 'polling' }
-          };
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(updateEvent)}\n\n`));
-        } catch {
-          clearInterval(statusInterval);
-        }
-      }, 8000); // Every 8 seconds
-      
-      // Keep connection alive
-      const keepAlive = setInterval(() => {
-        try {
-          controller.enqueue(encoder.encode(`: keep-alive\n\n`));
-        } catch {
-          clearInterval(keepAlive);
-        }
-      }, 30000);
-
-      request.signal?.addEventListener('abort', () => {
-        clearInterval(keepAlive);
-        clearInterval(statusInterval);
-        controller.close();
-      });
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-    },
-  });
+  // No backend available or no job found
+  return new Response("Backend not available", { status: 503 });
 }
 
 // Helper functions to extract info from job events
