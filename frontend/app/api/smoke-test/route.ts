@@ -28,6 +28,9 @@ export async function POST(req: Request) {
           }
         };
 
+        console.log(`Creating smoke test job for thread: ${threadId}`);
+        console.log(`Smoke test payload:`, JSON.stringify(smokeJobPayload, null, 2));
+
         const resp = await fetch(`${process.env.API_URL}/api/jobs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

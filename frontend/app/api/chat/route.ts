@@ -109,6 +109,9 @@ export async function POST(req: Request) {
             created_at: new Date().toISOString()
           }
         };
+        
+        console.log(`Creating job for thread: ${threadId}`);
+        console.log(`Job payload:`, JSON.stringify(jobPayload, null, 2));
 
         const resp = await fetch(`${process.env.API_URL}/api/jobs`, {
           method: "POST",

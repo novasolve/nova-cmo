@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Optional, AsyncIterator, Dict, Any
+from datetime import datetime
 
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request, Form, HTTPException
@@ -271,59 +272,161 @@ async def api_cancel_job(job_id: str):
 
 @app.get("/api/jobs/{job_id}/events")
 async def api_job_events(request: Request, job_id: str):
-    eng = _require_engine()
-
     async def event_stream() -> AsyncIterator[str]:
         import asyncio, json as _json
-        # Send an initial status snapshot if available
-        try:
-            status = await eng.get_job_status(job_id)
-            if status:
-                initial = {
-                    "job_id": status["job_id"],
-                    "timestamp": datetime.now().isoformat(),
-                    "event": f"job.{status['status']}",
-                    "data": {"progress": status.get("progress")},
-                }
-                yield f"data: {_json.dumps(initial)}\n\n"
-        except Exception:
-            pass
-
-        queue = await eng.queue.get_progress_stream(job_id)  # asyncio.Queue of ProgressInfo or None
-        while True:
-            if await request.is_disconnected():
-                break
-            try:
-                item = await asyncio.wait_for(queue.get(), timeout=15.0)
-            except asyncio.TimeoutError:
-                # keep-alive comment to prevent proxies from closing connection
+        from datetime import datetime
+        
+        # Always start with retry instruction
+        yield "retry: 1500\n\n"
+        
+        # Check if engine is available
+        if not engine or not engine.is_running:
+            # Engine not available - send status message and keep connection alive
+            status_msg = {
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat(),
+                "event": "job.engine_unavailable",
+                "data": {"message": "Execution engine not running - job may be queued"},
+            }
+            yield f"data: {_json.dumps(status_msg)}\n\n"
+            
+            # Keep connection alive with periodic status checks
+            while True:
+                if await request.is_disconnected():
+                    break
+                    
+                # Send keep-alive
                 yield ": keep-alive\n\n"
-                continue
+                await asyncio.sleep(10)
+                
+                # Check if engine came online
+                if engine and engine.is_running:
+                    online_msg = {
+                        "job_id": job_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "event": "job.engine_online",
+                        "data": {"message": "Execution engine is now running"},
+                    }
+                    yield f"data: {_json.dumps(online_msg)}\n\n"
+                    break
+            
+            # If engine is still not available after waiting, continue with keep-alives
+            if not engine or not engine.is_running:
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    yield ": keep-alive\n\n"
+                    await asyncio.sleep(15)
+                return
 
-            if item is None:
-                # Stream end signal
-                done = {
-                    "job_id": job_id,
-                    "timestamp": datetime.now().isoformat(),
-                    "event": "job.stream_end",
-                    "data": None,
-                }
-                yield f"data: {_json.dumps(done)}\n\n"
-                break
-
+        # Engine is available - proceed with normal streaming
+        try:
+            # Send an initial status snapshot if available
             try:
-                payload = {
+                status = await engine.get_job_status(job_id)
+                if status:
+                    initial = {
+                        "job_id": status["job_id"],
+                        "timestamp": datetime.now().isoformat(),
+                        "event": f"job.{status['status']}",
+                        "data": {"progress": status.get("progress")},
+                    }
+                    yield f"data: {_json.dumps(initial)}\n\n"
+            except Exception as e:
+                # Send error but continue streaming
+                error_msg = {
                     "job_id": job_id,
                     "timestamp": datetime.now().isoformat(),
-                    "event": "job.progress",
-                    "data": item.to_dict() if hasattr(item, "to_dict") else item,
+                    "event": "job.status_error",
+                    "data": {"error": str(e)},
                 }
-                yield f"data: {_json.dumps(payload)}\n\n"
-            except Exception:
-                # Skip malformed event
-                continue
+                yield f"data: {_json.dumps(error_msg)}\n\n"
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+            # Try to get progress stream
+            try:
+                queue = await engine.queue.get_progress_stream(job_id)
+            except Exception as e:
+                # If progress stream fails, fall back to polling
+                while True:
+                    if await request.is_disconnected():
+                        break
+                    
+                    try:
+                        status = await engine.get_job_status(job_id)
+                        if status:
+                            poll_msg = {
+                                "job_id": job_id,
+                                "timestamp": datetime.now().isoformat(),
+                                "event": "job.poll_status",
+                                "data": {"status": status["status"], "progress": status.get("progress")},
+                            }
+                            yield f"data: {_json.dumps(poll_msg)}\n\n"
+                            
+                            # Exit if job is done
+                            if status["status"] in ["completed", "failed", "cancelled"]:
+                                break
+                    except Exception:
+                        pass
+                    
+                    await asyncio.sleep(5)
+                return
+
+            # Normal progress streaming
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    item = await asyncio.wait_for(queue.get(), timeout=15.0)
+                except asyncio.TimeoutError:
+                    # keep-alive comment to prevent proxies from closing connection
+                    yield ": keep-alive\n\n"
+                    continue
+
+                if item is None:
+                    # Stream end signal
+                    done = {
+                        "job_id": job_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "event": "job.stream_end",
+                        "data": None,
+                    }
+                    yield f"data: {_json.dumps(done)}\n\n"
+                    break
+
+                try:
+                    payload = {
+                        "job_id": job_id,
+                        "timestamp": datetime.now().isoformat(),
+                        "event": "job.progress",
+                        "data": item.to_dict() if hasattr(item, "to_dict") else item,
+                    }
+                    yield f"data: {_json.dumps(payload)}\n\n"
+                except Exception:
+                    # Skip malformed event
+                    continue
+                    
+        except Exception as e:
+            # Send error and continue with keep-alives
+            error_msg = {
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat(),
+                "event": "job.stream_error",
+                "data": {"error": str(e)},
+            }
+            yield f"data: {_json.dumps(error_msg)}\n\n"
+            
+            # Keep connection alive even on errors
+            while True:
+                if await request.is_disconnected():
+                    break
+                yield ": keep-alive\n\n"
+                await asyncio.sleep(15)
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
+        "X-Accel-Buffering": "no",
+    })
 
 
 def main():

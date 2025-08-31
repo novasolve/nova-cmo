@@ -31,15 +31,27 @@ export async function GET(
         
         if (jobsResp.ok) {
           const jobs = await jobsResp.json();
+          console.log(`Found ${jobs.length} jobs for thread lookup`);
+          console.log(`Looking for jobs with threadId: ${threadId}`);
+          
+          // Debug: Show all job thread IDs
+          const jobThreadIds = jobs.map((job: any) => ({
+            id: job.job_id || job.id,
+            threadId: job.metadata?.threadId,
+            goal: job.goal?.substring(0, 50)
+          }));
+          console.log(`Available job thread IDs:`, jobThreadIds);
           
           // Try multiple strategies to find the right job
           let threadJob = null;
           
           // Strategy 1: Exact threadId match in metadata
           threadJob = jobs.find((job: any) => job.metadata?.threadId === threadId);
+          console.log(`Strategy 1 (exact match) result:`, threadJob ? `found job ${threadJob.job_id || threadJob.id}` : 'not found');
           
           // Strategy 2: Recent job created in last 5 minutes (fallback)
           if (!threadJob) {
+            console.log(`Strategy 2: Looking for recent jobs as fallback...`);
             const recentJobs = jobs.filter((job: any) => {
               const createdAt = new Date(job.created_at || job.metadata?.created_at);
               const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);

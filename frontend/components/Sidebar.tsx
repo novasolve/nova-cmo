@@ -15,12 +15,29 @@ export function Sidebar() {
     setCampaigns(getAllCampaigns());
   }, []);
 
-  // Refresh threads periodically to pick up new ones
+  // Refresh threads periodically and sync with backend
   useEffect(() => {
-    const interval = setInterval(() => {
-      setThreads(getAllThreads());
-      setCampaigns(getAllCampaigns());
-    }, 2000); // Refresh every 2 seconds
+    const syncWithBackend = async () => {
+      try {
+        // Sync backend jobs to thread storage
+        await fetch('/api/threads/sync', { method: 'POST' });
+        
+        // Refresh local state
+        setThreads(getAllThreads());
+        setCampaigns(getAllCampaigns());
+      } catch (error) {
+        console.warn('Failed to sync with backend:', error);
+        // Still refresh local state
+        setThreads(getAllThreads());
+        setCampaigns(getAllCampaigns());
+      }
+    };
+
+    // Initial sync
+    syncWithBackend();
+
+    // Periodic sync every 3 seconds
+    const interval = setInterval(syncWithBackend, 3000);
 
     return () => clearInterval(interval);
   }, []);

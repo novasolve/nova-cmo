@@ -20,9 +20,50 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const { jobState, updateJobState, setActiveThread } = useJobState();
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Set active thread for job context
+  // Set active thread for job context and check for thread mismatches
   useEffect(() => {
     setActiveThread(id);
+    
+    // Check if there's an active job on a different thread and redirect if needed
+    const checkForActiveJobs = async () => {
+      if (!process.env.API_URL) return;
+      
+      try {
+        const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`);
+        if (jobsResp.ok) {
+          const jobs = await jobsResp.json();
+          
+          // Find any running job
+          const activeJob = jobs.find((job: any) => 
+            job.status === 'running' || job.status === 'pending'
+          );
+          
+          if (activeJob && activeJob.metadata?.threadId && activeJob.metadata.threadId !== id) {
+            console.log(`Found active job on different thread: ${activeJob.metadata.threadId}, mapping to current thread: ${id}`);
+            // Map the active job to the current thread for seamless UX
+            const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
+            const jobId = activeJob.job_id || activeJob.id;
+            storeThreadJobMapping(id, jobId);
+            setCurrentJobId(jobId);
+            
+            // Update job state to reflect the active job
+            updateJobState({
+              status: 'running',
+              currentNode: activeJob.current_node || 'active_job',
+              progress: `Mapped to active job: ${jobId}`,
+              autonomyLevel: activeJob.metadata?.autonomy_level || 'L0',
+              budget: { used: 0, total: activeJob.metadata?.budget_per_day || 50 },
+              currentJobId: jobId
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.warn('Could not check for active jobs:', error);
+      }
+    };
+    
+    checkForActiveJobs();
   }, [id, setActiveThread]);
 
   // Load initial thread history
@@ -111,8 +152,8 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     }, 100);
   }, [id, jobState.events, jobState.currentNode, jobState.progress, jobState.metrics, updateJobState]);
 
-  // Only establish SSE connection when there's an active job
-  const sseUrl = currentJobId ? `/api/threads/${id}/events?jobId=${currentJobId}` : null;
+  // Only establish SSE connection when there's an active job - use direct proxy
+  const sseUrl = currentJobId ? `/api/jobs/${currentJobId}/events` : null;
     
   const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,

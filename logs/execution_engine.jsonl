@@ -7724,3 +7724,201 @@
 {"ts": "2025-08-31T22:59:52.686080Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
 {"ts": "2025-08-31T22:59:52.687849Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
 {"ts": "2025-08-31T22:59:52.687931Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
+{"ts": "2025-08-31T23:00:46.836073Z", "level": "INFO", "logger": "cmo_agent.core.artifacts", "msg": "Loaded 60 artifacts from registry"}
+{"ts": "2025-08-31T23:00:46.836675Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "CMO Agent initialized"}
+{"ts": "2025-08-31T23:00:46.836754Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Worker pool initialized with 3 workers"}
+{"ts": "2025-08-31T23:00:46.837939Z", "level": "WARNING", "logger": "cmo_agent.scripts.run_execution", "msg": "Artifact cleanup task not started: attempted relative import beyond top-level package"}
+{"ts": "2025-08-31T23:00:46.838096Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Starting CMO Agent Execution Engine..."}
+{"ts": "2025-08-31T23:00:46.838162Z", "level": "INFO", "logger": "core.worker", "msg": "Starting worker pool with 3 workers"}
+{"ts": "2025-08-31T23:00:46.838220Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool started with 3 workers"}
+{"ts": "2025-08-31T23:00:46.838260Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Metrics logger started (interval=60s)"}
+{"ts": "2025-08-31T23:00:46.838287Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine running. Press Ctrl+C to stop."}
+{"ts": "2025-08-31T23:00:46.838335Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:46.838626Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 started"}
+{"ts": "2025-08-31T23:00:46.838717Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 performing crash recovery check"}
+{"ts": "2025-08-31T23:00:46.838775Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 started"}
+{"ts": "2025-08-31T23:00:46.838807Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 performing crash recovery check"}
+{"ts": "2025-08-31T23:00:46.838844Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 started"}
+{"ts": "2025-08-31T23:00:46.838870Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 performing crash recovery check"}
+{"ts": "2025-08-31T23:00:46.838906Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stats: 0 processed, 0 failed, 3 active workers"}
+{"ts": "2025-08-31T23:00:47.842169Z", "level": "INFO", "logger": "core.monitoring", "msg": "Metrics snapshot collected", "metrics": {"timestamp": "2025-08-31T16:00:46.838941", "jobs": {"submitted": 0, "completed": 0, "failed": 0, "paused": 0, "cancelled": 0, "running": 0, "queued": 0, "recovered": 0, "throughput_per_hour": 0.0, "avg_duration_seconds": 0.0, "median_duration_seconds": 0.0, "p95_duration_seconds": 0.0}, "performance": {"worker_utilization_percent": 0.0, "queue_depth": 0, "avg_queue_wait_seconds": 0.0, "queue_processing_rate": 0.0}, "api": {"calls_total": 0, "calls_successful": 0, "success_rate_percent": 0.0, "calls_by_endpoint": {}, "rate_limits_hit": 0}, "resources": {"cpu_percent": 63.8, "memory_percent": 44.2, "memory_used_mb": 53653.578125, "disk_usage_percent": 0.8, "network_bytes_sent": 4822160384, "network_bytes_recv": 5885421568}, "workers": {"active": 0, "total": 0, "crash_count": 0, "avg_jobs_per_worker": 0.0}, "errors": {"rate_percent": 0.0, "by_component": {}, "by_type": {}, "critical_errors": 0}, "checkpoints": {"created": 0, "restored": 0, "failures": 0}, "business": {"leads_processed": 0, "leads_enriched": 0, "repos_discovered": 0, "emails_sent": 0}, "alerts": {"active": []}}}
+{"ts": "2025-08-31T23:00:47.842991Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:48.844192Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:49.845507Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:50.846742Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:51.848935Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 33, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:52.351121Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Job submitted: cmo-44a6f2bc - Find 10 Python maintainers active 30 days..."}
+{"ts": "2025-08-31T23:00:52.850703Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 34, 'queued_jobs': 1, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'queued': 1}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:00:52.851326Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 processing job cmo-44a6f2bc: Find 10 Python maintainers active 30 days..."}
+{"ts": "2025-08-31T23:00:52.851508Z", "level": "INFO", "logger": "cmo_agent.agents.cmo_agent", "msg": "Starting CMO Agent job: cmo-20250831-160052-851441-481cb5"}
+{"ts": "2025-08-31T23:00:53.593756Z", "level": "INFO", "logger": "httpx", "msg": "HTTP Request: POST https://api.openai.com/v1/chat/completions \"HTTP/1.1 200 OK\""}
+{"ts": "2025-08-31T23:00:53.599367Z", "level": "INFO", "logger": "cmo_agent.agents.cmo_agent", "msg": "Executing tool: search_github_repos"}
+{"ts": "2025-08-31T23:00:53.599555Z", "level": "INFO", "logger": "cmo_agent.core.monitoring", "msg": "Job tool_started: cmo-20250831-160052-851441-481cb5", "event": "tool_started", "job_id": "cmo-20250831-160052-851441-481cb5", "correlation_id": "cmo-20250831-160052-851441-481cb5", "timestamp": "2025-08-31T16:00:53.599543", "tool": "search_github_repos", "args": {"q": "python", "max_repos": 200, "job_id": "cmo-20250831-160052-851441-481cb5", "dry_run": true}}
+{"ts": "2025-08-31T23:00:53.852122Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 34, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 1}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:54.853219Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 34, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 1}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:55.855420Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 34, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 1}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:56.298174Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Job submitted: cmo-bdf7a238 - Find 5 active Python maintainers from the last 30 ..."}
+{"ts": "2025-08-31T23:00:56.855280Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 1, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 1, 'queued': 1}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:56.855815Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 processing job cmo-bdf7a238: Find 5 active Python maintainers from the last 30 ..."}
+{"ts": "2025-08-31T23:00:56.856059Z", "level": "INFO", "logger": "cmo_agent.agents.cmo_agent", "msg": "Starting CMO Agent job: cmo-20250831-160056-855987-71fe96"}
+{"ts": "2025-08-31T23:00:57.855368Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 2}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:57.876538Z", "level": "INFO", "logger": "httpx", "msg": "HTTP Request: POST https://api.openai.com/v1/chat/completions \"HTTP/1.1 200 OK\""}
+{"ts": "2025-08-31T23:00:57.879100Z", "level": "INFO", "logger": "cmo_agent.agents.cmo_agent", "msg": "Executing tool: search_github_repos"}
+{"ts": "2025-08-31T23:00:57.879345Z", "level": "INFO", "logger": "cmo_agent.core.monitoring", "msg": "Job tool_started: cmo-20250831-160056-855987-71fe96", "event": "tool_started", "job_id": "cmo-20250831-160056-855987-71fe96", "correlation_id": "cmo-20250831-160056-855987-71fe96", "timestamp": "2025-08-31T16:00:57.879330", "tool": "search_github_repos", "args": {"q": "python", "max_repos": 200, "job_id": "cmo-20250831-160056-855987-71fe96", "dry_run": false}}
+{"ts": "2025-08-31T23:00:58.855578Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 14, 'completed': 19, 'running': 2}, 'active_streams': 1}"}
+{"ts": "2025-08-31T23:00:59.307168Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 2, initiating shutdown..."}
+{"ts": "2025-08-31T23:00:59.311455Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:00:59.855862Z", "level": "INFO", "logger": "core.worker", "msg": "Stopping worker pool..."}
+{"ts": "2025-08-31T23:00:59.856985Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 stopped"}
+{"ts": "2025-08-31T23:00:59.857459Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
+{"ts": "2025-08-31T23:00:59.857564Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 stopped"}
+{"ts": "2025-08-31T23:00:59.857666Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
+{"ts": "2025-08-31T23:00:59.857737Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
+{"ts": "2025-08-31T23:02:33.469935Z", "level": "INFO", "logger": "cmo_agent.core.artifacts", "msg": "Loaded 60 artifacts from registry"}
+{"ts": "2025-08-31T23:02:33.470832Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "CMO Agent initialized"}
+{"ts": "2025-08-31T23:02:33.471143Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Worker pool initialized with 3 workers"}
+{"ts": "2025-08-31T23:02:33.475342Z", "level": "WARNING", "logger": "cmo_agent.scripts.run_execution", "msg": "Artifact cleanup task not started: attempted relative import beyond top-level package"}
+{"ts": "2025-08-31T23:02:33.475575Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Starting CMO Agent Execution Engine..."}
+{"ts": "2025-08-31T23:02:33.475724Z", "level": "INFO", "logger": "core.worker", "msg": "Starting worker pool with 3 workers"}
+{"ts": "2025-08-31T23:02:33.475789Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool started with 3 workers"}
+{"ts": "2025-08-31T23:02:33.475832Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Metrics logger started (interval=60s)"}
+{"ts": "2025-08-31T23:02:33.475861Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine running. Press Ctrl+C to stop."}
+{"ts": "2025-08-31T23:02:33.475913Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:33.476292Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 started"}
+{"ts": "2025-08-31T23:02:33.476544Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:33.476629Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 started"}
+{"ts": "2025-08-31T23:02:33.476669Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:33.476710Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 started"}
+{"ts": "2025-08-31T23:02:33.476738Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:33.476778Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stats: 0 processed, 0 failed, 3 active workers"}
+{"ts": "2025-08-31T23:02:34.479752Z", "level": "INFO", "logger": "core.monitoring", "msg": "Metrics snapshot collected", "metrics": {"timestamp": "2025-08-31T16:02:33.476818", "jobs": {"submitted": 0, "completed": 0, "failed": 0, "paused": 0, "cancelled": 0, "running": 0, "queued": 0, "recovered": 0, "throughput_per_hour": 0.0, "avg_duration_seconds": 0.0, "median_duration_seconds": 0.0, "p95_duration_seconds": 0.0}, "performance": {"worker_utilization_percent": 0.0, "queue_depth": 0, "avg_queue_wait_seconds": 0.0, "queue_processing_rate": 0.0}, "api": {"calls_total": 0, "calls_successful": 0, "success_rate_percent": 0.0, "calls_by_endpoint": {}, "rate_limits_hit": 0}, "resources": {"cpu_percent": 49.7, "memory_percent": 44.6, "memory_used_mb": 54163.9375, "disk_usage_percent": 0.8, "network_bytes_sent": 4837033984, "network_bytes_recv": 5898117120}, "workers": {"active": 0, "total": 0, "crash_count": 0, "avg_jobs_per_worker": 0.0}, "errors": {"rate_percent": 0.0, "by_component": {}, "by_type": {}, "critical_errors": 0}, "checkpoints": {"created": 0, "restored": 0, "failures": 0}, "business": {"leads_processed": 0, "leads_enriched": 0, "repos_discovered": 0, "emails_sent": 0}, "alerts": {"active": []}}}
+{"ts": "2025-08-31T23:02:34.480227Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:35.480014Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:36.481041Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:37.483407Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:38.485053Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:39.486212Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:40.487281Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:41.488904Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:42.490492Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:43.492463Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 35, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 16, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:44.063965Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Job submitted: cmo-926b4cdb - Find 5 active Python maintainers from the last 30 ..."}
+{"ts": "2025-08-31T23:02:44.493628Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 1, 'jobs_by_status': {'cancelled': 16, 'completed': 19, 'queued': 1}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:44.494228Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 processing job cmo-926b4cdb: Find 5 active Python maintainers from the last 30 ..."}
+{"ts": "2025-08-31T23:02:44.494336Z", "level": "INFO", "logger": "cmo_agent.agents.cmo_agent", "msg": "Starting CMO Agent job: cmo-20250831-160244-494298-7bcb31"}
+{"ts": "2025-08-31T23:02:44.566381Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:02:45.494747Z", "level": "INFO", "logger": "core.worker", "msg": "Stopping worker pool..."}
+{"ts": "2025-08-31T23:02:45.496653Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 stopped"}
+{"ts": "2025-08-31T23:02:45.496782Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 stopped"}
+{"ts": "2025-08-31T23:02:45.500108Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
+{"ts": "2025-08-31T23:02:45.500425Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
+{"ts": "2025-08-31T23:02:45.500564Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
+{"ts": "2025-08-31T23:02:48.476946Z", "level": "INFO", "logger": "cmo_agent.core.artifacts", "msg": "Loaded 60 artifacts from registry"}
+{"ts": "2025-08-31T23:02:48.477336Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "CMO Agent initialized"}
+{"ts": "2025-08-31T23:02:48.477414Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Worker pool initialized with 3 workers"}
+{"ts": "2025-08-31T23:02:48.478415Z", "level": "WARNING", "logger": "cmo_agent.scripts.run_execution", "msg": "Artifact cleanup task not started: attempted relative import beyond top-level package"}
+{"ts": "2025-08-31T23:02:48.478549Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Starting CMO Agent Execution Engine..."}
+{"ts": "2025-08-31T23:02:48.478640Z", "level": "INFO", "logger": "core.worker", "msg": "Starting worker pool with 3 workers"}
+{"ts": "2025-08-31T23:02:48.478700Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool started with 3 workers"}
+{"ts": "2025-08-31T23:02:48.478742Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Metrics logger started (interval=60s)"}
+{"ts": "2025-08-31T23:02:48.478769Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine running. Press Ctrl+C to stop."}
+{"ts": "2025-08-31T23:02:48.478820Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:48.479090Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 started"}
+{"ts": "2025-08-31T23:02:48.479119Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:48.479163Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 started"}
+{"ts": "2025-08-31T23:02:48.479191Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:48.479228Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 started"}
+{"ts": "2025-08-31T23:02:48.479288Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 performing crash recovery check"}
+{"ts": "2025-08-31T23:02:48.479349Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stats: 0 processed, 0 failed, 3 active workers"}
+{"ts": "2025-08-31T23:02:49.483772Z", "level": "INFO", "logger": "core.monitoring", "msg": "Metrics snapshot collected", "metrics": {"timestamp": "2025-08-31T16:02:48.479398", "jobs": {"submitted": 0, "completed": 0, "failed": 0, "paused": 0, "cancelled": 0, "running": 0, "queued": 0, "recovered": 0, "throughput_per_hour": 0.0, "avg_duration_seconds": 0.0, "median_duration_seconds": 0.0, "p95_duration_seconds": 0.0}, "performance": {"worker_utilization_percent": 0.0, "queue_depth": 0, "avg_queue_wait_seconds": 0.0, "queue_processing_rate": 0.0}, "api": {"calls_total": 0, "calls_successful": 0, "success_rate_percent": 0.0, "calls_by_endpoint": {}, "rate_limits_hit": 0}, "resources": {"cpu_percent": 78.5, "memory_percent": 44.8, "memory_used_mb": 54351.15625, "disk_usage_percent": 0.8, "network_bytes_sent": 4843908096, "network_bytes_recv": 5902807040}, "workers": {"active": 0, "total": 0, "crash_count": 0, "avg_jobs_per_worker": 0.0}, "errors": {"rate_percent": 0.0, "by_component": {}, "by_type": {}, "critical_errors": 0}, "checkpoints": {"created": 0, "restored": 0, "failures": 0}, "business": {"leads_processed": 0, "leads_enriched": 0, "repos_discovered": 0, "emails_sent": 0}, "alerts": {"active": []}}}
+{"ts": "2025-08-31T23:02:49.484615Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:50.486487Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:51.487751Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:52.537633Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:53.539614Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:54.540989Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:55.542966Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:56.543331Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:57.545259Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:58.546047Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:59.546752Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:02:59.775878Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:02:59.775684Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 2, initiating shutdown..."}
+{"ts": "2025-08-31T23:02:59.779630Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:03:00.547656Z", "level": "INFO", "logger": "core.worker", "msg": "Stopping worker pool..."}
+{"ts": "2025-08-31T23:03:00.547975Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
+{"ts": "2025-08-31T23:03:00.548065Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 stopped"}
+{"ts": "2025-08-31T23:03:00.548137Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 stopped"}
+{"ts": "2025-08-31T23:03:00.548568Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
+{"ts": "2025-08-31T23:03:00.550872Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
+{"ts": "2025-08-31T23:03:19.606968Z", "level": "INFO", "logger": "cmo_agent.core.artifacts", "msg": "Loaded 60 artifacts from registry"}
+{"ts": "2025-08-31T23:03:19.607939Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "CMO Agent initialized"}
+{"ts": "2025-08-31T23:03:19.608318Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Worker pool initialized with 3 workers"}
+{"ts": "2025-08-31T23:03:19.609849Z", "level": "WARNING", "logger": "cmo_agent.scripts.run_execution", "msg": "Artifact cleanup task not started: attempted relative import beyond top-level package"}
+{"ts": "2025-08-31T23:03:19.610059Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Starting CMO Agent Execution Engine..."}
+{"ts": "2025-08-31T23:03:19.610112Z", "level": "INFO", "logger": "core.worker", "msg": "Starting worker pool with 3 workers"}
+{"ts": "2025-08-31T23:03:19.610169Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool started with 3 workers"}
+{"ts": "2025-08-31T23:03:19.610212Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Metrics logger started (interval=60s)"}
+{"ts": "2025-08-31T23:03:19.610240Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine running. Press Ctrl+C to stop."}
+{"ts": "2025-08-31T23:03:19.610293Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:19.610768Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 started"}
+{"ts": "2025-08-31T23:03:19.610838Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:19.610895Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 started"}
+{"ts": "2025-08-31T23:03:19.610932Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:19.610968Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 started"}
+{"ts": "2025-08-31T23:03:19.610996Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:19.611032Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stats: 0 processed, 0 failed, 3 active workers"}
+{"ts": "2025-08-31T23:03:20.615192Z", "level": "INFO", "logger": "core.monitoring", "msg": "Metrics snapshot collected", "metrics": {"timestamp": "2025-08-31T16:03:19.611067", "jobs": {"submitted": 0, "completed": 0, "failed": 0, "paused": 0, "cancelled": 0, "running": 0, "queued": 0, "recovered": 0, "throughput_per_hour": 0.0, "avg_duration_seconds": 0.0, "median_duration_seconds": 0.0, "p95_duration_seconds": 0.0}, "performance": {"worker_utilization_percent": 0.0, "queue_depth": 0, "avg_queue_wait_seconds": 0.0, "queue_processing_rate": 0.0}, "api": {"calls_total": 0, "calls_successful": 0, "success_rate_percent": 0.0, "calls_by_endpoint": {}, "rate_limits_hit": 0}, "resources": {"cpu_percent": 61.5, "memory_percent": 44.4, "memory_used_mb": 53851.390625, "disk_usage_percent": 0.8, "network_bytes_sent": 4859385856, "network_bytes_recv": 5917379584}, "workers": {"active": 0, "total": 0, "crash_count": 0, "avg_jobs_per_worker": 0.0}, "errors": {"rate_percent": 0.0, "by_component": {}, "by_type": {}, "critical_errors": 0}, "checkpoints": {"created": 0, "restored": 0, "failures": 0}, "business": {"leads_processed": 0, "leads_enriched": 0, "repos_discovered": 0, "emails_sent": 0}, "alerts": {"active": []}}}
+{"ts": "2025-08-31T23:03:20.615694Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:20.853417Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:03:21.617038Z", "level": "INFO", "logger": "core.worker", "msg": "Stopping worker pool..."}
+{"ts": "2025-08-31T23:03:21.617256Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
+{"ts": "2025-08-31T23:03:21.617310Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 stopped"}
+{"ts": "2025-08-31T23:03:21.617344Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 stopped"}
+{"ts": "2025-08-31T23:03:21.617487Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
+{"ts": "2025-08-31T23:03:21.617612Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
+{"ts": "2025-08-31T23:03:24.373764Z", "level": "INFO", "logger": "cmo_agent.core.artifacts", "msg": "Loaded 60 artifacts from registry"}
+{"ts": "2025-08-31T23:03:24.374128Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "CMO Agent initialized"}
+{"ts": "2025-08-31T23:03:24.374197Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Worker pool initialized with 3 workers"}
+{"ts": "2025-08-31T23:03:24.376164Z", "level": "WARNING", "logger": "cmo_agent.scripts.run_execution", "msg": "Artifact cleanup task not started: attempted relative import beyond top-level package"}
+{"ts": "2025-08-31T23:03:24.376403Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Starting CMO Agent Execution Engine..."}
+{"ts": "2025-08-31T23:03:24.376482Z", "level": "INFO", "logger": "core.worker", "msg": "Starting worker pool with 3 workers"}
+{"ts": "2025-08-31T23:03:24.376636Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool started with 3 workers"}
+{"ts": "2025-08-31T23:03:24.376717Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Metrics logger started (interval=60s)"}
+{"ts": "2025-08-31T23:03:24.376750Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine running. Press Ctrl+C to stop."}
+{"ts": "2025-08-31T23:03:24.376805Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:24.377083Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 started"}
+{"ts": "2025-08-31T23:03:24.377157Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:24.377234Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 started"}
+{"ts": "2025-08-31T23:03:24.377268Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:24.377373Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 started"}
+{"ts": "2025-08-31T23:03:24.377432Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 performing crash recovery check"}
+{"ts": "2025-08-31T23:03:24.377482Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stats: 0 processed, 0 failed, 3 active workers"}
+{"ts": "2025-08-31T23:03:25.381358Z", "level": "INFO", "logger": "core.monitoring", "msg": "Metrics snapshot collected", "metrics": {"timestamp": "2025-08-31T16:03:24.377528", "jobs": {"submitted": 0, "completed": 0, "failed": 0, "paused": 0, "cancelled": 0, "running": 0, "queued": 0, "recovered": 0, "throughput_per_hour": 0.0, "avg_duration_seconds": 0.0, "median_duration_seconds": 0.0, "p95_duration_seconds": 0.0}, "performance": {"worker_utilization_percent": 0.0, "queue_depth": 0, "avg_queue_wait_seconds": 0.0, "queue_processing_rate": 0.0}, "api": {"calls_total": 0, "calls_successful": 0, "success_rate_percent": 0.0, "calls_by_endpoint": {}, "rate_limits_hit": 0}, "resources": {"cpu_percent": 66.6, "memory_percent": 44.1, "memory_used_mb": 53498.5, "disk_usage_percent": 0.8, "network_bytes_sent": 4860228608, "network_bytes_recv": 5918375936}, "workers": {"active": 0, "total": 0, "crash_count": 0, "avg_jobs_per_worker": 0.0}, "errors": {"rate_percent": 0.0, "by_component": {}, "by_type": {}, "critical_errors": 0}, "checkpoints": {"created": 0, "restored": 0, "failures": 0}, "business": {"leads_processed": 0, "leads_enriched": 0, "repos_discovered": 0, "emails_sent": 0}, "alerts": {"active": []}}}
+{"ts": "2025-08-31T23:03:25.381933Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:26.383498Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:27.390830Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:28.398184Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:29.399011Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:30.399942Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:31.401196Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:32.401979Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:33.403697Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:34.405165Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:35.406217Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:36.406821Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:37.407407Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:38.408182Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:39.408395Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:40.409468Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:41.410537Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:42.412265Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Queue stats: {'total_jobs': 36, 'queued_jobs': 0, 'jobs_by_status': {'cancelled': 17, 'completed': 19}, 'active_streams': 0}"}
+{"ts": "2025-08-31T23:03:42.652957Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 2, initiating shutdown..."}
+{"ts": "2025-08-31T23:03:42.653336Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:03:42.669488Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Received signal 15, initiating shutdown..."}
+{"ts": "2025-08-31T23:03:43.413632Z", "level": "INFO", "logger": "core.worker", "msg": "Stopping worker pool..."}
+{"ts": "2025-08-31T23:03:43.413860Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-01 stopped"}
+{"ts": "2025-08-31T23:03:43.413923Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-02 stopped"}
+{"ts": "2025-08-31T23:03:43.413959Z", "level": "INFO", "logger": "core.worker", "msg": "Worker worker-03 stopped"}
+{"ts": "2025-08-31T23:03:43.414090Z", "level": "INFO", "logger": "core.worker", "msg": "Worker pool stopped"}
+{"ts": "2025-08-31T23:03:43.414178Z", "level": "INFO", "logger": "cmo_agent.scripts.run_execution", "msg": "Execution engine stopped"}
