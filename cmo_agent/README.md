@@ -13,6 +13,7 @@ The CMO Agent is an intelligent automation system that handles the complete outb
 - **[Complete Specification](../README.md)** - Full system architecture and design
 - **[Execution Model](execution_model_README.md)** - Detailed implementation guide
 - **[API Reference](execution_model_README.md#api-reference)** - Tool contracts and schemas
+- **[Single‑Node LangGraph](agents/README_SINGLE_NODE_LANGGRAPH.md)** - Minimal graph, loop logic, and extension points
 
 ## 🏗️ Architecture
 
