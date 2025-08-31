@@ -111,7 +111,10 @@ export function generateThreadName(goal: string): string {
   return words.map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ');
 }
 
-// Initialize with a single default thread
+// Initialize with a single default thread and clear any test threads
 if (threads.size === 0) {
   createThread("default", "General Chat");
+} else {
+  // Clear any existing test threads on startup
+  clearTestThreads();
 }

@@ -109,6 +109,13 @@ class JobWorker:
                         self.failed_jobs += 1
 
                     finally:
+                        # Signal end of progress stream
+                        if job and job.id in self.queue._progress_streams:
+                            try:
+                                await self.queue._progress_streams[job.id].put(None)  # Signal end of stream
+                            except Exception as e:
+                                logger.debug(f"Failed to signal end of progress stream for job {job.id}: {e}")
+
                         self.current_job = None
 
                 else:
@@ -128,11 +135,34 @@ class JobWorker:
             job.metadata["assigned_worker"] = self.worker_id
             job.metadata["assigned_at"] = datetime.now().isoformat()
 
-            # Update progress
+            # Update progress and emit to stream
             job.update_progress(stage="initializing", current_item="Setting up job execution")
 
-            # Run the CMO Agent
-            result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'))
+            # Emit initial progress to stream
+            if job.id in self.queue._progress_streams:
+                try:
+                    await self.queue._progress_streams[job.id].put(job.progress)
+                except Exception as e:
+                    logger.debug(f"Failed to emit initial progress for job {job.id}: {e}")
+
+            # Create progress callback that forwards updates to the queue's progress stream
+            async def progress_callback(progress_info):
+                """Forward progress updates to the queue's progress stream"""
+                # Update the job's progress
+                if isinstance(progress_info, dict):
+                    job.update_progress(**progress_info)
+                else:
+                    job.progress = progress_info
+
+                # Forward to queue's progress stream for SSE
+                if job.id in self.queue._progress_streams:
+                    try:
+                        await self.queue._progress_streams[job.id].put(job.progress)
+                    except Exception as e:
+                        logger.debug(f"Failed to emit progress for job {job.id}: {e}")
+
+            # Run the CMO Agent with progress callback
+            result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'), progress_callback)
 
             # Calculate duration
             duration = (datetime.now() - start_time).total_seconds()
@@ -141,6 +171,13 @@ class JobWorker:
             if result.get('paused'):
                 # Job was paused, don't mark as completed but finalize partial results
                 job.update_progress(stage="paused", current_item="Job paused by user request")
+
+                # Emit paused progress to stream
+                if job.id in self.queue._progress_streams:
+                    try:
+                        await self.queue._progress_streams[job.id].put(job.progress)
+                    except Exception as e:
+                        logger.debug(f"Failed to emit paused progress for job {job.id}: {e}")
 
                 # Finalize partial results for paused job
                 if hasattr(self.agent, '_finalize_job'):
@@ -164,6 +201,13 @@ class JobWorker:
                 job.update_progress(stage="completed", items_processed=steps_done)
                 record_job_completed(duration)
                 logger.info(f"Job {job.id} completed in {duration:.1f}s")
+
+            # Emit final progress to stream
+            if job.id in self.queue._progress_streams:
+                try:
+                    await self.queue._progress_streams[job.id].put(job.progress)
+                except Exception as e:
+                    logger.debug(f"Failed to emit final progress for job {job.id}: {e}")
 
             # Store artifacts if any
             if result.get('artifacts'):

@@ -191,6 +191,10 @@ async def api_create_job(payload: Dict[str, Any]):
     if not goal or not isinstance(goal, str):
         raise HTTPException(status_code=400, detail="Missing 'goal'")
 
+    # Extract metadata from payload
+    metadata = (payload or {}).get("metadata", {})
+    config_path = (payload or {}).get("config_path")
+    
     # Optional dryRun flag affects agent config globally for now
     dry_run = bool((payload or {}).get("dryRun", True))
     try:
@@ -201,7 +205,8 @@ async def api_create_job(payload: Dict[str, Any]):
     except Exception:
         pass
 
-    job_id = await eng.submit_job(goal)
+    # Submit job with metadata and config
+    job_id = await eng.submit_job(goal, metadata=metadata, config_path=config_path)
     status = await eng.get_job_status(job_id)
     if not status:
         return JSONResponse(status_code=201, content={"id": job_id, "status": "queued", "goal": goal, "created_at": None})
@@ -210,6 +215,7 @@ async def api_create_job(payload: Dict[str, Any]):
         "status": status["status"],
         "goal": status["goal"],
         "created_at": status["created_at"],
+        "metadata": status.get("metadata", {}),
     }
 
 

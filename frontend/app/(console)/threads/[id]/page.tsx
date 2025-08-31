@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
-import { ChatMessage, SSEEvent } from "@/types";
+import { ChatMessage, SSEEvent, LanggraphEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
@@ -16,6 +16,21 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [jobState, setJobState] = useState({
+    status: 'idle' as 'idle' | 'running' | 'completed' | 'failed',
+    currentNode: 'No active job',
+    progress: 'Waiting for job',
+    autonomyLevel: 'L0' as AutonomyLevel,
+    budget: { used: 0, total: 50 },
+    metrics: {
+      nodesCompleted: 0,
+      totalNodes: 0,
+      avgLatency: 0,
+      totalCost: 0,
+      errorRate: 0
+    },
+    events: [] as LanggraphEvent[]
+  });
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // Load initial thread history
@@ -67,8 +82,29 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const handleSSEEvent = useCallback((evt: SSEEvent) => {
     if (evt.kind === "message") {
       setMessages((prev) => [...prev, evt.message as ChatMessage]);
-    } else if (evt.kind === "event") {
-      // attach event to a synthetic tool line
+    } else if (evt.kind === "event" && evt.event) {
+      // Update job state based on event
+      setJobState(prev => {
+        const newEvents = [...prev.events, evt.event!];
+        const latestEvent = evt.event!;
+        
+        return {
+          ...prev,
+          status: latestEvent.status === 'error' ? 'failed' : 
+                  latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running',
+          currentNode: latestEvent.node || prev.currentNode,
+          progress: latestEvent.msg || prev.progress,
+          metrics: {
+            ...prev.metrics,
+            nodesCompleted: prev.metrics.nodesCompleted + (latestEvent.status === 'ok' ? 1 : 0),
+            totalCost: prev.metrics.totalCost + (latestEvent.costUSD || 0),
+            avgLatency: latestEvent.latencyMs || prev.metrics.avgLatency
+          },
+          events: newEvents.slice(-50) // Keep last 50 events
+        };
+      });
+      
+      // Also attach event to messages for chat display
       setMessages((prev) => [
         ...prev,
         {

@@ -307,7 +307,7 @@ def main():
         parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
         parser.add_argument('--phase', choices=['collect', 'analyze', 'report', 'all'], default='all', help='Run specific phase')
-        parser.add_argument('--demo', action='store_true', help='Run in demo mode')
+
 
         # Filtering options
         parser.add_argument('--location', default='us', help='Filter by location (default: us)')
@@ -508,14 +508,9 @@ def main():
             logger.info("✅ Generated reports")
             return 0
         elif args.phase == 'all':
-            if args.demo:
-                logger.info("🎭 Running in DEMO mode with sample data")
-                import asyncio
-                result = asyncio.run(engine.run_demo_cycle())
-            else:
-                logger.info("🔄 Running comprehensive intelligence pipeline")
-                import asyncio
-                result = asyncio.run(engine.run_intelligence_cycle())
+            logger.info("🔄 Running comprehensive intelligence pipeline")
+            import asyncio
+            result = asyncio.run(engine.run_intelligence_cycle())
 
             if result['success']:
                 logger.info("✅ Lead Intelligence Pipeline completed successfully!")

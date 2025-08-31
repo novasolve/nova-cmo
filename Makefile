@@ -90,9 +90,7 @@ collect-saas: install ## Collect SaaS company prospects
 	@echo "🚀 Collecting SaaS Company Prospects..."
 	python lead_intelligence/core/data_collector.py --icp icp03_seed_series_a_python_saas --config config.yaml --max-repos 30 --max-leads 15
 
-intelligence-demo: install ## Run intelligence system in demo mode (installs deps first)
-	@echo "🎭 Running Lead Intelligence System (Demo Mode)..."
-	python lead_intelligence/scripts/run_intelligence.py --demo
+
 
 intelligence-pipeline: install ## Run the complete intelligence pipeline (installs deps first)
 	@echo "🚀 Running Complete Lead Intelligence Pipeline..."

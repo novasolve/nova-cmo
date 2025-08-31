@@ -36,8 +36,7 @@ test-queue:
 	PYTHONPATH=.. python -m cmo_agent.scripts.test_persistent_queue
 
 # Demo job processing (shows actual execution)
-demo-processing:
-	PYTHONPATH=.. python -m cmo_agent.scripts.demo_job_processing
+
 
 # Submit a job to execution engine (just queue it)
 submit-job:
@@ -89,7 +88,7 @@ help:
 	@echo "  make test-campaign    - Run a small test campaign"
 	@echo "  make test-persistence - Test job persistence across script runs"
 	@echo "  make test-queue       - Test persistent queue functionality"
-	@echo "  make demo-processing  - Demo job submission and actual processing"
+
 	@echo "  make submit-job GOAL='...' - Submit job to execution engine (queue only)"
 	@echo "  make run-job GOAL='...'    - Submit and process job immediately"
 	@echo "  make job-status JOB_ID=job_id - Check job status"

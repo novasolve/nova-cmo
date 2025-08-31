@@ -264,11 +264,11 @@ class ExecutionEngine:
         if stats["total_jobs"] > 0:
             logger.info(f"Queue stats: {stats}")
 
-    async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0) -> str:
+    async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0, metadata: Dict[str, Any] = None, config_path: str = None) -> str:
         """Submit a new job for execution"""
         try:
-            # Create job
-            job = self.job_manager.create_job(goal, created_by)
+            # Create job with metadata
+            job = self.job_manager.create_job(goal, created_by, metadata=metadata, config_path=config_path)
 
             # Record job submission
             record_job_submitted()
@@ -309,6 +309,7 @@ class ExecutionEngine:
             "updated_at": job.updated_at.isoformat(),
             "progress": progress.to_dict() if progress else None,
             "artifacts": job.artifacts,
+            "metadata": job.metadata,
         }
 
     async def list_jobs(self, status_filter: Optional[JobStatus] = None) -> list:
@@ -317,9 +318,18 @@ class ExecutionEngine:
         jobs = await self.queue.list_jobs(status_filter)
         result = []
         for job in jobs:
-            status = await self.get_job_status(job.id)
-            if status:
-                result.append(status)
+            progress = await self.queue.get_job_progress(job.id)
+            job_data = {
+                "job_id": job.id,
+                "status": job.status.value,
+                "goal": job.goal,
+                "created_at": job.created_at.isoformat(),
+                "updated_at": job.updated_at.isoformat(),
+                "progress": progress.to_dict() if progress else None,
+                "artifacts": job.artifacts,
+                "metadata": job.metadata,
+            }
+            result.append(job_data)
         return result
 
     async def pause_job(self, job_id: str) -> bool:

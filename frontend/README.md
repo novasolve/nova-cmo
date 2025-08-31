@@ -49,7 +49,7 @@ NEXT_PUBLIC_API_BASE=http://localhost:3000
 
 This automatically starts both backend and frontend with proper integration.
 
-**Option B: Frontend Only (Demo Mode)**
+**Option B: Frontend Only (Development Mode)**
 
 ```bash
 npm run dev
