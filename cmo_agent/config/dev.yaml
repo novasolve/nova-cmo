@@ -26,6 +26,31 @@ retries:
   max_attempts: 3
   backoff_multiplier: 2.0
   jitter: true
+  max_backoff_seconds: 300 # 5 minutes max
+  rate_limit_retry_after: 60 # Wait 60s after rate limit
+
+# Error handling configuration
+error_handling:
+  retryable_errors:
+    - ConnectionError
+    - TimeoutError
+    - httpx.ConnectTimeout
+    - httpx.ReadTimeout
+    - httpx.PoolTimeout
+    - aiohttp.ClientConnectorError
+  rate_limit_errors:
+    - RateLimitError
+    - TooManyRequests
+    - GitHubRateLimitError
+    - CircuitBreakerOpenError
+  permanent_errors:
+    - AuthenticationError
+    - AuthorizationError
+    - NotFoundError
+    - ValidationError
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 300 # 5 minutes
 
 # Default ICP (Ideal Customer Profile)
 default_icp:
@@ -54,6 +79,15 @@ campaign_defaults:
 export_dir: "./exports"
 checkpoint_every: 200 # Save CSV every N leads
 
+# Artifact management configuration
+artifacts:
+  cleanup_interval_seconds: 3600 # 1 hour
+  retention_days: 30
+  max_per_job: 20
+  compress_large_datasets: true
+  auto_cleanup: true
+  storage_backend: filesystem # filesystem, s3, etc.
+
 # Logging
 log_level: "INFO"
 log_file: "./logs/cmo_agent.log"
@@ -61,6 +95,7 @@ log_file: "./logs/cmo_agent.log"
 # Worker configuration
 workers:
   pool_size: 3 # Number of concurrent workers
+  max_concurrent_jobs_per_worker: 3 # Concurrent jobs per worker
   max_jobs_per_worker: 10 # Jobs before worker restart
   heartbeat_interval: 30 # Heartbeat frequency (seconds)
   graceful_shutdown: 60 # Shutdown timeout (seconds)
@@ -71,8 +106,14 @@ queue:
   storage_dir: "./data/jobs" # For persistent queue
   max_retries: 3
   retry_delay: 5 # seconds
-  priority_levels: 3
+  priority_levels: 5
   max_queue_size: 1000
+  enable_prioritization: true
+  enable_scheduling: true
+  enable_tagging: true
+  default_priority: "normal" # low, normal, high, urgent, critical
+  priority_boost_on_retry: true
+  worker_tag_matching: true
 
 # Persistence configuration
 persistence:
@@ -95,6 +136,8 @@ job_config:
     time_interval: 300 # Every 5 minutes
     step_interval: 50 # Every 50 steps
     volume_interval: 1000 # Every 1000 leads
+    enabled: true
+    adaptive: true # Use adaptive checkpointing based on job progress
 
 # Monitoring and metrics
 monitoring:
