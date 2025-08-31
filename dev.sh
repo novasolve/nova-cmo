@@ -62,8 +62,8 @@ start_api() {
     log "Starting API server on port $API_PORT..."
     cd "$(dirname "$0")"
     
-    # Use the direct method that works
-    nohup python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
+    # Use the direct method that works with environment loaded
+    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     echo $! > "$PIDFILE_API"
     
     # Wait and verify
@@ -85,9 +85,9 @@ start_dev() {
     
     cd "$(dirname "$0")"
     
-    # Start API in background
+    # Start API in background with environment loaded
     log "🚀 Starting API server..."
-    python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
+    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     local api_pid=$!
     echo $api_pid > "$PIDFILE_API"
     
