@@ -2,12 +2,63 @@ export const runtime = "nodejs";
 
 import { storeThreadJobMapping } from "@/lib/threadJobMapping";
 import { autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
+
+// Detect if a message is conversational vs a campaign goal
+function isConversationalMessage(text: string): boolean {
+  const conversationalPatterns = [
+    /^(hi|hello|hey|what's|how are|how's|what are|tell me|explain|why|can you|could you|would you)/i,
+    /\?$/,  // Questions
+    /^(thanks|thank you|ok|okay|cool|nice|great)/i,
+    /(going on|what's up|status|update|progress)/i
+  ];
+  
+  const campaignPatterns = [
+    /find \d+/i,
+    /(python|javascript|react|go|rust) (maintainers|developers|contributors)/i,
+    /(export|csv|leads|campaign|sequence)/i,
+    /active.*(days?|months?)/i,
+    /(smoke test|self.test)/i
+  ];
+
+  // If it matches campaign patterns, it's probably a job goal
+  if (campaignPatterns.some(pattern => pattern.test(text))) {
+    return false;
+  }
+
+  // If it matches conversational patterns, it's a chat message
+  return conversationalPatterns.some(pattern => pattern.test(text));
+}
 import { getThread, createThread, updateThread, generateThreadName } from "@/lib/threadStorage";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
     const { threadId, text, options } = body;
+
+    // Check if this is a conversational message first
+    if (isConversationalMessage(text)) {
+      // Route to conversation endpoint
+      const convResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000'}/api/chat-conversation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      
+      const convResult = await convResp.json();
+      
+      if (convResp.ok && convResult.success) {
+        return new Response(JSON.stringify({
+          success: true,
+          message: convResult.response,
+          type: "conversation",
+          threadId,
+          timestamp: new Date().toISOString()
+        }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+    }
     
     // Ensure thread exists in storage
     let thread = getThread(threadId);
@@ -19,8 +70,7 @@ export async function POST(req: Request) {
     
     // Update thread with latest message
     updateThread(threadId, {
-      lastMessage: text.length > 50 ? text.substring(0, 50) + "..." : text,
-      timestamp: "just now"
+      lastActivity: text.length > 50 ? text.substring(0, 50) + "..." : text
     });
     
     // Convert autonomy level to numeric autopilot for backend compatibility
@@ -62,8 +112,7 @@ export async function POST(req: Request) {
           
           // Update thread with job status
           updateThread(threadId, {
-            lastMessage: `🚀 Job started: ${jobResult.id}`,
-            timestamp: "just now"
+            lastActivity: `🚀 Job started: ${jobResult.id}`
           });
           
           return new Response(JSON.stringify({

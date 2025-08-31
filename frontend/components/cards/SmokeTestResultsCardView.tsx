@@ -1,5 +1,6 @@
 "use client";
 import { ActionButton } from "./ActionButton";
+import { ActionButton as ActionButtonType } from "@/types";
 
 export interface SmokeTestResultsCard {
   type: "smoke_test_results";
@@ -18,7 +19,7 @@ export interface SmokeTestResultsCard {
     draftsCount: number;
     budgetUsed: number;
   };
-  actions: ActionButton[];
+  actions: ActionButtonType[];
 }
 
 export function SmokeTestResultsCardView({ card }: { card: SmokeTestResultsCard }) {

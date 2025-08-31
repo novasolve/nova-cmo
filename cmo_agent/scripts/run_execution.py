@@ -8,7 +8,7 @@ import signal
 import sys
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)
@@ -268,7 +268,9 @@ class ExecutionEngine:
         """Submit a new job for execution"""
         try:
             # Create job with metadata
+            logger.info(f"Creating job with metadata: {metadata}")
             job = self.job_manager.create_job(goal, created_by, metadata=metadata, config_path=config_path)
+            logger.info(f"Created job {job.id} with metadata: {job.metadata}")
 
             # Record job submission
             record_job_submitted()

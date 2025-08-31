@@ -6,6 +6,7 @@ import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
 import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
 import { getThread, createThread, updateThread } from "@/lib/threadStorage";
+import { useJobState } from "@/lib/jobContext";
 
 
 import { useSmokeTestEvaluator } from "@/lib/useSmokeTestEvaluator";
@@ -16,22 +17,13 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const [loading, setLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const [jobState, setJobState] = useState({
-    status: 'idle' as 'idle' | 'running' | 'completed' | 'failed',
-    currentNode: 'No active job',
-    progress: 'Waiting for job',
-    autonomyLevel: 'L0' as AutonomyLevel,
-    budget: { used: 0, total: 50 },
-    metrics: {
-      nodesCompleted: 0,
-      totalNodes: 0,
-      avgLatency: 0,
-      totalCost: 0,
-      errorRate: 0
-    },
-    events: [] as LanggraphEvent[]
-  });
+  const { jobState, updateJobState, setActiveThread } = useJobState();
   const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // Set active thread for job context
+  useEffect(() => {
+    setActiveThread(id);
+  }, [id, setActiveThread]);
 
   // Load initial thread history
   useEffect(() => {
@@ -57,7 +49,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             threadId: id,
             role: "system",
             createdAt: new Date().toISOString(),
-            text: "Welcome to the CMO Agent Console! Type a goal to get started, like: 'Find 2k Python maintainers active in the last 90 days, sequence 123. Preflight then run with $50/day cap.'"
+            text: "👋 **Welcome to the CMO Agent Console!**\n\nI'm your AI assistant for outbound campaigns. You can:\n\n**💬 Chat naturally**: *\"Hey, what's going on?\"* or *\"What can you help me with?\"*\n\n**🚀 Start campaigns**: *\"Find 50 Python maintainers active 90 days\"*\n\n**🧪 Test the system**: Click the **Self‑Test** button\n\nWhat would you like to do? 😊"
           }]);
         }
       } catch (error) {
@@ -68,7 +60,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           threadId: id,
           role: "system",
           createdAt: new Date().toISOString(),
-          text: "Welcome to the CMO Agent Console! Type a goal to get started, like: 'Find 2k Python maintainers active in the last 90 days, sequence 123. Preflight then run with $50/day cap.'"
+          text: "👋 **Welcome to the CMO Agent Console!**\n\nI'm your AI assistant for outbound campaigns. You can:\n\n**💬 Chat naturally**: *\"Hey, what's going on?\"* or *\"What can you help me with?\"*\n\n**🚀 Start campaigns**: *\"Find 50 Python maintainers active 90 days\"*\n\n**🧪 Test the system**: Click the **Self‑Test** button\n\nWhat would you like to do? 😊"
         }]);
       } finally {
         setLoading(false);
@@ -84,24 +76,21 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       setMessages((prev) => [...prev, evt.message as ChatMessage]);
     } else if (evt.kind === "event" && evt.event) {
       // Update job state based on event
-      setJobState(prev => {
-        const newEvents = [...prev.events, evt.event!];
-        const latestEvent = evt.event!;
-        
-        return {
-          ...prev,
-          status: latestEvent.status === 'error' ? 'failed' : 
-                  latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running',
-          currentNode: latestEvent.node || prev.currentNode,
-          progress: latestEvent.msg || prev.progress,
-          metrics: {
-            ...prev.metrics,
-            nodesCompleted: prev.metrics.nodesCompleted + (latestEvent.status === 'ok' ? 1 : 0),
-            totalCost: prev.metrics.totalCost + (latestEvent.costUSD || 0),
-            avgLatency: latestEvent.latencyMs || prev.metrics.avgLatency
-          },
-          events: newEvents.slice(-50) // Keep last 50 events
-        };
+      const latestEvent = evt.event;
+      const newEvents = [...jobState.events, latestEvent];
+      
+      updateJobState({
+        status: latestEvent.status === 'error' ? 'failed' : 
+                latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running',
+        currentNode: latestEvent.node || jobState.currentNode,
+        progress: latestEvent.msg || jobState.progress,
+        metrics: {
+          ...jobState.metrics,
+          nodesCompleted: jobState.metrics.nodesCompleted + (latestEvent.status === 'ok' ? 1 : 0),
+          totalCost: jobState.metrics.totalCost + (latestEvent.costUSD || 0),
+          avgLatency: latestEvent.latencyMs || jobState.metrics.avgLatency
+        },
+        events: newEvents.slice(-50) // Keep last 50 events
       });
       
       // Also attach event to messages for chat display
@@ -120,7 +109,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
-  }, [id]);
+  }, [id, jobState.events, jobState.currentNode, jobState.progress, jobState.metrics, updateJobState]);
 
   // Set up SSE connection with job ID if available
   const [sseUrl, setSseUrl] = useState(`/api/threads/${id}/events`);
@@ -168,6 +157,16 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           // Set the current job ID for SSE streaming
           setCurrentJobId(smokeResult.jobId);
           
+          // Initialize job state for smoke test
+          updateJobState({
+            status: 'running',
+            currentNode: 'smoke_test_start',
+            progress: 'Starting smoke test...',
+            autonomyLevel: 'L0',
+            budget: { used: 0, total: 10 },
+            currentJobId: smokeResult.jobId
+          });
+          
           setMessages((prev) => [...prev, {
             id: crypto.randomUUID(),
             threadId: id,
@@ -208,17 +207,28 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       const result = await res.json();
 
       if (res.ok && result.success) {
-        // Set the current job ID for SSE streaming
-        setCurrentJobId(result.jobId);
-        
-        // Add success message showing job was created
-        setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
-          threadId: id,
-          role: "assistant",
-          createdAt: new Date().toISOString(),
-          text: `🚀 **Job Started**: ${result.jobId}\n\n${result.message}\n\n**Autonomy Level**: ${options?.autonomy || 'L0'} ${options?.autonomy === 'L0' ? '(Dry Run)' : '(Live)'}  \n**Daily Cap**: $${options?.budget || 50}`,
-        }]);
+        if (result.type === "conversation") {
+          // Handle conversational response (no job created)
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "assistant",
+            createdAt: new Date().toISOString(),
+            text: result.message,
+          }]);
+        } else {
+          // Handle job creation response
+          setCurrentJobId(result.jobId);
+          
+          // Add success message showing job was created
+          setMessages((prev) => [...prev, {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "assistant",
+            createdAt: new Date().toISOString(),
+            text: `🚀 **Job Started**: ${result.jobId}\n\n${result.message}\n\n**Autonomy Level**: ${options?.autonomy || 'L0'} ${options?.autonomy === 'L0' ? '(Dry Run)' : '(Live)'}  \n**Daily Cap**: $${options?.budget || 50}`,
+          }]);
+        }
       } else {
         // Add error message
         setMessages((prev) => [...prev, {

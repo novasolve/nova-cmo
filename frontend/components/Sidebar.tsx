@@ -1,12 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { getAllThreads, getAllCampaigns, createThread, generateThreadName, type Thread, type Campaign } from "@/lib/threadStorage";
+import { getAllThreads, getAllCampaigns, createThread, generateThreadName, type Thread } from "@/lib/threadStorage";
 
 export function Sidebar() {
   const [activeTab, setActiveTab] = useState<"campaigns" | "threads">("threads");
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [campaigns, setCampaigns] = useState<Thread[]>([]);
   const router = useRouter();
 
   // Load threads and campaigns on mount
@@ -104,10 +104,10 @@ export function Sidebar() {
                   {thread.name}
                 </div>
                 <div className="text-xs text-gray-500 line-clamp-2 mb-1">
-                  {thread.lastMessage}
+                  {thread.lastActivity || "No recent activity"}
                 </div>
                 <div className="text-xs text-gray-400">
-                  {thread.timestamp}
+                  {thread.lastActivity ? "Recent" : "Idle"}
                 </div>
               </a>
             ))}

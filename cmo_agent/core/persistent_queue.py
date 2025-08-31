@@ -92,6 +92,9 @@ class PersistentJobQueue(JobQueue):
                     if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                         queue_item = QueueItem(job=job, priority=1 if job.status == JobStatus.RUNNING else 0)
                         self._queue.append(queue_item)
+                        
+                        # Create progress stream for reloaded jobs
+                        self._progress_streams[job_id] = asyncio.Queue()
 
         except Exception as e:
             logging.getLogger(__name__).error(f"Error loading jobs from disk: {e}")

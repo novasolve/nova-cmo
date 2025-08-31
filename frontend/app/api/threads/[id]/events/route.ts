@@ -46,7 +46,7 @@ export async function GET(
             console.log(`Mapped thread ${threadId} to job ${currentJobId}`);
             // Store the mapping for future requests
             const { storeThreadJobMapping } = await import("@/lib/threadJobMapping");
-            storeThreadJobMapping(threadId, currentJobId);
+            storeThreadJobMapping(threadId, threadJob.id);
           }
         } else {
           console.warn(`Jobs API failed: ${jobsResp.status} ${jobsResp.statusText}`);
