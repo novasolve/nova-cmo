@@ -170,45 +170,6 @@ class CMOAgent:
             "errors_encountered": 0,
         }
 
-        # Pause/Resume state management
-        self._pause_requested = False
-        self._job_states = {}  # job_id -> saved state for resume
-
-        # Error handling and retry logic
-        from ..core.state import ErrorHandler
-        self.error_handler = ErrorHandler(self.config)
-
-        # Artifact management
-        from ..core.artifacts import get_artifact_manager
-        self.artifact_manager = get_artifact_manager(self.config)
-
-    def request_pause(self, job_id: str):
-        """Request to pause a running job"""
-        logger.info(f"Pause requested for job {job_id}")
-        self._pause_requested = True
-
-    def request_resume(self, job_id: str):
-        """Request to resume a paused job"""
-        logger.info(f"Resume requested for job {job_id}")
-        self._pause_requested = False
-
-    def save_job_state(self, job_id: str, state: RunState):
-        """Save job state for potential resume"""
-        logger.info(f"Saving state for job {job_id}")
-        self._job_states[job_id] = state
-
-    def get_job_state(self, job_id: str) -> Optional[RunState]:
-        """Get saved job state for resume"""
-        return self._job_states.get(job_id)
-
-    def clear_job_state(self, job_id: str):
-        """Clear saved job state"""
-        self._job_states.pop(job_id, None)
-
-    def is_pause_requested(self) -> bool:
-        """Check if pause has been requested"""
-        return self._pause_requested
-
     def _create_tool_schemas(self) -> List[Dict[str, Any]]:
         """Create tool schemas for LLM binding"""
         tool_schemas = []
@@ -472,11 +433,9 @@ class CMOAgent:
             tools["send_instantly"] = SendInstantly(self.config["INSTANTLY_API_KEY"])
 
         # CRM tools
-        # Attio: prefer access token, fall back to legacy API key for compatibility
-        attio_token = self.config.get("ATTIO_ACCESS_TOKEN") or self.config.get("ATTIO_API_KEY")
-        if attio_token and self.config.get("ATTIO_WORKSPACE_ID"):
+        if self.config.get("ATTIO_API_KEY") and self.config.get("ATTIO_WORKSPACE_ID"):
             tools["sync_attio"] = SyncAttio(
-                attio_token,
+                self.config["ATTIO_API_KEY"],
                 self.config["ATTIO_WORKSPACE_ID"]
             )
 
@@ -550,36 +509,6 @@ class CMOAgent:
                 "timestamp": datetime.now().isoformat(),
             })
 
-            # Safeguard against repeated no-tool-call responses
-            if not tool_calls:
-                state.setdefault("counters", {})
-                state["counters"]["no_tool_call_streak"] = state["counters"].get("no_tool_call_streak", 0) + 1
-                limit = self.config.get("no_tool_call_limit", 3)
-                if state["counters"]["no_tool_call_streak"] >= limit:
-                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} consecutive steps; marking job failed.")
-                    state.setdefault("errors", []).append({
-                        "stage": "agent_step",
-                        "error": "No tool calls from LLM for consecutive iterations",
-                        "error_type": "NoToolCalls",
-                        "timestamp": datetime.now().isoformat(),
-                        "critical": True,
-                        "streak": state["counters"]["no_tool_call_streak"],
-                    })
-                    state["ended"] = True
-                    state["current_stage"] = "failed"
-                else:
-                    logger.info("No tool calls, continuing to agent")
-
-                # Update step counter and return early
-                state.setdefault("counters", {})
-                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                return state
-
-            # Reset the no-tool-call streak on valid tool calls
-            state.setdefault("counters", {})
-            if state["counters"].get("no_tool_call_streak"):
-                state["counters"]["no_tool_call_streak"] = 0
-
             # Execute tool calls directly in the agent step
             for call in tool_calls:
                 tool_name = call.get("name")
@@ -587,41 +516,13 @@ class CMOAgent:
                     logger.info(f"Executing tool: {tool_name}")
                     try:
                         tool = self.tools[tool_name]
-                        # Hydrate missing or unsafe args from state for robustness
-                        raw_args = call.get("args", {})
-                        hydrated_args, hydration_note = self._hydrate_tool_args(tool_name, raw_args, state)
-                        if hydration_note:
-                            state.setdefault("history", []).append({
-                                "type": "ai",
-                                "content": hydration_note,
-                                "timestamp": datetime.now().isoformat(),
-                            })
-
-                        # If we cannot safely hydrate required args, skip executing this tool
-                        if hydrated_args is None:
-                            logger.info(f"Skipping tool {tool_name} due to insufficient arguments after hydration")
-                            continue
-
-                        result = await tool.execute(**hydrated_args)
+                        result = await tool.execute(**call.get("args", {}))
 
                         # Store result
                         state = self._reduce_tool_result(state, tool_name, result)
                         self.stats["tools_executed"] += 1
 
                         logger.info(f"Tool {tool_name} executed successfully")
-
-                        # Append a function-style summary to conversation history for LLM awareness
-                        try:
-                            summary_msg = self._summarize_tool_result(tool_name, result, state)
-                            if summary_msg:
-                                state.setdefault("history", []).append({
-                                    "type": "ai",
-                                    "content": summary_msg,
-                                    "timestamp": datetime.now().isoformat(),
-                                })
-                        except Exception:
-                            # Non-fatal if summarization fails
-                            pass
 
                         # Check if this is the done tool
                         if tool_name == "done":
@@ -634,186 +535,6 @@ class CMOAgent:
                         error_result = ToolResult(success=False, error=str(e))
                         state = self._reduce_tool_result(state, tool_name, error_result)
                         self.stats["errors_encountered"] += 1
-
-            # Fallback auto-progression if the LLM keeps issuing only searches
-            if not state.get("ended"):
-                try:
-                    repos = state.get("repos", [])
-                    candidates = state.get("candidates", [])
-                    leads = state.get("leads", [])
-
-                    # If we already have repos but no candidates, extract people
-                    if repos and not candidates and "extract_people" in self.tools:
-                        logger.info("Auto-progress: executing extract_people based on repos present")
-                        try:
-                            tool = self.tools["extract_people"]
-                            result = await tool.execute(repos=repos, top_authors_per_repo=5)
-                            state = self._reduce_tool_result(state, "extract_people", result)
-                            self.stats["tools_executed"] += 1
-                            # Inform LLM about auto-progress result
-                            try:
-                                summary_msg = self._summarize_tool_result("extract_people", result, state, auto_progress=True)
-                                if summary_msg:
-                                    state.setdefault("history", []).append({
-                                        "type": "ai",
-                                        "content": summary_msg,
-                                        "timestamp": datetime.now().isoformat(),
-                                    })
-                            except Exception:
-                                pass
-                            # After extracting, return early to let next loop continue
-                            state.setdefault("counters", {})
-                            state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                            logger.info("Auto-progress: extract_people completed, yielding control")
-                            return state
-                        except Exception as e:
-                            logger.warning(f"Auto-progress extract_people failed: {e}")
-
-                    # If we have candidates but no leads enriched, enrich users in batch
-                    if candidates and not leads and "enrich_github_users" in self.tools:
-                        unique_logins = []
-                        seen = set()
-                        for c in candidates:
-                            login = c.get("login")
-                            if login and login not in seen:
-                                unique_logins.append(login)
-                                seen.add(login)
-                        if unique_logins:
-                            logger.info("Auto-progress: executing enrich_github_users based on candidates present")
-                            try:
-                                tool = self.tools["enrich_github_users"]
-                                result = await tool.execute(logins=unique_logins[:25])
-                                state = self._reduce_tool_result(state, "enrich_github_users", result)
-                                self.stats["tools_executed"] += 1
-                                # Inform LLM about auto-progress result
-                                try:
-                                    summary_msg = self._summarize_tool_result("enrich_github_users", result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-                                state.setdefault("counters", {})
-                                state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-                                logger.info("Auto-progress: enrich_github_users completed, yielding control")
-                                return state
-                            except Exception as e:
-                                logger.warning(f"Auto-progress enrich_github_users failed: {e}")
-
-                    # If we have enriched leads but missing emails and have candidates mapping, find emails in batch
-                    if state.get("leads") and "find_commit_emails_batch" in self.tools and not state.get("email_search_exhausted"):
-                        leads_without_email = [l for l in state.get("leads", []) if not l.get("email") and not l.get("no_email_found")]
-                        if leads_without_email and candidates:
-                            user_repo_pairs = []
-                            # Build (login, repo_full_name) pairs from candidates signals
-                            for c in candidates:
-                                login = c.get("login")
-                                repo_full_name = c.get("from_repo")
-                                if login and repo_full_name:
-                                    user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
-                            if user_repo_pairs:
-                                logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
-                                try:
-                                    # Track before/after counts to detect progress
-                                    before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
-                                    tool = self.tools["find_commit_emails_batch"]
-                                    result = await tool.execute(user_repo_pairs=user_repo_pairs[:50], days=90)
-                                    state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
-                                    after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
-
-                                    self.stats["tools_executed"] += 1
-                                    state.setdefault("counters", {})
-                                    state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
-
-                                    # Inform LLM about auto-progress result
-                                    try:
-                                        summary_msg = self._summarize_tool_result("find_commit_emails_batch", result, state, auto_progress=True, extra_info={
-                                            "before": before_with_email,
-                                            "after": after_with_email,
-                                        })
-                                        if summary_msg:
-                                            state.setdefault("history", []).append({
-                                                "type": "ai",
-                                                "content": summary_msg,
-                                                "timestamp": datetime.now().isoformat(),
-                                            })
-                                    except Exception:
-                                        pass
-
-                                    # Detect no-progress attempts and set exhaustion flag to break loops
-                                    if after_with_email <= before_with_email:
-                                        streak = state["counters"].get("email_find_noop_streak", 0) + 1
-                                        state["counters"]["email_find_noop_streak"] = streak
-                                        if streak >= 2:
-                                            # Mark unresolvable leads and stop auto email search
-                                            for lead in state.get("leads", []):
-                                                if not lead.get("email"):
-                                                    attempts = lead.get("_email_attempts", 0) + 1
-                                                    lead["_email_attempts"] = attempts
-                                                    if attempts >= 2:
-                                                        lead["no_email_found"] = True
-                                            state["email_search_exhausted"] = True
-                                            logger.info("Auto-progress: email search exhausted; marking unresolvable leads and stopping further attempts")
-                                    else:
-                                        # Reset noop streak on progress
-                                        if state["counters"].get("email_find_noop_streak"):
-                                            state["counters"]["email_find_noop_streak"] = 0
-
-                                    logger.info("Auto-progress: find_commit_emails_batch completed, yielding control")
-                                    return state
-                                except Exception as e:
-                                    logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
-
-                    # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
-                    leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
-                    if leads_with_email and not state.get("ended"):
-                        try:
-                            # Attempt simple personalization (optional) - skip if not available
-                            # Export leads with email
-                            if "export_csv" in self.tools:
-                                export_tool = self.tools["export_csv"]
-                                job_id = state.get("job_id", "job")
-                                export_path = f"{job_id}_leads.csv"
-                                export_rows = leads_with_email
-                                export_result = await export_tool.execute(rows=export_rows, path=export_path)
-                                state = self._reduce_tool_result(state, "export_csv", export_result)
-                                try:
-                                    summary_msg = self._summarize_tool_result("export_csv", export_result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-
-                            # Signal completion
-                            if "done" in self.tools:
-                                done_tool = self.tools["done"]
-                                summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
-                                done_result = await done_tool.execute(summary=summary_text)
-                                state = self._reduce_tool_result(state, "done", done_result)
-                                try:
-                                    summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
-                                    if summary_msg:
-                                        state.setdefault("history", []).append({
-                                            "type": "ai",
-                                            "content": summary_msg,
-                                            "timestamp": datetime.now().isoformat(),
-                                        })
-                                except Exception:
-                                    pass
-                                state["ended"] = True
-                                logger.info("Auto-progress: finalized job via export and done")
-                                return state
-                        except Exception as e:
-                            logger.warning(f"Auto-finalization failed: {e}")
-                except Exception as e:
-                    logger.warning(f"Auto-progress block encountered an error: {e}")
 
             # Update counters
             state.setdefault("counters", {})
@@ -843,7 +564,54 @@ class CMOAgent:
 
             return state
 
-    # _create_tool_node is not used in the single-node workflow and has been removed for clarity
+    def _create_tool_node(self, tool_name: str):
+        """Create a node function for a specific tool"""
+        async def tool_node(state: RunState) -> Dict[str, Any]:
+            tool = self.tools[tool_name]
+
+            # Get tool call arguments
+            tool_calls = state.get("tool_calls", [])
+            if not tool_calls:
+                return state
+
+            # Execute tool calls
+            for call in tool_calls:
+                if call.get("name") == tool_name:
+                    try:
+                        # Execute tool
+                        result = await tool.execute(**call.get("args", {}))
+
+                        # Store result in state
+                        state = self._reduce_tool_result(state, tool_name, result)
+
+                        # Update stats
+                        self.stats["tools_executed"] += 1
+
+                    except Exception as e:
+                        logger.error(f"Tool {tool_name} execution failed: {e}")
+                        error_result = ToolResult(success=False, error=str(e))
+
+                        # Add detailed error to state
+                        error_info = {
+                            "stage": f"tool_{tool_name}",
+                            "error": str(e),
+                            "error_type": type(e).__name__,
+                            "timestamp": datetime.now().isoformat(),
+                            "tool_name": tool_name,
+                            "tool_args": call.get("args", {}),
+                        }
+                        state.setdefault("errors", []).append(error_info)
+
+                        # Update error counter
+                        state.setdefault("counters", {})
+                        state["counters"]["tool_errors"] = state["counters"].get("tool_errors", 0) + 1
+
+                        state = self._reduce_tool_result(state, tool_name, error_result)
+                        self.stats["errors_encountered"] += 1
+
+            return state
+
+        return tool_node
 
     def _reduce_tool_result(self, state: RunState, tool_name: str, result: ToolResult) -> Dict[str, Any]:
         """Reduce tool result into the RunState"""
@@ -869,11 +637,9 @@ class CMOAgent:
         # Handle different tool types
         if tool_name == "search_github_repos" and result.success:
             state["repos"] = result.data.get("repos", [])
-            state["current_stage"] = "discovery"
 
         elif tool_name == "extract_people" and result.success:
             state["candidates"] = result.data.get("candidates", [])
-            state["current_stage"] = "extraction"
 
         elif tool_name == "enrich_github_user" and result.success:
             # Add enriched profile to leads
@@ -909,7 +675,6 @@ class CMOAgent:
                         break
                 if not updated:
                     state["leads"].append(profile)
-            state["current_stage"] = "enrichment"
 
         elif tool_name == "find_commit_emails" and result.success:
             # Add email to the corresponding lead
@@ -920,7 +685,6 @@ class CMOAgent:
                     if lead.get("login") == login:
                         lead["email"] = emails[0]  # Take first email
                         break
-            state["current_stage"] = "validation"
 
         elif tool_name == "find_commit_emails_batch" and result.success:
             # Handle batched email lookup
@@ -933,7 +697,6 @@ class CMOAgent:
                         if lead.get("login") == login:
                             lead["email"] = emails[0]  # Take first email
                             break
-            state["current_stage"] = "validation"
 
         elif tool_name == "mx_check" and result.success:
             # Mark emails as valid/invalid
@@ -942,7 +705,6 @@ class CMOAgent:
                 email = lead.get("email")
                 if email:
                     lead["email_valid"] = email in valid_emails
-            state["current_stage"] = "validation"
 
         elif tool_name == "score_icp" and result.success:
             # This would be handled per-lead in the enrichment phase
@@ -952,25 +714,21 @@ class CMOAgent:
             # Add rendered email to to_send
             state.setdefault("to_send", [])
             state["to_send"].append(result.data)
-            state["current_stage"] = "personalization"
 
         elif tool_name == "send_instantly" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["instantly"] = result.data
-            state["current_stage"] = "sending"
 
         elif tool_name == "sync_attio" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["attio"] = result.data
-            state["current_stage"] = "sync"
 
         elif tool_name == "sync_linear" and result.success:
             # Update reports
             state.setdefault("reports", {})
             state["reports"]["linear"] = result.data
-            state["current_stage"] = "sync"
 
         elif tool_name == "export_csv" and result.success:
             # Add to checkpoints
@@ -981,108 +739,12 @@ class CMOAgent:
                 "count": result.data.get("count"),
                 "timestamp": datetime.now().isoformat(),
             })
-            state["current_stage"] = "export"
 
         elif tool_name == "done" and result.success:
             state["ended"] = True
             state["completed_at"] = result.data.get("completed_at")
-            state["current_stage"] = "completed"
 
         return state
-
-    def _summarize_tool_result(self, tool_name: str, result: ToolResult, state: RunState, auto_progress: bool = False, extra_info: Dict[str, Any] = None) -> str:
-        """Create a concise summary line for a tool result to feed back to the LLM."""
-        try:
-            prefix = "[auto] " if auto_progress else ""
-            if not getattr(result, "success", False):
-                return f"{prefix}{tool_name} failed: {getattr(result, 'error', 'unknown error')}"
-
-            if tool_name == "search_github_repos":
-                count = len(state.get("repos", []))
-                return f"{prefix}search_github_repos: found {count} repositories."
-            if tool_name == "extract_people":
-                count = len(state.get("candidates", []))
-                return f"{prefix}extract_people: extracted {count} candidates from repositories."
-            if tool_name in ("enrich_github_user", "enrich_github_users"):
-                count = len(state.get("leads", []))
-                return f"{prefix}{tool_name}: enriched {count} profiles total."
-            if tool_name == "find_commit_emails_batch":
-                count = len([l for l in state.get("leads", []) if l.get("email")])
-                if extra_info and "before" in extra_info and "after" in extra_info:
-                    return f"{prefix}find_commit_emails_batch: emails on leads {extra_info['before']} -> {extra_info['after']} (now {count} leads have emails)."
-                return f"{prefix}find_commit_emails_batch: now {count} leads have emails."
-            if tool_name == "mx_check":
-                valid = len([l for l in state.get("leads", []) if l.get("email_valid")])
-                return f"{prefix}mx_check: validated emails, {valid} marked valid."
-            if tool_name == "export_csv":
-                path = result.data.get("path") if hasattr(result, "data") else None
-                count = result.data.get("count") if hasattr(result, "data") else None
-                return f"{prefix}export_csv: exported {count} rows to {path}."
-            if tool_name == "done":
-                return f"{prefix}done: job completed."
-        except Exception:
-            return ""
-        return ""
-
-    def _hydrate_tool_args(self, tool_name: str, args: Dict[str, Any], state: RunState) -> (Optional[Dict[str, Any]], Optional[str]):
-        """Best-effort fill of missing required args from state to avoid LLM mis-calls.
-
-        Returns (args_or_none, note). If args_or_none is None, caller should skip execution.
-        """
-        try:
-            note = None
-            # Shallow copy to avoid mutating original
-            hydrated = dict(args or {})
-
-            if tool_name == "export_csv":
-                # Requires rows and path
-                if "rows" not in hydrated or not hydrated.get("rows"):
-                    leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
-                    fallback_rows = leads_with_email or state.get("to_send", []) or state.get("leads", [])
-                    if not fallback_rows:
-                        return None, "[auto] export_csv skipped: no data rows available in state."
-                    hydrated["rows"] = fallback_rows
-                if "path" not in hydrated or not hydrated.get("path"):
-                    job_id = state.get("job_id", "job")
-                    hydrated["path"] = f"{job_id}_leads.csv"
-                note = f"[auto] Filled export_csv args: rows={len(hydrated['rows'])}, path={hydrated['path']}"
-                return hydrated, note
-
-            if tool_name == "mx_check":
-                # Requires emails list
-                if "emails" not in hydrated or not hydrated.get("emails"):
-                    emails = []
-                    for lead in state.get("leads", []):
-                        if lead.get("email"):
-                            emails.append(lead["email"])
-                    if not emails:
-                        return None, "[auto] mx_check skipped: no emails found in state."
-                    hydrated["emails"] = list(dict.fromkeys(emails))
-                    note = f"[auto] Filled mx_check emails: {len(hydrated['emails'])}"
-                return hydrated, note
-
-            if tool_name == "score_icp":
-                # Requires single profile
-                if "profile" not in hydrated or not hydrated.get("profile"):
-                    lead = None
-                    # Prefer a lead with email; else any lead
-                    leads = state.get("leads", [])
-                    for l in leads:
-                        if l.get("email"):
-                            lead = l
-                            break
-                    if lead is None and leads:
-                        lead = leads[0]
-                    if lead is None:
-                        return None, "[auto] score_icp skipped: no lead profile available."
-                    hydrated["profile"] = lead
-                    note = f"[auto] Filled score_icp profile for {lead.get('login', 'unknown')}"
-                return hydrated, note
-
-            # Default: return original args without note
-            return hydrated, None
-        except Exception:
-            return args, None
 
     def _build_system_prompt(self, state: RunState) -> str:
         """Build the system prompt for the agent"""
@@ -1105,17 +767,52 @@ FOLLOW THIS EXACT SEQUENCE:
 
 CRITICAL: Call done("Completed") immediately after any major step if you have meaningful results.
 
-RULES TO AVOID LOOPS:
-- If repositories already exist in state, do NOT call search_github_repos again. Proceed to extract_people.
-- Use the assistant function result summaries in the conversation to update your plan. Do not repeat tools that already succeeded unless new inputs are provided.
-- If leads have emails, proceed towards mx_check, export_csv and done.
-
 Available tools: {', '.join(self.tools.keys())}
 """
 
         return prompt
 
-    # _should_continue is unused in the current single-node design; retaining for reference is unnecessary
+    def _should_continue(self, state: RunState) -> str:
+        """Determine next step based on current state"""
+        # Check for explicit termination conditions first
+        if state.get("ended"):
+            logger.info(f"Workflow terminated: ended flag is set (steps: {state.get('counters', {}).get('steps', 0)})")
+            return "end"
+
+        # Check step count limit
+        counters = state.get("counters", {})
+        current_steps = counters.get("steps", 0)
+        max_steps = self.config.get("max_steps", 40)
+        if current_steps >= max_steps:
+            logger.warning(f"Workflow terminated: reached max_steps limit ({current_steps}/{max_steps})")
+            # Auto-call done tool if we hit the limit
+            state["ended"] = True
+            return "end"
+
+        tool_calls = state.get("tool_calls", [])
+        logger.info(f"_should_continue called - tool_calls: {len(tool_calls)}")
+
+        if not tool_calls:
+            logger.info("No tool calls, continuing to agent")
+            return "continue"
+
+        # Check for done tool
+        for call in tool_calls:
+            if call.get("name") == "done":
+                logger.info("Workflow terminated: done tool called")
+                return "end"
+
+        # Route to appropriate tool (only if tool exists)
+        for call in tool_calls:
+            tool_name = call.get("name")
+            logger.info(f"Checking tool: {tool_name}, available: {tool_name in self.tools}")
+            if tool_name and tool_name in self.tools:
+                logger.info(f"Routing to tool: {tool_name}")
+                return f"tool_{tool_name}"
+
+        # If no valid tool found, continue to next agent step
+        logger.warning(f"No valid tool found in tool_calls: {[call.get('name') for call in tool_calls]}")
+        return "continue"
 
     async def run_job(self, goal: str, created_by: str = "user", progress_callback: Optional[callable] = None) -> Dict[str, Any]:
         """Run a complete job from start to finish with progress updates"""
@@ -1160,177 +857,65 @@ Available tools: {', '.join(self.tools.keys())}
                     if progress_callback:
                         await progress_callback(progress_info)
 
-                    # Check for pause request
-                    if self.is_pause_requested():
-                        logger.info(f"Pause detected for job {job_meta.job_id}, saving state and stopping")
-                        # Save current state for resume
-                        self.save_job_state(job_meta.job_id, step_result)
-                        await self._save_checkpoint(job_meta.job_id, step_result, "paused")
-
-                        # Return partial result
-                        return {
-                            "success": False,
-                            "job_id": job_meta.job_id,
-                            "final_state": step_result,
-                            "paused": True,
-                            "message": "Job paused by user request",
-                        }
-
                     # Periodic checkpointing
                     if await self._should_checkpoint(step_result):
                         await self._save_checkpoint(job_meta.job_id, step_result, "periodic")
 
                 logger.info("Job completed successfully via astream")
 
+                # Save final checkpoint
+                await self._save_checkpoint(job_meta.job_id, final_state, "completed")
+
             except Exception as e:
                 logger.error(f"Job execution failed via astream: {e}")
+                # Try to save error checkpoint if we have a state
+                if 'final_state' in locals() and final_state:
+                    await self._save_checkpoint(job_meta.job_id, final_state, "error")
                 raise
 
             # Update stats
             self.stats["jobs_processed"] += 1
 
-            # Finalize job with comprehensive artifact collection
-            finalization_result = await self._finalize_job(job_meta.job_id, final_state, "completed")
+            # Save final checkpoint
+            if final_state:
+                await self._save_checkpoint(job_meta.job_id, final_state, "completed")
+
+            # Collect artifacts
+            artifacts = await self._collect_artifacts(job_meta.job_id)
 
             return {
                 "success": True,
                 "job_id": job_meta.job_id,
                 "final_state": final_state,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
+                "artifacts": artifacts,
             }
+
         except Exception as e:
-            # Outer run_job failure handler
             logger.error(f"Job execution failed: {e}")
             job_id = job_meta.job_id if job_meta else "unknown"
 
-            # Attach error to state if available
-            if 'final_state' in locals() and final_state and hasattr(final_state, 'setdefault'):
-                final_state.setdefault("errors", []).append({
+            # Save error checkpoint
+            if final_state:
+                await self._save_checkpoint(job_id, final_state, "error")
+
+                # Add critical error to final state
+                error_info = {
                     "stage": "job_execution",
                     "error": str(e),
                     "error_type": type(e).__name__,
                     "timestamp": datetime.now().isoformat(),
                     "job_id": job_id,
                     "critical": True,
-                })
-                final_state["ended"] = True
-                final_state["current_stage"] = "failed"
-
-            # Finalize to collect partial artifacts
-            try:
-                finalization_result = await self._finalize_job(job_id, final_state if 'final_state' in locals() else None, "failed")
-            except Exception:
-                finalization_result = {"artifacts": [], "report": None}
+                }
+                final_state.setdefault("errors", []).append(error_info)
 
             return {
                 "success": False,
                 "error": str(e),
                 "error_type": type(e).__name__,
                 "job_id": job_id,
-                "final_state": final_state if 'final_state' in locals() else None,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
-            }
-    async def resume_job(self, job_id: str, progress_callback: Optional[callable] = None) -> Dict[str, Any]:
-        """Resume a paused job from saved state"""
-        logger.info(f"Attempting to resume job {job_id}")
-
-        # Get saved state
-        saved_state = self.get_job_state(job_id)
-        if not saved_state:
-            raise ValueError(f"No saved state found for job {job_id}")
-
-        # Clear pause flag for resume
-        self._pause_requested = False
-
-        # Continue from saved state
-        final_state = None
-        max_steps = self.config.get("max_steps", 40)
-
-        try:
-            async for step_result in self.graph.astream(saved_state, {"recursion_limit": max_steps + 10}):
-                final_state = step_result
-
-                # Extract progress information
-                progress_info = self._extract_progress_info(step_result)
-                if progress_callback:
-                    await progress_callback(progress_info)
-
-                # Check for pause request (can pause again during resume)
-                if self.is_pause_requested():
-                    logger.info(f"Pause detected during resume for job {job_id}, saving state and stopping")
-                    self.save_job_state(job_id, step_result)
-                    await self._save_checkpoint(job_id, step_result, "paused")
-
-                    return {
-                        "success": False,
-                        "job_id": job_id,
-                        "final_state": step_result,
-                        "paused": True,
-                        "message": "Job paused again during resume",
-                    }
-
-                # Periodic checkpointing
-                if await self._should_checkpoint(step_result):
-                    await self._save_checkpoint(job_id, step_result, "periodic")
-
-            logger.info(f"Job {job_id} resumed and completed successfully")
-
-            # Clear saved state since job is complete
-            self.clear_job_state(job_id)
-
-            # Update stats
-            self.stats["jobs_processed"] += 1
-
-            # Finalize job after successful resume
-            finalization_result = await self._finalize_job(job_id, final_state, "completed")
-
-            return {
-                "success": True,
-                "job_id": job_id,
                 "final_state": final_state,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
-                "resumed": True,
             }
-
-        except Exception as e:
-            logger.error(f"Job resume failed for {job_id}: {e}")
-
-            # Attach error to state
-            if final_state is None:
-                final_state = {"errors": [], "counters": {}}
-            if hasattr(final_state, 'setdefault'):
-                final_state.setdefault("errors", []).append({
-                    "stage": "job_resume",
-                    "error": str(e),
-                    "error_type": type(e).__name__,
-                    "timestamp": datetime.now().isoformat(),
-                    "job_id": job_id,
-                    "critical": True,
-                })
-                final_state["ended"] = True
-                final_state["current_stage"] = "failed"
-
-            # Finalize as failed to collect artifacts
-            try:
-                finalization_result = await self._finalize_job(job_id, final_state, "failed")
-            except Exception:
-                finalization_result = {"artifacts": [], "report": None}
-
-            return {
-                "success": False,
-                "job_id": job_id,
-                "final_state": final_state,
-                "artifacts": finalization_result.get("artifacts", []),
-                "report": finalization_result.get("report"),
-                "resumed": True,
-                "error": str(e),
-                "error_type": type(e).__name__,
-            }
-
-        
 
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
         """Extract progress information from RunState"""
@@ -1379,7 +964,11 @@ Available tools: {', '.join(self.tools.keys())}
 
         return progress_info
 
-    
+    async def _collect_artifacts(self, job_id: str) -> List[str]:
+        """Collect artifacts generated during job execution"""
+        # This would scan the artifacts directory for job-specific files
+        # For now, return empty list
+        return []
 
     async def _save_checkpoint(self, job_id: str, state: RunState, checkpoint_type: str = "periodic"):
         """Save a checkpoint of the current job state"""
@@ -1418,11 +1007,6 @@ Available tools: {', '.join(self.tools.keys())}
             })
 
             logger.info(f"Checkpoint saved: {checkpoint_file}")
-
-            # Clean up old checkpoints periodically
-            if checkpoint_type == "periodic":
-                await self._cleanup_checkpoints(job_id)
-
             return str(checkpoint_file)
 
         except Exception as e:
@@ -1430,524 +1014,22 @@ Available tools: {', '.join(self.tools.keys())}
             return None
 
     async def _should_checkpoint(self, state: RunState) -> bool:
-        """Determine if we should create a checkpoint using hybrid strategy"""
-        import time
-
+        """Determine if we should create a checkpoint"""
         counters = state.get("counters", {})
         current_step = counters.get("steps", 0)
-        current_stage = state.get("current_stage", "")
 
-        # Get checkpoint configuration
-        checkpoint_config = self.config.get("job_config", {}).get("checkpoints", {})
-        time_interval = checkpoint_config.get("time_interval", 300)  # 5 minutes default
-        step_interval = checkpoint_config.get("step_interval", 50)   # Every 50 steps
-        volume_interval = checkpoint_config.get("volume_interval", 1000)  # Every 1000 leads
-
-        # Time-based checkpointing
-        last_checkpoint_time = getattr(self, '_last_checkpoint_time', 0)
-        current_time = time.time()
-
-        if current_time - last_checkpoint_time >= time_interval:
-            self._last_checkpoint_time = current_time
-            logger.debug(f"Time-based checkpoint triggered after {time_interval}s")
+        # Checkpoint every 5 steps or when significant milestones are reached
+        if current_step % 5 == 0:
             return True
 
-        # Step-based checkpointing
-        if current_step > 0 and current_step % step_interval == 0:
-            logger.debug(f"Step-based checkpoint triggered at step {current_step}")
-            return True
-
-        # Volume-based checkpointing
+        # Checkpoint when we have significant data
         repos_count = len(state.get("repos", []))
         leads_count = len(state.get("leads", []))
-        candidates_count = len(state.get("candidates", []))
 
-        total_volume = repos_count + leads_count + candidates_count
-
-        if total_volume > 0 and total_volume % volume_interval == 0:
-            logger.debug(f"Volume-based checkpoint triggered at {total_volume} items")
+        if repos_count > 0 and repos_count % 10 == 0:
             return True
 
-        # Stage transition checkpointing
-        last_checkpointed_stage = getattr(self, '_last_checkpointed_stage', None)
-        if last_checkpointed_stage != current_stage and current_stage:
-            self._last_checkpointed_stage = current_stage
-            logger.debug(f"Stage transition checkpoint triggered: {current_stage}")
+        if leads_count > 0 and leads_count % 20 == 0:
             return True
-
-        # Milestone-based checkpointing
-        if self._is_significant_milestone(state):
-            logger.debug("Significant milestone checkpoint triggered")
-            return True
-
-        return False
-
-    async def _cleanup_checkpoints(self, job_id: str):
-        """Clean up old checkpoints to prevent disk space issues"""
-        try:
-            from pathlib import Path
-            import os
-
-            checkpoints_dir = Path(self.config.get("directories", {}).get("checkpoints", "./checkpoints"))
-            if not checkpoints_dir.exists():
-                return
-
-            # Get all checkpoints for this job
-            job_checkpoints = list(checkpoints_dir.glob(f"{job_id}_*.json"))
-
-            # Sort by modification time (newest first)
-            job_checkpoints.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-
-            # Keep only the most recent checkpoints
-            max_checkpoints = self.config.get("persistence", {}).get("max_checkpoints", 50)
-
-            if len(job_checkpoints) > max_checkpoints:
-                checkpoints_to_delete = job_checkpoints[max_checkpoints:]
-
-                for checkpoint_file in checkpoints_to_delete:
-                    try:
-                        os.remove(checkpoint_file)
-                        logger.debug(f"Cleaned up old checkpoint: {checkpoint_file}")
-                    except Exception as e:
-                        logger.warning(f"Failed to delete checkpoint {checkpoint_file}: {e}")
-
-                logger.info(f"Cleaned up {len(checkpoints_to_delete)} old checkpoints for job {job_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to cleanup checkpoints for job {job_id}: {e}")
-
-    async def _finalize_job(self, job_id: str, final_state: RunState, job_status: str = "completed"):
-        """Finalize job with proper artifact collection and cleanup"""
-        try:
-            logger.info(f"Finalizing job {job_id} with status: {job_status}")
-
-            # Collect artifacts based on job status
-            artifacts = await self._collect_artifacts(job_id, final_state, job_status)
-
-            # Save final checkpoint
-            if final_state:
-                await self._save_checkpoint(job_id, final_state, job_status)
-
-            # Clean up temporary resources
-            await self._cleanup_job_resources(job_id, job_status)
-
-            # Generate final report
-            final_report = self._generate_final_report(job_id, final_state, artifacts, job_status)
-
-            return {
-                "job_id": job_id,
-                "status": job_status,
-                "artifacts": artifacts,
-                "final_state": final_state,
-                "report": final_report,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to finalize job {job_id}: {e}")
-            return {
-                "job_id": job_id,
-                "status": "finalization_failed",
-                "error": str(e),
-                "artifacts": [],
-            }
-
-    async def _collect_artifacts(self, job_id: str, final_state: RunState = None, job_status: str = "completed"):
-        """Collect and organize artifacts based on job completion status"""
-        artifacts = []
-
-        try:
-            # Always collect available data regardless of completion status
-            if final_state:
-                # Collect repositories data
-                repos = final_state.get("repos", [])
-                if repos:
-                    artifacts.append(await self._export_repos_data(job_id, repos, job_status))
-
-                # Collect leads data
-                leads = final_state.get("leads", [])
-                if leads:
-                    artifacts.append(await self._export_leads_data(job_id, leads, job_status))
-
-                # Collect candidates data
-                candidates = final_state.get("candidates", [])
-                if candidates:
-                    artifacts.append(await self._export_candidates_data(job_id, candidates, job_status))
-
-                # Collect personalization data if available
-                to_send = final_state.get("to_send", [])
-                if to_send:
-                    artifacts.append(await self._export_personalization_data(job_id, to_send, job_status))
-
-                # Collect reports if available
-                reports = final_state.get("reports", {})
-                if reports:
-                    artifacts.append(await self._export_reports_data(job_id, reports, job_status))
-
-            # Collect error logs if job failed
-            if job_status in ["failed", "paused"]:
-                error_artifact = await self._export_error_summary(job_id, final_state)
-                if error_artifact:
-                    artifacts.append(error_artifact)
-
-            # Collect performance metrics
-            metrics_artifact = await self._export_performance_metrics(job_id, final_state)
-            if metrics_artifact:
-                artifacts.append(metrics_artifact)
-
-        except Exception as e:
-            logger.error(f"Failed to collect artifacts for job {job_id}: {e}")
-
-        return artifacts
-
-    async def _export_repos_data(self, job_id: str, repos: list, job_status: str):
-        """Export repositories data to artifact using artifact manager"""
-        try:
-            data = {
-                "job_id": job_id,
-                "job_status": job_status,
-                "export_timestamp": datetime.now().isoformat(),
-                "data_type": "repositories",
-                "count": len(repos),
-                "repositories": repos,
-            }
-
-            filename = f"repos_{job_status}.json"
-            artifact_id = await self.artifact_manager.store_artifact(
-                job_id=job_id,
-                filename=filename,
-                data=data,
-                artifact_type="repositories",
-                retention_policy="default",
-                compress=len(repos) > 100,  # Compress large datasets
-                tags=["repositories", job_status]
-            )
-
-            # Get metadata for return value
-            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
-
-            return {
-                "type": "repositories",
-                "artifact_id": artifact_id,
-                "path": metadata.path if metadata else None,
-                "filename": metadata.filename if metadata else filename,
-                "count": len(repos),
-                "format": "json",
-                "compressed": metadata.compressed if metadata else False,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export repos data: {e}")
-            return None
-
-    async def _export_leads_data(self, job_id: str, leads: list, job_status: str):
-        """Export leads data to artifact using artifact manager"""
-        try:
-            data = {
-                "job_id": job_id,
-                "job_status": job_status,
-                "export_timestamp": datetime.now().isoformat(),
-                "data_type": "leads",
-                "count": len(leads),
-                "leads": leads,
-            }
-
-            filename = f"leads_{job_status}.json"
-            artifact_id = await self.artifact_manager.store_artifact(
-                job_id=job_id,
-                filename=filename,
-                data=data,
-                artifact_type="leads",
-                retention_policy="default",
-                compress=len(leads) > 50,  # Compress larger datasets
-                tags=["leads", job_status]
-            )
-
-            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
-
-            return {
-                "type": "leads",
-                "artifact_id": artifact_id,
-                "path": metadata.path if metadata else None,
-                "filename": metadata.filename if metadata else filename,
-                "count": len(leads),
-                "format": "json",
-                "compressed": metadata.compressed if metadata else False,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export leads data: {e}")
-            return None
-
-    async def _export_candidates_data(self, job_id: str, candidates: list, job_status: str):
-        """Export candidates data to artifact using artifact manager"""
-        try:
-            data = {
-                "job_id": job_id,
-                "job_status": job_status,
-                "export_timestamp": datetime.now().isoformat(),
-                "data_type": "candidates",
-                "count": len(candidates),
-                "candidates": candidates,
-            }
-
-            filename = f"candidates_{job_status}.json"
-            artifact_id = await self.artifact_manager.store_artifact(
-                job_id=job_id,
-                filename=filename,
-                data=data,
-                artifact_type="candidates",
-                retention_policy="default",
-                compress=len(candidates) > 200,  # Compress for larger datasets
-                tags=["candidates", job_status]
-            )
-
-            metadata = await self.artifact_manager.get_artifact_metadata(artifact_id)
-
-            return {
-                "type": "candidates",
-                "artifact_id": artifact_id,
-                "path": metadata.path if metadata else None,
-                "filename": metadata.filename if metadata else filename,
-                "count": len(candidates),
-                "format": "json",
-                "compressed": metadata.compressed if metadata else False,
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export candidates data: {e}")
-            return None
-
-    async def _export_personalization_data(self, job_id: str, to_send: list, job_status: str):
-        """Export personalization data to artifact"""
-        try:
-            from pathlib import Path
-            import json
-
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
-
-            filename = f"{job_id}_personalization_{job_status}.json"
-            filepath = exports_dir / filename
-
-            with open(filepath, 'w') as f:
-                json.dump({
-                    "job_id": job_id,
-                    "job_status": job_status,
-                    "export_timestamp": datetime.now().isoformat(),
-                    "data_type": "personalization",
-                    "count": len(to_send),
-                    "to_send": to_send,
-                }, f, indent=2, default=str)
-
-            return {
-                "type": "personalization",
-                "path": str(filepath),
-                "filename": filename,
-                "count": len(to_send),
-                "format": "json",
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export personalization data: {e}")
-            return None
-
-    async def _export_reports_data(self, job_id: str, reports: dict, job_status: str):
-        """Export reports data to artifact"""
-        try:
-            from pathlib import Path
-            import json
-
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
-
-            filename = f"{job_id}_reports_{job_status}.json"
-            filepath = exports_dir / filename
-
-            with open(filepath, 'w') as f:
-                json.dump({
-                    "job_id": job_id,
-                    "job_status": job_status,
-                    "export_timestamp": datetime.now().isoformat(),
-                    "data_type": "reports",
-                    "reports": reports,
-                }, f, indent=2, default=str)
-
-            return {
-                "type": "reports",
-                "path": str(filepath),
-                "filename": filename,
-                "format": "json",
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export reports data: {e}")
-            return None
-
-    async def _export_error_summary(self, job_id: str, final_state: RunState):
-        """Export error summary for failed/paused jobs"""
-        try:
-            from pathlib import Path
-            import json
-
-            errors = final_state.get("errors", []) if final_state else []
-            counters = final_state.get("counters", {}) if final_state else {}
-
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
-
-            filename = f"{job_id}_error_summary.json"
-            filepath = exports_dir / filename
-
-            error_summary = {
-                "job_id": job_id,
-                "export_timestamp": datetime.now().isoformat(),
-                "data_type": "error_summary",
-                "total_errors": len(errors),
-                "counters": counters,
-                "errors": errors[-10:],  # Last 10 errors for summary
-                "error_types": {},
-            }
-
-            # Count error types
-            for error in errors:
-                error_type = error.get("error_type", "unknown")
-                error_summary["error_types"][error_type] = error_summary["error_types"].get(error_type, 0) + 1
-
-            with open(filepath, 'w') as f:
-                json.dump(error_summary, f, indent=2, default=str)
-
-            return {
-                "type": "error_summary",
-                "path": str(filepath),
-                "filename": filename,
-                "error_count": len(errors),
-                "format": "json",
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export error summary: {e}")
-            return None
-
-    async def _export_performance_metrics(self, job_id: str, final_state: RunState):
-        """Export performance metrics"""
-        try:
-            from pathlib import Path
-            import json
-
-            counters = final_state.get("counters", {}) if final_state else {}
-
-            exports_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
-            exports_dir.mkdir(exist_ok=True)
-
-            filename = f"{job_id}_metrics.json"
-            filepath = exports_dir / filename
-
-            metrics = {
-                "job_id": job_id,
-                "export_timestamp": datetime.now().isoformat(),
-                "data_type": "performance_metrics",
-                "counters": counters,
-                "derived_metrics": {
-                    "api_efficiency": counters.get("api_calls", 0) / max(counters.get("steps", 1), 1),
-                    "error_rate": counters.get("errors", 0) / max(counters.get("steps", 1), 1),
-                    "tool_error_rate": counters.get("tool_errors", 0) / max(counters.get("steps", 1), 1),
-                },
-            }
-
-            with open(filepath, 'w') as f:
-                json.dump(metrics, f, indent=2, default=str)
-
-            return {
-                "type": "performance_metrics",
-                "path": str(filepath),
-                "filename": filename,
-                "format": "json",
-            }
-
-        except Exception as e:
-            logger.error(f"Failed to export performance metrics: {e}")
-            return None
-
-    async def _cleanup_job_resources(self, job_id: str, job_status: str):
-        """Clean up temporary resources after job completion"""
-        try:
-            # Clean up old checkpoints if job completed successfully
-            if job_status == "completed":
-                await self._cleanup_checkpoints(job_id)
-
-            # Clear job state from memory
-            self.clear_job_state(job_id)
-
-            logger.info(f"Cleaned up resources for job {job_id}")
-
-        except Exception as e:
-            logger.error(f"Failed to cleanup resources for job {job_id}: {e}")
-
-    def _generate_final_report(self, job_id: str, final_state: RunState, artifacts: list, job_status: str):
-        """Generate a final report summarizing the job"""
-        try:
-            counters = final_state.get("counters", {}) if final_state else {}
-
-            report = {
-                "job_id": job_id,
-                "status": job_status,
-                "completed_at": datetime.now().isoformat(),
-                "summary": {
-                    "steps_completed": counters.get("steps", 0),
-                    "api_calls_made": counters.get("api_calls", 0),
-                    "errors_encountered": counters.get("errors", 0),
-                    "repositories_found": len(final_state.get("repos", [])) if final_state else 0,
-                    "leads_processed": len(final_state.get("leads", [])) if final_state else 0,
-                    "candidates_found": len(final_state.get("candidates", [])) if final_state else 0,
-                    "emails_prepared": len(final_state.get("to_send", [])) if final_state else 0,
-                },
-                "artifacts_generated": len(artifacts),
-                "artifacts": artifacts,
-            }
-
-            return report
-
-        except Exception as e:
-            logger.error(f"Failed to generate final report for job {job_id}: {e}")
-            return {
-                "job_id": job_id,
-                "status": "report_generation_failed",
-                "error": str(e),
-            }
-
-    def _is_significant_milestone(self, state: RunState) -> bool:
-        """Check if current state represents a significant milestone"""
-        counters = state.get("counters", {})
-        current_step = counters.get("steps", 0)
-        current_stage = state.get("current_stage", "")
-
-        # First completion of major stages
-        if current_stage in ["discovery", "extraction", "enrichment", "personalization"]:
-            # Check if this is the first time we're in this stage
-            stage_history = getattr(self, '_stage_history', set())
-            if current_stage not in stage_history:
-                self._stage_history = stage_history | {current_stage}
-                return True
-
-        # Significant data volume milestones
-        repos_count = len(state.get("repos", []))
-        leads_count = len(state.get("leads", []))
-        candidates_count = len(state.get("candidates", []))
-
-        # Milestone volumes
-        milestones = [10, 25, 50, 100, 250, 500, 1000, 2500, 5000]
-
-        for milestone in milestones:
-            if (repos_count == milestone or leads_count == milestone or
-                candidates_count == milestone):
-                return True
-
-        # API call milestones
-        api_calls = counters.get("api_calls", 0)
-        api_milestones = [100, 500, 1000, 2500, 5000, 10000]
-
-        for milestone in api_milestones:
-            if api_calls == milestone:
-                return True
 
         return False
