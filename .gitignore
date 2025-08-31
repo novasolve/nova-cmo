@@ -210,3 +210,9 @@ coverage/
 **/.venv*/
 **/venv/
 **/venv*/
+
+# JSON cache files
+**/*.cache.json
+**/cache/*.json
+.cache/*.json
+cache/*.json
