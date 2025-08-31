@@ -7,7 +7,7 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom run run-config dry-run
+.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom run run-config dry-run wizard icp-wizard icp-list icp-details smoke-tools
 
 # Default target
 help: ## Show this help message
@@ -24,6 +24,10 @@ run-config: ## Run CMO Agent with custom config (CONFIG=path, GOAL="...")
 
 dry-run: ## Run CMO Agent in dry-run mode (no sending)
 	@$(MAKE) -C cmo_agent dry-run GOAL="$(GOAL)"
+
+# Toolbelt smoke tests
+smoke-tools: ## Run CMO Agent toolbelt smoke tests
+	python cmo_agent/scripts/smoke_test_tools.py
 
 # Setup
 install: ## Install dependencies
@@ -207,6 +211,28 @@ attio-objects: ## Create required Attio objects (People, Repos, Signals)
 attio-test: ## Test Attio API connection and integration
 	@echo "🧪 Testing Attio API connection..."
 	python test_attio.py
+
+# ICP Wizard
+wizard: ## Start the Interactive ICP Wizard (requires OPENAI_API_KEY)
+	@echo "🎯 Starting Interactive ICP Wizard..."
+	@if [ -z "$$OPENAI_API_KEY" ]; then \
+		echo "❌ OPENAI_API_KEY not set. Run: export OPENAI_API_KEY=your_key"; \
+		exit 1; \
+	fi
+	python icp_wizard_cli.py
+
+icp-wizard: wizard ## Alias for wizard command
+
+icp-list: ## List all available ICPs
+	@echo "🎯 Available ICPs..."
+	python icp_wizard_cli.py --list
+
+icp-details: ## Show details for specific ICP (usage: make icp-details ICP=icp01_pypi_maintainers)
+	@if [ -z "$(ICP)" ]; then \
+		echo "Usage: make icp-details ICP=icp01_pypi_maintainers"; \
+		exit 1; \
+	fi
+	python icp_wizard_cli.py --details $(ICP)
 
 # Development
 test: ## Run small test scrape
