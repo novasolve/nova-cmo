@@ -83,12 +83,21 @@ class JobWorker:
 
                     try:
                         # Process the job
-                        await self._process_job(job)
+                        result = await self._process_job(job)
 
-                        # Mark as completed
-                        await self.queue.update_job_status(job.id, JobStatus.COMPLETED)
-                        self.processed_jobs += 1
-                        logger.info(f"Worker {self.worker_id} completed job {job.id}")
+                        # Decide final job status based on agent result
+                        if result and result.get('paused'):
+                            # Leave status as RUNNING/PAUSED management handled elsewhere
+                            logger.info(f"Worker {self.worker_id} paused job {job.id}")
+                        else:
+                            if result and result.get('success') is False:
+                                await self.queue.update_job_status(job.id, JobStatus.FAILED)
+                                self.failed_jobs += 1
+                                logger.info(f"Worker {self.worker_id} marked job {job.id} as FAILED")
+                            else:
+                                await self.queue.update_job_status(job.id, JobStatus.COMPLETED)
+                                self.processed_jobs += 1
+                                logger.info(f"Worker {self.worker_id} completed job {job.id}")
 
                     except Exception as e:
                         logger.error(f"Worker {self.worker_id} failed job {job.id}: {e}")
@@ -140,15 +149,17 @@ class JobWorker:
 
                 return result
 
-            # Update final progress
-            job.update_progress(
-                stage="completed",
-                items_processed=result.get('final_state', {}).get('counters', {}).get('steps', 0)
-            )
-
-            # Record successful job completion
-            record_job_completed(duration)
-            logger.info(f"Job {job.id} completed in {duration:.1f}s")
+            # Update final progress and metrics based on success/failure
+            final_state = result.get('final_state', {}) if result else {}
+            steps_done = final_state.get('counters', {}).get('steps', 0)
+            if result and result.get('success') is False:
+                job.update_progress(stage="failed", items_processed=steps_done)
+                record_job_failed("agent")
+                logger.info(f"Job {job.id} failed in {duration:.1f}s")
+            else:
+                job.update_progress(stage="completed", items_processed=steps_done)
+                record_job_completed(duration)
+                logger.info(f"Job {job.id} completed in {duration:.1f}s")
 
             # Store artifacts if any
             if result.get('artifacts'):

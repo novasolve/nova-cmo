@@ -29,15 +29,38 @@ from dotenv import load_dotenv
 # Load environment variables from .env if present
 load_dotenv()
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('./logs/execution_engine.log', mode='a')
-    ]
-)
+# Setup logging (configurable)
+from core.monitoring import JsonExtraFormatter, configure_metrics_from_config
+from core.state import DEFAULT_CONFIG as _DEF
+
+def _setup_logging_from_config(cfg: dict):
+    log_cfg = cfg.get("logging", {}) if isinstance(cfg.get("logging"), dict) else {}
+    log_level = getattr(logging, str(log_cfg.get("level", "INFO")).upper(), logging.INFO)
+    logs_dir = Path(cfg.get("directories", _DEF.get("directories", {})).get("logs", "./logs"))
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    # Clear existing handlers to avoid duplicates in repeated CLI invocations
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
+    # Console handler (human-readable)
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    ch.setFormatter(logging.Formatter(log_cfg.get("console_format", "%(asctime)s %(levelname)-4s %(message)s")))
+    root.addHandler(ch)
+
+    # File handler (JSON lines with extras)
+    if log_cfg.get("json_file", True):
+        fh_path = logs_dir / log_cfg.get("execution_log_file", "execution_engine.jsonl")
+        fh = logging.FileHandler(str(fh_path), encoding="utf-8")
+        fh.setLevel(log_level)
+        fh.setFormatter(JsonExtraFormatter())
+        root.addHandler(fh)
+
+_setup_logging_from_config(DEFAULT_CONFIG)
 logger = logging.getLogger(__name__)
 
 
@@ -109,14 +132,18 @@ class ExecutionEngine:
                 except Exception as e:
                     logger.warning(f"Failed to ensure directory for {key}: {e}")
 
+            # Reconfigure logging with loaded config
+            _setup_logging_from_config(config)
+            # Apply monitoring thresholds
+            configure_metrics_from_config(config)
+
             # Initialize queue with configured storage dir if provided
             try:
                 q_cfg = config.get("queue", {})
                 storage_dir = q_cfg.get("storage_dir", "./data/jobs")
                 self.queue = PersistentJobQueue(storage_dir=storage_dir)
             except Exception as e:
-                logger.warning(f"Falling back to default PersistentJobQueue: {e}
-")
+                logger.warning(f"Falling back to default PersistentJobQueue: {e}")
 
             # Initialize CMO Agent
             self.agent = CMOAgent(config)
@@ -164,6 +191,13 @@ class ExecutionEngine:
             if monitoring_cfg.get("enabled", True):
                 interval = int(monitoring_cfg.get("metrics_interval", 60))
                 self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=interval)
+                # Optional Prometheus exporter
+                if monitoring_cfg.get("enable_prometheus", False):
+                    port = int(monitoring_cfg.get("prometheus_port", 8000))
+                    try:
+                        self.metrics_logger.enable_prometheus(port)
+                    except Exception as e:
+                        logger.warning(f"Prometheus exporter not enabled: {e}")
                 asyncio.create_task(self.metrics_logger.start_logging())
                 logger.info(f"Metrics logger started (interval={interval}s)")
 

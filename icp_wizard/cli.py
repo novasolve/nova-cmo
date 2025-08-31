@@ -481,8 +481,39 @@ Examples:
             response = input("Run pipeline now? (y/N): ").strip().lower()
             if response in ['y', 'yes']:
                 print("🚀 Starting intelligence pipeline...")
-                # This would integrate with the existing intelligence system
-                print("Integration with intelligence pipeline would go here")
+                try:
+                    # Resolve saved configuration path (fallback to default location)
+                    saved_path = args.output or "lead_intelligence/data/icp_wizard_config.json"
+                    cfg_path = Path(saved_path)
+                    if not cfg_path.is_absolute():
+                        cfg_path = Path.cwd() / cfg_path
+
+                    if not cfg_path.exists():
+                        print(f"❌ Configuration file not found at: {cfg_path}")
+                        print("   Tip: Re-run with --output to set a custom path, or run manually:")
+                        print("   python lead_intelligence/scripts/run_intelligence.py --icp-config <path>")
+                    else:
+                        import subprocess, shlex
+                        cmd = [
+                            sys.executable,
+                            str(Path("lead_intelligence/scripts/run_intelligence.py").resolve()),
+                            "--icp-config",
+                            str(cfg_path)
+                        ]
+
+                        print("🧭 Command:", " ".join(shlex.quote(c) for c in cmd))
+                        print("⏳ Running... (this may take several minutes)")
+                        result = subprocess.run(cmd)
+                        if result.returncode == 0:
+                            print("\n✅ Intelligence pipeline completed successfully!")
+                            print("📦 Outputs saved under lead_intelligence/data and reporting/dashboards")
+                        else:
+                            print("\n❌ Intelligence pipeline failed. See logs above for details.")
+                            print("   You can retry manually with the command shown.")
+                except KeyboardInterrupt:
+                    print("\n🛑 Pipeline run cancelled by user")
+                except Exception as e:
+                    print(f"\n❌ Error launching pipeline: {e}")
         else:
             print("\n❌ ICP wizard did not complete successfully")
 

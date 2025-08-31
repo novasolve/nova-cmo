@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
+import logging
 
 from .job import Job, JobStatus, ProgressInfo
 from .queue import JobQueue, QueueItem
@@ -37,10 +38,12 @@ class PersistentJobQueue(JobQueue):
         try:
             job_data = job.to_dict()
             job_file = self._get_job_file(job.id)
-            with open(job_file, 'w') as f:
-                json.dump(job_data, f, indent=2, default=str)
+            tmp_file = job_file.with_suffix(".tmp")
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(job_data, f, indent=2, default=str, ensure_ascii=False)
+            os.replace(tmp_file, job_file)
         except Exception as e:
-            print(f"Error saving job {job.id}: {e}")
+            logging.getLogger(__name__).error(f"Error saving job {job.id}: {e}")
 
     def _load_job_from_disk(self, job_id: str) -> Optional[Job]:
         """Load job from disk"""
@@ -49,7 +52,7 @@ class PersistentJobQueue(JobQueue):
             if not job_file.exists():
                 return None
 
-            with open(job_file, 'r') as f:
+            with open(job_file, 'r', encoding='utf-8') as f:
                 job_data = json.load(f)
 
             # Convert string dates back to datetime
@@ -70,7 +73,7 @@ class PersistentJobQueue(JobQueue):
 
             return Job(**job_data)
         except Exception as e:
-            print(f"Error loading job {job_id}: {e}")
+            logging.getLogger(__name__).error(f"Error loading job {job_id}: {e}")
             return None
 
     def _load_jobs_from_disk(self):
@@ -91,7 +94,7 @@ class PersistentJobQueue(JobQueue):
                         self._queue.append(queue_item)
 
         except Exception as e:
-            print(f"Error loading jobs from disk: {e}")
+            logging.getLogger(__name__).error(f"Error loading jobs from disk: {e}")
 
     async def enqueue_job(self, job: Job, priority: int = 0) -> str:
         """Add job to queue and persist to disk"""

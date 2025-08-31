@@ -18,7 +18,16 @@
 └── 📚 execution_model_README.md    # Detailed execution model docs
 ```
 
-**To get started:** `cd cmo_agent && python scripts/run_execution.py --help`
+**To get started (Recommended Path):**
+
+```bash
+cd cmo_agent
+# Quick run with natural language goal
+python scripts/run_agent.py "Find 2k Py maintainers active 90d, queue Instantly seq=123" --interactive
+
+# Or start the async engine with a job
+python scripts/run_execution.py --job "Find 2k Python maintainers" --start-workers
+```
 
 ---
 
@@ -33,9 +42,9 @@ leads/                          # Repository root
 │   ├── scripts/               # CLI scripts
 │   └── config/                # Configuration files
 ├── 📁 copy_factory/           # Legacy copy generation
-├── 📁 lead_intelligence/      # Legacy intelligence system
+├── 📁 lead_intelligence/      # Legacy intelligence system (reports/dashboard still useful)
 ├── 📁 video_system/           # Video processing tools
-└── 📁 icp_wizard/             # Legacy ICP wizard
+└── 📁 icp_wizard/             # Legacy ICP wizard (now integrates to pipeline on confirm)
 ```
 
 ---

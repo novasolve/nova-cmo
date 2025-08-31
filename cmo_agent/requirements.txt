@@ -27,3 +27,4 @@ structlog>=23.0.0
 
 # Optional: Tracing and monitoring
 # langfuse>=1.0.0
+rich>=13.7.0

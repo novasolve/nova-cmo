@@ -41,14 +41,15 @@ class ArtifactManager:
     def _load_index(self):
         if self.index_path.exists():
             try:
-                self._index = json.load(open(self.index_path, "r"))
+                with open(self.index_path, "r", encoding="utf-8") as f:
+                    self._index = json.load(f)
             except Exception:
                 self._index = {}
 
     def _save_index(self):
         tmp = self.index_path.with_suffix(".tmp")
-        with open(tmp, "w") as f:
-            json.dump(self._index, f, indent=2)
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(self._index, f, indent=2, ensure_ascii=False)
         os.replace(tmp, self.index_path)
 
     # ---------- Helpers ----------
@@ -82,7 +83,7 @@ class ArtifactManager:
         out_path = job_dir / out_name
 
         # Serialize JSON
-        payload = json.dumps(data, indent=2, default=str).encode("utf-8")
+        payload = json.dumps(data, indent=2, default=str, ensure_ascii=False).encode("utf-8")
         if compress:
             with gzip.open(out_path, "wb") as f:
                 f.write(payload)
@@ -596,8 +597,8 @@ class ArtifactManager:
                 registry_data[artifact_id] = meta_dict
 
             # Save to file
-            with open(self._registry_file, 'w') as f:
-                json.dump(registry_data, f, indent=2)
+            with open(self._registry_file, 'w', encoding='utf-8') as f:
+                json.dump(registry_data, f, indent=2, ensure_ascii=False)
 
         except Exception as e:
             logger.error(f"Failed to save artifact registry: {e}")

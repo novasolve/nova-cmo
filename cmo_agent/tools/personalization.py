@@ -2,18 +2,9 @@
 Personalization and sending tools
 """
 import logging
-import sys
 import os
 import jinja2
 from typing import Dict, Any, List, Optional, Tuple
-
-# Add current directory to path for imports
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
 
 try:
     from .base import BaseTool, InstantlyTool, ToolResult
@@ -233,9 +224,12 @@ class SendInstantly(InstantlyTool):
             if not seq_id:
                 return ToolResult(success=False, error="Sequence ID required")
 
-            # Prepare contacts for Instantly API
+            # Prepare contacts for Instantly API with basic de-duplication by email
             instantly_contacts = []
-            for contact in contacts[:per_inbox_cap]:  # Respect per-inbox cap
+            seen_emails = set()
+            for contact in contacts:
+                if len(instantly_contacts) >= per_inbox_cap:
+                    break
                 instantly_contact = {
                     "email": contact.get("email"),
                     "first_name": contact.get("first_name", ""),
@@ -250,6 +244,12 @@ class SendInstantly(InstantlyTool):
                 if contact.get("linkedin"):
                     instantly_contact["linkedin"] = contact["linkedin"]
 
+                email_val = (instantly_contact.get("email") or "").lower().strip()
+                if not email_val:
+                    continue
+                if email_val in seen_emails:
+                    continue
+                seen_emails.add(email_val)
                 instantly_contacts.append(instantly_contact)
 
             # Check if we have a campaign, if not create one
@@ -269,7 +269,8 @@ class SendInstantly(InstantlyTool):
             return ToolResult(success=True, data=result_data)
 
         except Exception as e:
-            logger.error(f"Instantly send failed: {e}")
+            # Avoid logging raw payloads or full API responses
+            logger.error("Instantly send failed: see ToolResult error for details")
             return ToolResult(success=False, error=str(e))
 
     async def _get_or_create_campaign(self, seq_id: str) -> str:
@@ -313,10 +314,12 @@ class SendInstantly(InstantlyTool):
                 async with session.post(create_url, headers=headers, json=payload) as resp:
                     data = await resp.json()
                     if resp.status >= 400:
-                        raise Exception(f"Instantly create campaign failed: {data}")
+                        # Sanitize error: prefer message/status over full payload
+                        message = data.get("message") if isinstance(data, dict) else "request failed"
+                        raise Exception(f"Instantly create campaign failed (status {resp.status}): {message}")
                     return data.get("id") or data.get("campaign", {}).get("id")
         except Exception as e:
-            logger.error(f"Campaign creation/lookup failed: {e}")
+            logger.error("Campaign creation/lookup failed")
             raise
 
     async def _send_contacts(self, campaign_id: str, contacts: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -332,8 +335,9 @@ class SendInstantly(InstantlyTool):
                 async with session.post(url, headers=headers, json=payload) as resp:
                     data = await resp.json()
                     if resp.status >= 400:
-                        raise Exception(f"Instantly add leads failed: {data}")
+                        message = data.get("message") if isinstance(data, dict) else "request failed"
+                        raise Exception(f"Instantly add leads failed (status {resp.status}): {message}")
                     return data
         except Exception as e:
-            logger.error(f"Contact sending failed: {e}")
+            logger.error("Contact sending failed")
             raise
