@@ -15,6 +15,7 @@ class BaseTool(Protocol):
     stage: str  # e.g., "discovery" | "enrichment" | "personalization" | "sending" | "sync" | "utility"
     def execute(self, state: RunState, **kwargs) -> RunState: ...
 ```
+
 - Tools must be idempotent (safe to retry) and append-only (avoid destructive mutation).
 
 ## Cross‑Tool Data Contract (80/20)
@@ -120,11 +121,16 @@ Invariants:
 
 Idempotency rule of thumb: `key = sha1(json.dumps(payload, sort_keys=True))[:12]` and prefix with `job_id` + `stage`.
 
+## Personalization payload docs
+
+See `PERSONALIZATION_PAYLOAD.md` for the schema, field mappings, examples, and extension points.
+
 ## Concise Tool Specs
 
 ### GitHub Tools
 
 #### `search_github_repos`
+
 - Args: `q: str | None`, `languages: list[str]`, `topics: list[str]`, `stars_range: str ("100..2000")`, `max_repos: int`
 - Reads: `config.default_icp`, `counters`
 - Writes: `repos += RepoEntry`
@@ -132,18 +138,21 @@ Idempotency rule of thumb: `key = sha1(json.dumps(payload, sort_keys=True))[:12]
 - Counters: `github.api_calls`, `repos.discovered`
 
 #### `extract_people`
+
 - Args: `per_repo: int` (top N), `maintainers_only: bool`
 - Reads: `repos`
 - Writes: `candidates += CandidateEntry`
 - Counters: `candidates.discovered`
 
 #### `enrich_github_user`
+
 - Args: `fields: list[str] = ["profile","company","followers","activity"]`
 - Reads: `candidates`
 - Writes: `leads += LeadEntry` (merge by `login`)
 - Counters: `leads.enriched`
 
 #### `find_commit_emails`
+
 - Args: `since: str (ISO) | None`, `max_commits_per_repo: int`
 - Reads: `repos`, `candidates`
 - Writes: `candidates[i].emails += [...]`
@@ -152,22 +161,26 @@ Idempotency rule of thumb: `key = sha1(json.dumps(payload, sort_keys=True))[:12]
 ### Hygiene
 
 #### `mx_check`
+
 - Writes: `leads[i].email_status`
 - Counters: `mx.checked`, `mx.valid`
 
 #### `score_icp`
+
 - Writes: `leads[i].icp_score`, `leads[i].icp_reason`
 - Counters: `icp.scored`
 
 ### Personalization & Sending
 
 #### `render_copy`
+
 - Args: `template: str | None`, `style: str = "concise"`
 - Reads: `leads`
 - Writes: `to_send += EmailPayload`
 - Counters: `copy.rendered`, `tokens.used` (if LLM)
 
 #### `send_instantly`
+
 - Side‑effects: Instantly API send; respects rate limits
 - Idempotency: skip if idempotency key seen
 - Writes: `reports.sent++`, `reports.bounced++`, `reports.rejected++`
@@ -176,11 +189,13 @@ Idempotency rule of thumb: `key = sha1(json.dumps(payload, sort_keys=True))[:12]
 ### CRM Sync
 
 #### `sync_attio`
+
 - Side‑effects: Attio API upsert
 - Idempotency: key on `email`
 - Counters: `attio.upserts`, `attio.errors`
 
 #### `sync_linear`
+
 - Side‑effects: Linear issue create
 - Idempotency: key on `subject`/`body` hash
 - Counters: `linear.created`, `linear.errors`
@@ -188,11 +203,13 @@ Idempotency rule of thumb: `key = sha1(json.dumps(payload, sort_keys=True))[:12]
 ### Utility
 
 #### `export_csv`
+
 - Args: `what: "leads"|"to_send"|"reports"`, `path: str = "data/exports/*.csv"`
 - Writes: CSV files, updates `reports.exports[]`
 - Counters: `exports.written`
 
 #### `done`
+
 - Writes: `reports.finished_at = now()`, `reports.summary`
 - Counters: `pipeline.completed = 1`
 
