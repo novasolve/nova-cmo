@@ -159,7 +159,7 @@ Best regards,
                 return False
 
         # Company size inference (rough heuristic)
-        if icp.firmographics.get('size') and prospect.followers:
+        if icp.firmographics.get('size') and prospect.followers is not None:
             # This is a simplified heuristic - in practice you'd want more sophisticated matching
             if 'startup' in icp.firmographics['size'].lower() and prospect.followers > 100:
                 return False

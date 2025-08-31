@@ -232,7 +232,7 @@ class GitHubSearchClient:
         })
 
         # Rate limiting state
-        self.rate_limit_remaining = 5000
+        self.rate_limit_remaining = 2000  # More conservative
         self.rate_limit_reset = None
 
     def search_repos(self, query: str) -> Iterator[Dict]:
@@ -344,7 +344,7 @@ class GitHubSearchClient:
         for attempt in range(self.config.retries):
             try:
                 # Check rate limit
-                if self.rate_limit_remaining <= 10:
+                if self.rate_limit_remaining <= 100:  # More conservative threshold
                     self._wait_for_rate_limit_reset()
 
                 response = self.session.request(method, url, timeout=self.config.timeout_secs, **kwargs)
@@ -462,13 +462,13 @@ def assemble_prospect(signal_data: Dict, icp_key: str, run_id: str) -> Prospect:
     # Generate lead_id
     if signal_type == 'pr':
         user_login = data.get('user', {}).get('login', 'unknown')
-        lead_content = f"{user_login}:{repo['full_name']}"
+        lead_content = f"{user_login}:{repo.get('full_name') or 'unknown/unknown'}"
     elif signal_type == 'commit':
         user_login = data.get('author', {}).get('login') or data.get('commit', {}).get('author', {}).get('name', 'unknown')
-        lead_content = f"{user_login}:{repo['full_name']}"
+        lead_content = f"{user_login}:{repo.get('full_name') or 'unknown/unknown'}"
     elif signal_type == 'issue':
         user_login = data.get('user', {}).get('login', 'unknown')
-        lead_content = f"{user_login}:{repo['full_name']}"
+        lead_content = f"{user_login}:{repo.get('full_name') or 'unknown/unknown'}"
     else:
         user_login = 'unknown'
         lead_content = f"unknown:{repo['full_name']}"
@@ -494,7 +494,7 @@ def assemble_prospect(signal_data: Dict, icp_key: str, run_id: str) -> Prospect:
         lead_id=lead_id,
         login=user_login,
         name=data.get('user', {}).get('name') if signal_type in ['pr', 'issue'] else data.get('commit', {}).get('author', {}).get('name'),
-        repo_full_name=repo['full_name'],
+        repo_full_name=repo.get('full_name') or 'unknown/unknown',
         signal_type=signal_type,
         signal=signal,
         signal_at=signal_at,
@@ -658,9 +658,9 @@ class DataCollector:
                     deduper.mark_seen(prospect)
                     counters["leads_emitted"] += 1
 
-                logger.info(f"📦 Processed repo {repo['full_name']}: {events_processed} events", extra={
+                logger.info(f"📦 Processed repo {repo.get('full_name') or 'unknown/unknown'}: {events_processed} events", extra={
                     "ctx": {
-                        "repo": repo['full_name'],
+                        "repo": repo.get('full_name') or 'unknown/unknown',
                         "events_processed": events_processed,
                         "leads_emitted": counters["leads_emitted"]
                     }
@@ -688,7 +688,8 @@ def main():
     args = parser.parse_args()
 
     # Get GitHub token (hardcoded)
-    github_token = args.github_token or "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"
+    # Get token from environment first, then args
+    github_token = os.environ.get('GITHUB_TOKEN') or args.github_token or ''
 
     # Parse ICP keys
     icp_keys = []

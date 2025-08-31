@@ -11,7 +11,7 @@ LATEST_LINK="data/repos_latest.csv"
 if [ -z "$GITHUB_TOKEN" ]; then
     echo "⚠️  Warning: GITHUB_TOKEN environment variable not set"
     echo "   Running without authentication (rate limits will apply)"
-    echo "   Set it with: export GITHUB_TOKEN='your_token_here'"
+    echo "   Or use the hardcoded token (already configured)"
     echo ""
 fi
 

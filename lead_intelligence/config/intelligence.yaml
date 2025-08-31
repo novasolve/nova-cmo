@@ -2,7 +2,9 @@
 version: "2.0.0"
 
 # Core Settings
-github_token_env: "GITHUB_TOKEN"
+# GitHub token is loaded from environment variable
+# Set with: export GITHUB_TOKEN=your_token_here
+github_token: ""
 base_config_path: "config.yaml"
 
 # Output Configuration

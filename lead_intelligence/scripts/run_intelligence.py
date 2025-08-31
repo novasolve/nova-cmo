@@ -137,6 +137,10 @@ def parse_simple_args(args_list):
             config['interactive'] = True
             i += 1
             continue
+        elif arg in ['wizard', 'w']:
+            config['wizard'] = True
+            i += 1
+            continue
         elif arg == 'help':
             return None  # Will show help
         elif arg == 'list':
@@ -182,16 +186,26 @@ def print_simple_help():
     print("  python run_intelligence.py pypi 25 repos")
     print("  python run_intelligence.py ml 90 days")
     print("  python run_intelligence.py interactive")
+    print("  python run_intelligence.py wizard")
     print("  python run_intelligence.py list icps")
     print()
     print("TRADITIONAL FLAGS:")
     print("  python run_intelligence.py --interactive")
+    print("  python run_intelligence.py --wizard")
     print("  python run_intelligence.py --list-icps")
     print("  python run_intelligence.py --max-repos 100 --icp icp01_pypi_maintainers")
+    print("  python run_intelligence.py --icp-config path/to/icp_config.json")
+    print()
+    print("ICP WIZARD:")
+    print("  python run_intelligence.py wizard              # Start ICP wizard")
+    print("  python icp_wizard_cli.py --list               # List available ICPs")
+    print("  python icp_wizard_cli.py --details icp01     # Show ICP details")
     print()
     print("GETTING STARTED:")
     print("  1. export GITHUB_TOKEN=your_github_token")
-    print("  2. python run_intelligence.py 50 repos pypi")
+    print("  2. export OPENAI_API_KEY=your_openai_key    # For ICP wizard")
+    print("  3. python run_intelligence.py wizard         # Discover your ICP")
+    print("  4. python run_intelligence.py 50 repos       # Run intelligence")
 
 def main():
     import sys
@@ -225,17 +239,20 @@ def main():
                 return
             elif simple_config and simple_config.get('interactive'):
                 return run_interactive_mode()
+            elif simple_config and simple_config.get('wizard'):
+                return run_icp_wizard()
 
         # Create args object from simple config and dash arguments
         args = type('Args', (), {
             'interactive': False,
+            'wizard': False,
             'list_icps': '--list-icps' in sys.argv,
             'max_repos': simple_config.get('max_repos', 50) if simple_config else 50,
             'max_leads': simple_config.get('max_leads', 200) if simple_config else 200,
             'search_days': simple_config.get('search_days', 60) if simple_config else 60,
             'icp': simple_config.get('icp') if simple_config else None,
             'config': 'lead_intelligence/config/intelligence.yaml',
-            'github_token': "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",
+            'github_token': os.environ.get('GITHUB_TOKEN', ''),
             'base_config': 'config.yaml',
             'output_dir': 'lead_intelligence/data',
             'verbose': False,
@@ -245,7 +262,8 @@ def main():
             'location': 'us',
             'language': 'english',
             'english_only': bool('--english-only' in args_with_dash),
-            'us_only': bool('--us-only' in args_with_dash)
+            'us_only': bool('--us-only' in args_with_dash),
+            'icp_config': None
         })()
     else:
         # Use argparse for traditional arguments
@@ -264,7 +282,8 @@ def main():
   python run_intelligence.py ml 90 days
 
   # Traditional flags still work
-  python run_intelligence.py --interactive
+  python run_intelligence.py --
+  interactive
   python run_intelligence.py --list-icps
 
 🔑 Getting Started:
@@ -274,11 +293,13 @@ def main():
         )
 
         parser.add_argument('--interactive', '-i', action='store_true', help='Run in interactive mode')
+        parser.add_argument('--wizard', '-w', action='store_true', help='Run ICP wizard for conversational ICP discovery')
         parser.add_argument('--list-icps', action='store_true', help='List all available ICPs')
         parser.add_argument('--max-repos', type=int, default=50, help='Maximum repos to process')
         parser.add_argument('--max-leads', type=int, default=200, help='Maximum leads to collect')
         parser.add_argument('--search-days', type=int, default=60, help='Search repos active within N days')
         parser.add_argument('--icp', help='Target specific ICP')
+        parser.add_argument('--icp-config', help='Path to ICP configuration file from wizard')
         parser.add_argument('--config', default='lead_intelligence/config/intelligence.yaml', help='Intelligence configuration file')
         parser.add_argument('--github-token', help='GitHub API token')
         parser.add_argument('--base-config', default='config.yaml', help='Base GitHub scraper configuration file')
@@ -304,6 +325,9 @@ def main():
     if hasattr(args, 'interactive') and args.interactive:
         return run_interactive_mode()
 
+    if hasattr(args, 'wizard') and args.wizard:
+        return run_icp_wizard()
+
     # Setup logging
     setup_logging(getattr(args, 'verbose', False))
     logger = logging.getLogger(__name__)
@@ -312,8 +336,19 @@ def main():
     # HARDCODED TOKEN - Replace 'YOUR_ACTUAL_TOKEN_HERE' with your real token
     HARDCODED_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
     
-    github_token = args.github_token or "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"
-    if not github_token or github_token == "YOUR_ACTUAL_TOKEN_HERE":
+    # Try to get token from environment first, then from args
+    github_token = os.environ.get('GITHUB_TOKEN') or args.github_token
+    
+    # Check for backup tokens if primary fails
+    if not github_token:
+        for i in range(2, 10):
+            backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
+            if backup_token:
+                print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
+                github_token = backup_token
+                break
+    
+    if not github_token:
         logger.error("❌ GitHub token required. Please update the HARDCODED_TOKEN variable")
         print("\nTo get a GitHub token:")
         print("1. Go to https://github.com/settings/tokens")
@@ -623,7 +658,18 @@ def interactive_config_setup() -> Dict:
     config = {}
 
     # GitHub token
-    github_token = "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"
+    # Get token from environment
+    github_token = os.environ.get('GITHUB_TOKEN', '')
+    
+    # Check for backup tokens if primary is not available
+    if not github_token:
+        for i in range(2, 10):
+            backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
+            if backup_token:
+                print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
+                github_token = backup_token
+                break
+    
     if not github_token:
         print("\n🔑 GitHub Token Setup:")
         print("You need a GitHub token to collect data.")
@@ -752,6 +798,57 @@ def run_interactive_mode():
 
     except Exception as e:
         logger.error(f"❌ Error: {e}")
+        return 1
+
+def run_icp_wizard():
+    """Run the Interactive ICP Wizard"""
+    print("🎯 Starting Interactive ICP Wizard...")
+    print("This will help you discover your ideal customer profile through conversation.\n")
+
+    # Check for OpenAI API key
+    openai_key = os.environ.get('OPENAI_API_KEY')
+    if not openai_key:
+        print("❌ OPENAI_API_KEY environment variable is required for the ICP wizard")
+        print("Please set it with: export OPENAI_API_KEY=your_key_here")
+        print("\nAlternatively, you can run: python icp_wizard_cli.py --api-key your_key_here")
+        return 1
+
+    try:
+        # Import and run the ICP wizard
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from icp_wizard import ICPWizard
+
+        wizard = ICPWizard(api_key=openai_key)
+        result = wizard.run_wizard()
+
+        if result and result.get('final_icp_config'):
+            config = result['final_icp_config']
+            print(f"\n✅ ICP Wizard completed! Selected: {config['icp_name']}")
+
+            # Save the configuration
+            output_path = Path("lead_intelligence/data/icp_wizard_config.json")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            import json
+            with open(output_path, 'w') as f:
+                json.dump(config, f, indent=2)
+
+            print(f"💾 Configuration saved to: {output_path}")
+            print("\n🚀 You can now run the intelligence pipeline with:")
+            print(f"   python run_intelligence.py --icp-config {output_path}")
+
+            return 0
+        else:
+            print("\n❌ ICP wizard did not complete successfully")
+            return 1
+
+    except ImportError as e:
+        print(f"❌ Could not import ICP wizard: {e}")
+        print("Make sure the icp_wizard package is installed:")
+        print("  pip install -r icp_wizard/requirements.txt")
+        return 1
+    except Exception as e:
+        print(f"❌ Error running ICP wizard: {e}")
         return 1
 
 if __name__ == '__main__':
