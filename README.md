@@ -38,10 +38,6 @@ leads/                          # Repository root
 └── 📁 icp_wizard/             # Legacy ICP wizard
 ```
 
-### Additional Docs
-
-- `cmo_agent/agents/README_SINGLE_NODE_LANGGRAPH.md` — Single‑node LangGraph architecture, loop, and how to extend.
-
 ---
 
 ## ⚡ Quick Start
