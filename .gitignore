@@ -154,3 +154,8 @@ video_system/assets/base_videos/
 video_system/assets/final_outputs/
 video_system/assets/intros/
 
+
+# Next.js SWC native binaries
+frontend/node_modules/**/@next/swc-*/next-swc.*.node
+frontend/node_modules/**/next-swc.*.node
+frontend/node_modules/.pnpm/**/@next/swc-*/next-swc.*.node
