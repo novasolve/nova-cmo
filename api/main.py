@@ -28,4 +28,5 @@ from cmo_agent.scripts.run_web import app
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("CMO_WEB_PORT", "8000"))
+    # Run from project root so module paths work correctly
     uvicorn.run("api.main:app", host="0.0.0.0", port=port, reload=True)
