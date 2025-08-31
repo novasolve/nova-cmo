@@ -7,33 +7,41 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   const { id: threadId } = params;
+  // Optional explicit jobId from query (preferred if provided)
+  let urlJobId: string | null = null;
+  try {
+    const { searchParams } = new URL(request.url);
+    urlJobId = searchParams.get("jobId");
+  } catch {}
 
   // Check if backend is available
   if (!process.env.API_URL) {
+    console.error(`[ThreadsEventsAPI] Missing API_URL`, { threadId, requestUrl: request.url });
     return new Response("Backend not available", { status: 503 });
   }
 
   try {
     // Get the current job ID for this thread
-    let currentJobId = getJobIdForThread(threadId);
-    console.log(`Thread ${threadId} mapped to job: ${currentJobId || 'none'}`);
-    
+    let currentJobId = urlJobId || getJobIdForThread(threadId);
+    console.log(`[ThreadsEventsAPI] thread mapped`, { threadId, jobId: currentJobId || 'none', requestUrl: request.url });
+
     // If no mapping exists, try to find the latest job for this thread
     if (!currentJobId) {
       try {
-        const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`, {
+        const jobsUrl = `${process.env.API_URL}/api/jobs`;
+        console.log(`[ThreadsEventsAPI] fetching jobs`, { url: jobsUrl, threadId });
+        const jobsResp = await fetch(jobsUrl, {
           method: 'GET',
           headers: {
             'Accept': 'application/json',
             'Content-Type': 'application/json'
           }
         });
-        
+
         if (jobsResp.ok) {
           const jobs = await jobsResp.json();
-          console.log(`Found ${jobs.length} jobs for thread lookup`);
-          console.log(`Looking for jobs with threadId: ${threadId}`);
-          
+          console.log(`[ThreadsEventsAPI] jobs fetched`, { count: jobs.length, threadId });
+
           // Debug: Show all job thread IDs
           const jobThreadIds = jobs.map((job: any) => ({
             id: job.job_id || job.id,
@@ -41,14 +49,14 @@ export async function GET(
             goal: job.goal?.substring(0, 50)
           }));
           console.log(`Available job thread IDs:`, jobThreadIds);
-          
+
           // Try multiple strategies to find the right job
           let threadJob = null;
-          
+
           // Strategy 1: Exact threadId match in metadata
           threadJob = jobs.find((job: any) => job.metadata?.threadId === threadId);
           console.log(`Strategy 1 (exact match) result:`, threadJob ? `found job ${threadJob.job_id || threadJob.id}` : 'not found');
-          
+
           // Strategy 2: Recent job created in last 5 minutes (fallback)
           if (!threadJob) {
             console.log(`Strategy 2: Looking for recent jobs as fallback...`);
@@ -61,10 +69,10 @@ export async function GET(
               const bTime = new Date(b.created_at || b.metadata?.created_at).getTime();
               return bTime - aTime; // Most recent first
             });
-            
+
             threadJob = recentJobs[0];
           }
-          
+
           if (threadJob) {
             currentJobId = threadJob.job_id || threadJob.id; // Handle both field names
             // Store the mapping for future requests
@@ -74,47 +82,74 @@ export async function GET(
             }
           }
         } else {
-          console.warn(`Jobs API failed: ${jobsResp.status} ${jobsResp.statusText}`);
+          console.warn(`[ThreadsEventsAPI] jobs fetch failed`, { status: jobsResp.status, statusText: jobsResp.statusText });
           const errorText = await jobsResp.text();
-          console.warn(`Error response: ${errorText}`);
+          console.warn(`[ThreadsEventsAPI] jobs error body`, { body: errorText?.slice(0, 500) });
         }
       } catch (error) {
-        console.warn("Could not fetch jobs list:", error);
+        console.warn(`[ThreadsEventsAPI] jobs fetch threw`, { threadId, error });
       }
     }
-    
+
     // If we have a job ID, stream its events
     if (currentJobId) {
       try {
         console.log(`Attempting to stream from job ${currentJobId}`);
         // Stream from the real job events endpoint
+        // Use a dedicated AbortController so client disconnect doesn't abort upstream prematurely
+        const upstreamController = new AbortController();
+        const upstreamUrl = `${process.env.API_URL}/api/jobs/${currentJobId}/events`;
+        console.log(`[ThreadsEventsAPI] fetching upstream events`, { upstreamUrl });
         const upstream = await fetch(
-          `${process.env.API_URL}/api/jobs/${currentJobId}/events`,
+          upstreamUrl,
           {
             headers: { Accept: "text/event-stream" },
-            signal: request.signal,
+            signal: upstreamController.signal,
           }
         );
-        
-        console.log(`Job events response: ${upstream.status} ${upstream.statusText}`);
-        
+
+        console.log(`[ThreadsEventsAPI] upstream response`, { status: upstream.status, statusText: upstream.statusText });
+
         if (upstream.ok) {
-          // Transform job events to chat events
+          // Streaming-safe SSE transform: buffer and split on event boundaries ("\n\n")
+          const decoder = new TextDecoder();
+          const encoder = new TextEncoder();
+          let buffer = "";
+
           const transformStream = new TransformStream({
             transform(chunk, controller) {
-              const decoder = new TextDecoder();
-              const text = decoder.decode(chunk);
-              
-              // Parse SSE format: "data: {...}\n\n"
-              const lines = text.split('\n');
-              for (const line of lines) {
-                if (line.startsWith('data: ')) {
+              buffer += decoder.decode(chunk, { stream: true });
+
+              // Process complete SSE event blocks separated by blank line
+              let sepIndex = buffer.indexOf("\n\n");
+              while (sepIndex !== -1) {
+                const block = buffer.slice(0, sepIndex); // without trailing blank line
+                buffer = buffer.slice(sepIndex + 2);
+
+                // Parse SSE fields in the block
+                const lines = block.split('\n');
+                const fields: Record<string, string[]> = {};
+                for (const raw of lines) {
+                  if (!raw) continue; // preserve empty-only as delimiter; already handled
+                  // Comments start with ':' – forward as-is
+                  if (raw.startsWith(':')) {
+                    controller.enqueue(encoder.encode(raw + '\n\n'));
+                    continue;
+                  }
+                  const idx = raw.indexOf(':');
+                  const field = idx === -1 ? raw : raw.slice(0, idx);
+                  let value = idx === -1 ? '' : raw.slice(idx + 1);
+                  if (value.startsWith(' ')) value = value.slice(1);
+                  (fields[field] ||= []).push(value);
+                }
+
+                // If we have data, attempt JSON transform; otherwise, pass through
+                if (fields['data'] && fields['data'].length > 0) {
+                  const dataStr = fields['data'].join('\n');
                   try {
-                    const jobEvent = JSON.parse(line.slice(6));
-                    
-                    // Transform job event to chat event format
+                    const jobEvent = JSON.parse(dataStr);
                     const chatEvent = {
-                      kind: "event",
+                      kind: 'event',
                       event: {
                         ts: jobEvent.timestamp,
                         node: extractNodeFromEvent(jobEvent),
@@ -124,49 +159,93 @@ export async function GET(
                         msg: jobEvent.data?.message || jobEvent.event
                       }
                     };
-                    
-                    const transformed = `data: ${JSON.stringify(chatEvent)}\n\n`;
-                    controller.enqueue(new TextEncoder().encode(transformed));
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(chatEvent)}\n\n`));
                   } catch (error) {
-                    // Pass through malformed events
-                    controller.enqueue(chunk);
+                    console.warn('[ThreadsEventsAPI] transform parse failed, passing through', { error });
+                    controller.enqueue(encoder.encode(block + '\n\n'));
                   }
-                } else if (line.trim()) {
-                  // Pass through non-data lines (comments, etc.)
-                  controller.enqueue(new TextEncoder().encode(line + '\n'));
+                } else if (fields['retry'] || fields['event'] || fields['id']) {
+                  // Pass through control fields unchanged
+                  controller.enqueue(encoder.encode(block + '\n\n'));
+                } else {
+                  // Unknown block – preserve
+                  controller.enqueue(encoder.encode(block + '\n\n'));
                 }
+
+                sepIndex = buffer.indexOf("\n\n");
+              }
+            },
+            flush(controller) {
+              if (buffer.length > 0) {
+                controller.enqueue(encoder.encode(buffer));
               }
             }
           });
-          
+
+          // When client disconnects, cancel upstream fetch
+          request.signal?.addEventListener('abort', () => {
+            try { upstreamController.abort(); } catch {}
+          });
+
           return new Response(upstream.body?.pipeThrough(transformStream), {
             status: upstream.status,
             headers: {
               "Content-Type": "text/event-stream",
               "Cache-Control": "no-cache",
               "Connection": "keep-alive",
+              "X-Accel-Buffering": "no",
             },
           });
         } else {
-          console.warn(`Job events endpoint failed: ${upstream.status} ${upstream.statusText}`);
-          
+          console.warn(`[ThreadsEventsAPI] upstream events failed`, { status: upstream.status, statusText: upstream.statusText, upstreamUrl });
+
           // If events endpoint fails (503), create a polling fallback
           if (upstream.status === 503) {
             return createPollingFallback(currentJobId, threadId, request);
           }
-          
+
           return new Response(`Job events not available: ${upstream.statusText}`, { status: upstream.status });
         }
       } catch (error) {
-        console.warn(`Error connecting to job events: ${error}`);
+        console.warn(`[ThreadsEventsAPI] error connecting to upstream`, { threadId, jobId: currentJobId, error });
         return new Response("Error connecting to job events", { status: 500 });
       }
     } else {
-      // Don't log repeatedly for threads without jobs - this is normal
-      return new Response("No active job for this thread", { status: 404 });
+      // No active job - return a proper SSE response that won't trigger reconnects
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          // Send a single event indicating no job
+          const noJobEvent = {
+            kind: "status",
+            status: {
+              message: "No active job for this thread",
+              threadId: threadId,
+              timestamp: new Date().toISOString()
+            }
+          };
+
+          controller.enqueue(encoder.encode(`retry: 30000\n\n`)); // Long retry to prevent hammering
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(noJobEvent)}\n\n`));
+
+          // Close the stream after sending the status
+          setTimeout(() => {
+            controller.close();
+          }, 100);
+        },
+      });
+
+      return new Response(stream, {
+        status: 200, // Return 200 to prevent EventSource retries
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+        },
+      });
     }
   } catch (error) {
-    console.error("Backend SSE error:", error);
+    console.error(`[ThreadsEventsAPI] unhandled error`, { threadId, urlJobId, error });
     return new Response("Internal server error", { status: 500 });
   }
 }
@@ -174,11 +253,11 @@ export async function GET(
 // Polling fallback when SSE events are unavailable (503 error)
 function createPollingFallback(jobId: string, threadId: string, request: Request) {
   const encoder = new TextEncoder();
-  
+
   const stream = new ReadableStream({
     start(controller) {
-      console.log(`Creating polling fallback for job ${jobId}`);
-      
+      console.log(`[ThreadsEventsAPI] creating polling fallback`, { threadId, jobId });
+
       // Send initial message
       const initialEvent = {
         kind: "message",
@@ -190,7 +269,7 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
           text: `⚡ **Live Events Unavailable** - Using polling fallback for job ${jobId}\n\nThe job is running, but live events aren't available. Check the backend logs for progress.`
         }
       };
-      
+
       controller.enqueue(
         encoder.encode(`data: ${JSON.stringify(initialEvent)}\n\n`)
       );
@@ -201,7 +280,7 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
           const statusResp = await fetch(`${process.env.API_URL}/api/jobs/${jobId}`);
           if (statusResp.ok) {
             const jobStatus = await statusResp.json();
-            
+
             const statusEvent = {
               kind: "event",
               event: {
@@ -211,11 +290,11 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
                 msg: `Job ${jobId}: ${jobStatus.status}${jobStatus.progress ? ` - ${jobStatus.progress}` : ""}`
               }
             };
-            
+
             controller.enqueue(
               encoder.encode(`data: ${JSON.stringify(statusEvent)}\n\n`)
             );
-            
+
             // If job completed, send final message and close
             if (jobStatus.status === "completed" || jobStatus.status === "failed") {
               const finalEvent = {
@@ -228,11 +307,11 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
                   text: `✅ **Job ${jobId} ${jobStatus.status}**\n\nCheck your exports folder for results!`
                 }
               };
-              
+
               controller.enqueue(
                 encoder.encode(`data: ${JSON.stringify(finalEvent)}\n\n`)
               );
-              
+
               clearInterval(pollInterval);
               controller.close();
             }
@@ -263,6 +342,8 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
 function extractNodeFromEvent(jobEvent: any): string {
   if (jobEvent.data?.node) return jobEvent.data.node;
   if (jobEvent.data?.current_tool) return jobEvent.data.current_tool;
+  // Treat stream end or explicit completion as a completion node so UI can finalize
+  if (jobEvent.event?.includes('stream_end') || jobEvent.event?.includes('completed')) return 'completion';
   if (jobEvent.event?.includes('github')) return 'github_enrichment';
   if (jobEvent.event?.includes('email')) return 'email_processing';
   if (jobEvent.event?.includes('crm')) return 'crm_sync';

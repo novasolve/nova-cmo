@@ -23,21 +23,21 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   // Set active thread for job context and check for thread mismatches
   useEffect(() => {
     setActiveThread(id);
-    
+
     // Check if there's an active job on a different thread and redirect if needed
     const checkForActiveJobs = async () => {
       if (!process.env.API_URL) return;
-      
+
       try {
         const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`);
         if (jobsResp.ok) {
           const jobs = await jobsResp.json();
-          
+
           // Find any running job
-          const activeJob = jobs.find((job: any) => 
+          const activeJob = jobs.find((job: any) =>
             job.status === 'running' || job.status === 'pending'
           );
-          
+
           if (activeJob && activeJob.metadata?.threadId && activeJob.metadata.threadId !== id) {
             console.log(`Found active job on different thread: ${activeJob.metadata.threadId}, mapping to current thread: ${id}`);
             // Map the active job to the current thread for seamless UX
@@ -45,7 +45,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             const jobId = activeJob.job_id || activeJob.id;
             storeThreadJobMapping(id, jobId);
             setCurrentJobId(jobId);
-            
+
             // Update job state to reflect the active job
             updateJobState({
               status: 'running',
@@ -62,7 +62,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         console.warn('Could not check for active jobs:', error);
       }
     };
-    
+
     checkForActiveJobs();
   }, [id, setActiveThread]);
 
@@ -74,7 +74,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       thread = createThread(id, `Thread ${id}`);
       console.log(`Created thread on navigation: ${id}`);
     }
-    
+
     const loadThreadHistory = async () => {
       try {
         setLoading(true);
@@ -119,10 +119,12 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       // Update job state based on event
       const latestEvent = evt.event;
       const newEvents = [...jobState.events, latestEvent];
-      
+
+      const derivedStatus = latestEvent.status === 'error' ? 'failed' :
+        (latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running');
+
       updateJobState({
-        status: latestEvent.status === 'error' ? 'failed' : 
-                latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running',
+        status: derivedStatus,
         currentNode: latestEvent.node || jobState.currentNode,
         progress: latestEvent.msg || jobState.progress,
         metrics: {
@@ -133,7 +135,12 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         },
         events: newEvents.slice(-50) // Keep last 50 events
       });
-      
+
+      // Stop streaming once job completes or fails
+      if (derivedStatus === 'completed' || derivedStatus === 'failed') {
+        setCurrentJobId(null);
+      }
+
       // Also attach event to messages for chat display
       setMessages((prev) => [
         ...prev,
@@ -152,13 +159,22 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     }, 100);
   }, [id, jobState.events, jobState.currentNode, jobState.progress, jobState.metrics, updateJobState]);
 
-  // Only establish SSE connection when there's an active job - use direct proxy
-  const sseUrl = currentJobId ? `/api/jobs/${currentJobId}/events` : null;
-    
+  // Only establish SSE connection when there's an active job
+  const sseUrl = currentJobId ? `/api/threads/${id}/events?jobId=${currentJobId}` : null;
+
   const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,
     onConnectionChange: setConnectionStatus,
   });
+
+  // Log thread-scoped SSE diagnostics
+  useEffect(() => {
+    console.log('[ThreadPage] SSE URL changed', { threadId: id, sseUrl });
+  }, [id, sseUrl]);
+
+  useEffect(() => {
+    console.log('[ThreadPage] SSE status', { threadId: id, status: connectionStatus, currentJobId });
+  }, [id, connectionStatus, currentJobId]);
 
   const onSend = async (
     text: string,
@@ -174,7 +190,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     };
     setMessages((prev) => [...prev, userMessage]);
 
-    // Handle smoke test command locally  
+    // Handle smoke test command locally
     if (text.toLowerCase().includes("smoke test")) {
       // Start smoke test
       try {
@@ -183,13 +199,13 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ threadId: id }),
         });
-        
+
         const smokeResult = await smokeRes.json();
-        
+
         if (smokeRes.ok && smokeResult.success) {
           // Set the current job ID for SSE streaming
           setCurrentJobId(smokeResult.jobId);
-          
+
           // Initialize job state for smoke test
           updateJobState({
             status: 'running',
@@ -199,11 +215,11 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             budget: { used: 0, total: 10 },
             currentJobId: smokeResult.jobId
           });
-          
+
           setMessages((prev) => [...prev, {
             id: crypto.randomUUID(),
             threadId: id,
-            role: "assistant", 
+            role: "assistant",
             createdAt: new Date().toISOString(),
             text: `🧪 **Real Smoke Test Started**: ${smokeResult.jobId}\n\nRunning live campaign validation with real GitHub data...\n\n**Mode**: 🤝 Co‑pilot (Real Run)\n**Daily Cap**: $10\n**Target**: 5 Python maintainers\n**Scope**: Last 30 days\n\n*This will make real GitHub API calls and show live progress in the Inspector →*`,
           }]);
@@ -252,7 +268,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         } else {
           // Handle job creation response
           setCurrentJobId(result.jobId);
-          
+
           // Add success message showing job was created
           setMessages((prev) => [...prev, {
             id: crypto.randomUUID(),
@@ -292,7 +308,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-6">
               <h1 className="text-xl font-semibold text-gray-900">Thread: {id}</h1>
-              
+
               <div className="flex items-center gap-3 text-sm">
                 <select className="border border-gray-300 rounded-md px-3 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
                   <option>Campaign: Default</option>
@@ -302,7 +318,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
                 </select>
               </div>
             </div>
-            
+
             <div className="flex items-center gap-4">
               <button
                 onClick={() => {
@@ -317,7 +333,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             </div>
           </div>
         </div>
-        
+
         {/* Status Bar */}
         <div className="px-6 py-3 bg-gray-50 border-t border-gray-100">
           <div className="flex items-center justify-between">
@@ -342,13 +358,13 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
                   {connectionStatus === 'disconnected' && 'Disconnected'}
                 </span>
               </div>
-              
+
               {/* Budget Status */}
               <span className="text-gray-600">
                 <span className="font-medium">Daily Cap:</span> $50
               </span>
             </div>
-            
+
             <div className="flex items-center gap-3">
               {/* Current Autonomy Level */}
               <span className="text-xs px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-300 rounded-full font-medium">
