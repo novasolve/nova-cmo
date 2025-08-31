@@ -159,3 +159,46 @@ video_system/assets/intros/
 frontend/node_modules/**/@next/swc-*/next-swc.*.node
 frontend/node_modules/**/next-swc.*.node
 frontend/node_modules/.pnpm/**/@next/swc-*/next-swc.*.node
+
+# Consolidated repo ignores (macOS/editors)
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Node / Next (ignore everywhere)
+**/node_modules/
+**/.next/
+**/.turbo/
+**/.vercel/
+**/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Coverage / caches
+coverage/
+.nyc_output/
+.cache/
+.tmp/
+
+# Note: lockfiles and Next config should remain tracked
+# e.g., keep: next-env.d.ts, next.config.js, lockfiles
