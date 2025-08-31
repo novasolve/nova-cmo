@@ -202,3 +202,11 @@ coverage/
 
 # Note: lockfiles and Next config should remain tracked
 # e.g., keep: next-env.d.ts, next.config.js, lockfiles
+
+# Cache and virtualenvs (global)
+**/.cache/
+**/cache/
+**/.venv/
+**/.venv*/
+**/venv/
+**/venv*/
