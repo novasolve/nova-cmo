@@ -156,7 +156,8 @@ export async function GET(
                         status: extractStatusFromEvent(jobEvent),
                         latencyMs: jobEvent.data?.latency_ms,
                         costUSD: jobEvent.data?.cost_usd,
-                        msg: jobEvent.data?.message || jobEvent.event
+                        // Prefer human-readable stage/message if backend included it
+                        msg: jobEvent.data?.progress?.stage || jobEvent.data?.message || jobEvent.event
                       }
                     };
                     controller.enqueue(encoder.encode(`data: ${JSON.stringify(chatEvent)}\n\n`));
@@ -182,8 +183,18 @@ export async function GET(
             }
           });
 
-          // When client disconnects, cancel upstream fetch
+          // When client disconnects, cancel upstream fetch and log a structured event
           request.signal?.addEventListener('abort', () => {
+            try {
+              const payload = {
+                lvl: 'info',
+                evt: 'sse_client_abort',
+                threadId,
+                jobId: currentJobId,
+                ts: new Date().toISOString(),
+              };
+              console.log(JSON.stringify(payload));
+            } catch {}
             try { upstreamController.abort(); } catch {}
           });
 
@@ -340,6 +351,7 @@ function createPollingFallback(jobId: string, threadId: string, request: Request
 
 // Helper functions to extract info from job events
 function extractNodeFromEvent(jobEvent: any): string {
+  if (jobEvent.data?.stage) return jobEvent.data.stage;
   if (jobEvent.data?.node) return jobEvent.data.node;
   if (jobEvent.data?.current_tool) return jobEvent.data.current_tool;
   // Treat stream end or explicit completion as a completion node so UI can finalize
