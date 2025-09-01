@@ -159,6 +159,12 @@ class ExportCSV(BaseTool):
                 "headers": headers,
                 "file_size_bytes": file_stats.st_size,
                 "file_size_mb": round(file_stats.st_size / (1024 * 1024), 2),
+                "artifact": {
+                    "type": "file",
+                    "mime": "text/csv",
+                    "name": dest.name,
+                    "path": str(dest),
+                },
             }
 
             return ToolResult(success=True, data=result_data)

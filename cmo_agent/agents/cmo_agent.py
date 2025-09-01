@@ -1101,10 +1101,32 @@ class CMOAgent:
             }
             state.setdefault("errors", []).append(error_info)
 
+        # Capture ad-hoc artifacts provided by tools
+        try:
+            if result.success and hasattr(result, 'data') and isinstance(result.data, dict):
+                art = result.data.get("artifact")
+                if art:
+                    state.setdefault("artifacts", []).append(art)
+        except Exception:
+            pass
+
         # Handle different tool types
         if tool_name == "search_github_repos" and result.success:
             state["repos"] = result.data.get("repos", [])
             state["current_stage"] = "discovery"
+            # Collect drift flags from search tool
+            try:
+                drift = []
+                if isinstance(result.data, dict):
+                    drift = list(result.data.get("drift_flags") or [])
+                if drift:
+                    state.setdefault("plan_diffs", [])
+                    for q in drift:
+                        msg = f"Used default filter '{q}'"
+                        if msg not in state["plan_diffs"]:
+                            state["plan_diffs"].append(msg)
+            except Exception:
+                pass
 
         elif tool_name == "extract_people" and result.success:
             state["candidates"] = result.data.get("candidates", [])
@@ -1673,6 +1695,28 @@ Available tools: {', '.join(self.tools.keys())}
                 self.beautiful_logger = None
 
             # (parsed_icp already computed above)
+            # Compute plan_diffs vs user goal to surface defaults
+            try:
+                goal_text = (goal or "").lower()
+                plan_diffs: list[str] = []
+                di = (self.config.get("default_icp") or {}) if isinstance(self.config, dict) else {}
+                langs = di.get("languages") or []
+                if langs and not any((str(l).lower() in goal_text) for l in langs):
+                    plan_diffs.append(f"Language not specified; defaulted to {', '.join(langs)}")
+                sr = di.get("stars_range")
+                if sr and ("star" not in goal_text):
+                    plan_diffs.append(f"Stars range not specified; using default {sr}")
+                ad = di.get("activity_days")
+                if ad and all(k not in goal_text for k in ["day", "week", "month"]):
+                    plan_diffs.append(f"No activity window given; assumed last {ad} days")
+                topics = di.get("topics") or []
+                if topics and all(str(t).lower() not in goal_text for t in topics):
+                    # Only add if we will actually filter by topics later
+                    pass
+                if plan_diffs:
+                    initial_state["plan_diffs"] = plan_diffs
+            except Exception:
+                pass
             
             # Initialize state
             initial_state = RunState(
@@ -2147,6 +2191,14 @@ Available tools: {', '.join(self.tools.keys())}
             print(f"DEBUG: final_state keys: {list(final_state.keys()) if final_state else 'None'}")
             # Always collect available data regardless of completion status
             if final_state:
+                # Include any tool-provided artifacts present in state
+                try:
+                    extra_arts = final_state.get("artifacts") or []
+                    if isinstance(extra_arts, list) and extra_arts:
+                        artifacts.extend(extra_arts)
+                except Exception:
+                    pass
+
                 # Collect repositories data
                 repos = final_state.get("repos", [])
                 if repos:

@@ -50,6 +50,7 @@ from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
 from cmo_agent.scripts.run_execution import ExecutionEngine
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Gauge
 from cmo_agent.obs.logging import configure_logging
+from cmo_agent.core.artifacts import get_artifact_manager
 
 configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 app = FastAPI(title="CMO Agent - Minimal UI")
@@ -451,6 +452,35 @@ async def api_get_job_artifacts(job_id: str):
     }
 
 
+@app.get("/api/jobs/{job_id}/artifacts/{name}")
+async def api_download_job_artifact_by_name(job_id: str, name: str):
+    """Download an artifact for a job by filename or name field.
+    Works for simple file artifacts that include a direct path (e.g., ExportCSV output).
+    """
+    from fastapi.responses import FileResponse
+    import mimetypes
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    artifacts = status.get("artifacts") or []
+    # Find matching artifact by 'name' or 'filename'
+    target = None
+    for a in artifacts:
+        if not isinstance(a, dict):
+            continue
+        if a.get("name") == name or a.get("filename") == name:
+            target = a
+            break
+    if not target:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    path = target.get("path")
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=410, detail="Artifact file not available")
+    mime = target.get("mime") or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    return FileResponse(path=path, media_type=mime, filename=name)
+
+
 @app.api_route("/api/chat", methods=["GET", "POST"])
 async def api_chat_stub():
     """Stub chat endpoint to avoid 404s when UI posts to /api/chat.
@@ -501,6 +531,23 @@ async def api_download_artifact(artifact_id: str):
     content_type = "text/csv" if filename.endswith(".csv") else "application/json"
     # Return file directly (streaming file response)
     return FileResponse(path=file_path, media_type=content_type, filename=filename)
+
+
+@app.delete("/api/jobs/{job_id}/artifacts/{artifact_id}")
+async def api_delete_artifact(job_id: str, artifact_id: str):
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # Best-effort deletion using artifact manager
+    try:
+        manager = get_artifact_manager(eng.agent.config if eng and eng.agent else None)
+        ok = await manager.delete_artifact(artifact_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        return {"status": "deleted", "artifact_id": artifact_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/jobs/{job_id}/pause")
@@ -664,7 +711,18 @@ async def api_job_events(request: Request, job_id: str):
                             "status": status["status"],
                             "summary": summary,
                             "artifacts": artifacts,
+                            "actions": []
                         }
+                        try:
+                            if status.get("status") in ["completed", "failed"] and status.get("goal"):
+                                final_evt["actions"].append({
+                                    "id": "rerun",
+                                    "label": "Rerun Campaign",
+                                    "style": "primary",
+                                    "payload": {"goal": status["goal"]}
+                                })
+                        except Exception:
+                            pass
                         yield "event: job_finalized\n"
                         yield f"data: {_json.dumps(final_evt)}\n\n"
 
@@ -864,7 +922,19 @@ async def api_job_events(request: Request, job_id: str):
                         "status": state_status,
                         "summary": summary,
                         "artifacts": artifacts,
+                        "actions": []
                     }
+                    try:
+                        st = await engine.get_job_status(job_id)
+                        if st and st.get("status") in ["completed", "failed"] and st.get("goal"):
+                            final_evt["actions"].append({
+                                "id": "rerun",
+                                "label": "Rerun Campaign",
+                                "style": "primary",
+                                "payload": {"goal": st["goal"]}
+                            })
+                    except Exception:
+                        pass
                     yield "event: job_finalized\n"
                     yield f"data: {_json.dumps(final_evt)}\n\n"
                     return

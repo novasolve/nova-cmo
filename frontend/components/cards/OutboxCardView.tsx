@@ -16,7 +16,25 @@ export function OutboxCardView({ outbox }: OutboxCardViewProps) {
         <h3 className="text-lg font-semibold text-gray-900">
           {outbox.title || 'Outreach Messages'}
         </h3>
-        <span className="text-sm text-gray-500">📤</span>
+        <div className="flex items-center gap-2">
+          <button
+            className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded border"
+            onClick={() => {
+              try {
+                const samples = Array.isArray(outbox.messages) ? outbox.messages : [];
+                const emails = samples
+                  .map((m: any) => (typeof m === 'object' ? (m.email || m.to) : ''))
+                  .filter((e: string) => typeof e === 'string' && e.includes('@'))
+                  .join(', ');
+                if (emails) navigator.clipboard.writeText(emails);
+              } catch {}
+            }}
+            title="Copy all emails"
+          >
+            Copy All Emails
+          </button>
+          <span className="text-sm text-gray-500">📤</span>
+        </div>
       </div>
       
       {outbox.messages && outbox.messages.length > 0 && (

@@ -241,6 +241,18 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         events: jobStateRef.current.events,
       });
       if (summary) {
+        // Find CSV artifact and construct a stable download path if present
+        let csvName: string | null = null;
+        try {
+          const csv = (artifacts as any[] | undefined)?.find((a: any) => a && (a.mime === 'text/csv' || (a.filename || '').endsWith('.csv') || (a.path || '').endsWith('.csv')));
+          if (csv) {
+            const candidatePath = (csv as any).path as string | undefined;
+            const candidateFile = (csv as any).filename as string | undefined;
+            csvName = candidateFile || (candidatePath ? String(candidatePath).split('/').pop() : '') || 'leads.csv';
+          }
+        } catch {}
+        const baseText = `✅ ${summary.leads_with_emails} emails • ${summary.repos} repos • ${summary.candidates} candidates • ${Math.round(summary.duration_ms/1000)}s`;
+        const withDownload = (csvName && currentJobId) ? `${baseText} • Download: /api/jobs/${currentJobId}/artifacts/${csvName}` : baseText;
         setMessages((prev) => [
           ...prev,
           {
@@ -248,7 +260,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             threadId: id,
             role: "assistant",
             createdAt: new Date().toISOString(),
-            text: `✅ ${summary.leads_with_emails} emails • ${summary.repos} repos • ${summary.candidates} candidates • ${Math.round(summary.duration_ms/1000)}s`,
+            text: withDownload,
           },
         ]);
       }

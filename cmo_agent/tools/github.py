@@ -76,6 +76,7 @@ class SearchGitHubRepos(GitHubTool):
         """
         try:
             raw_q = (q or "").strip()
+            drift_flags: List[str] = []
 
             # Normalize malformed topics query: topics:a,b,c -> topic:a topic:b topic:c
             if "topics:" in raw_q:
@@ -98,6 +99,11 @@ class SearchGitHubRepos(GitHubTool):
                 nonlocal raw_q
                 if qualifier not in raw_q:
                     raw_q += (" " if raw_q else "") + qualifier
+                    try:
+                        drift_flags.append(qualifier)
+                        logger.info(f"Added default qualifier: {qualifier}")
+                    except Exception:
+                        pass
 
             # Defaults: public, not archived, not forks
             _ensure("is:public")
@@ -107,14 +113,26 @@ class SearchGitHubRepos(GitHubTool):
             # Apply structured qualifiers only if caller didn't provide them
             if language and ("language:" not in raw_q):
                 raw_q += (" " if raw_q else "") + f"language:{language}"
+                try:
+                    drift_flags.append(f"language:{language}")
+                except Exception:
+                    pass
             if stars_range and ("stars:" not in raw_q):
                 raw_q += (" " if raw_q else "") + f"stars:{stars_range}"
+                try:
+                    drift_flags.append(f"stars:{stars_range}")
+                except Exception:
+                    pass
             if ("pushed:" not in raw_q) and ("created:" not in raw_q):
                 try:
                     # Use same calculation as CLI (date.today() not datetime.now(UTC)) for consistency
                     from datetime import date
                     cutoff = (date.today() - timedelta(days=max(1, activity_days))).isoformat()
                     raw_q += (" " if raw_q else "") + f"pushed:>={cutoff}"
+                    try:
+                        drift_flags.append(f"pushed:>={cutoff}")
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
@@ -158,7 +176,7 @@ class SearchGitHubRepos(GitHubTool):
                 raise last_err
 
             # Optional sharding to avoid 1k-per-query cap
-            enable_sharding = (str(kwargs.get("enable_sharding") or os.getenv("GITHUB_ENABLE_SHARDING", "0")).strip() == "1")
+            enable_sharding = (str(kwargs.get("enable_sharding") or os.getenv("GITHUB_ENABLE_SHARDING", "1")).strip() == "1")
             shard_queries: List[str] = []
             if enable_sharding:
                 try:
@@ -203,17 +221,34 @@ class SearchGitHubRepos(GitHubTool):
                 return " ".join(keep).strip()
 
             def _widen_stars(qtext: str) -> str:
-                # Convert stars:X..Y -> stars:>=max(10, X//2); stars:>N -> stars:>=max(10, N//2)
+                # Prefer a broad, sane range if stars present or missing
+                # Target: 50..5000 for discovery breadth
                 m = _re2.search(r"stars:(\d+)\.\.(\d+)", qtext)
                 if m:
-                    low = max(10, int(m.group(1)) // 2 or 1)
-                    return _re2.sub(r"stars:>=" + str(low), qtext)
+                    return _re2.sub(r"stars:50..5000", qtext)
                 m2 = _re2.search(r"stars:>=?(\d+)", qtext)
                 if m2:
-                    low = max(10, int(m2.group(1)) // 2 or 1)
-                    return _re2.sub(r"stars:>=" + str(low), qtext)
-                # If no stars present, add a permissive lower bound
-                return (qtext + " stars:>=10").strip()
+                    return _re2.sub(r"stars:50..5000", qtext)
+                # If no stars present, add a permissive range
+                return (qtext + " stars:50..5000").strip()
+
+            def _add_in_readme(qtext: str) -> str:
+                return qtext if "in:readme" in qtext else (qtext + " in:readme").strip()
+
+            def _relax_activity_window(qtext: str, days_now: int = 90) -> str:
+                # If pushed:>=YYYY-MM-DD present, extend window older by factor 2 (cap at 365)
+                try:
+                    import datetime as _dt
+                    m = _re2.search(r"pushed:>=(\d{4}-\d{2}-\d{2})", qtext)
+                    if m:
+                        # compute an older date by doubling days_now (bounded to 365)
+                        widen_days = min(365, max(30, days_now * 2))
+                        new_cutoff = (_dt.date.today() - _dt.timedelta(days=widen_days)).isoformat()
+                        return _re2.sub(r"pushed:>=(\d{4}-\d{2}-\d{2})", f"pushed:>={new_cutoff}", qtext)
+                    # If no pushed qualifier, keep as-is
+                except Exception:
+                    pass
+                return qtext
 
             for qtext in queries_to_run:
                 if len(repos) >= max_repos:
@@ -264,7 +299,7 @@ class SearchGitHubRepos(GitHubTool):
 
                     # If query is too strict (zero results on first page), progressively relax
                     if page == 1 and result.get("total_count") == 0:
-                        logger.info("Zero results; relaxing query by dropping topics → keywords → widening stars")
+                        logger.info("Zero results; relaxing query by dropping topics → keywords → widening stars → in:readme → older pushed")
                         relaxed = _drop_topics(qtext)
                         if relaxed != qtext:
                             qtext = relaxed
@@ -278,6 +313,14 @@ class SearchGitHubRepos(GitHubTool):
                                 result = await _safe_search(params)
                         if result.get("total_count") == 0:
                             qtext = _widen_stars(qtext)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _add_in_readme(qtext)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _relax_activity_window(qtext, activity_days)
                             params["q"] = qtext
                             result = await _safe_search(params)
 
@@ -398,12 +441,13 @@ class SearchGitHubRepos(GitHubTool):
 
             return ToolResult(
                 success=True,
-                data={"repos": repos, "count": len(repos), "query": q},
+                data={"repos": repos, "count": len(repos), "query": raw_q, "drift_flags": drift_flags},
                 metadata={
                     "pages_searched": page - 1,
                     "max_requested": max_repos,
                     "total_available": total_available,
-                    "low_yield_pages": low_yield_pages_in_a_row
+                    "low_yield_pages": low_yield_pages_in_a_row,
+                    "drift_flags": drift_flags
                 }
             )
 
