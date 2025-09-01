@@ -132,6 +132,31 @@ class SearchGitHubRepos(GitHubTool):
 
             while len(repos) < max_repos:
                 params["page"] = page
+                # Log the exact search URL (human + structured)
+                try:
+                    from urllib.parse import urlencode
+                    query_url = f"https://api.github.com/search/repositories?{urlencode(params)}"
+                    logger.info(f"GitHub search URL: {query_url}")
+                    try:
+                        logger.info(
+                            "github_search",
+                            extra={
+                                "structured": {
+                                    "event": "github_search",
+                                    "url": query_url,
+                                    "q": raw_q,
+                                    "page": page,
+                                    "per_page": params.get("per_page"),
+                                    "sort": params.get("sort"),
+                                    "order": params.get("order"),
+                                }
+                            },
+                        )
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+
                 result = await _safe_search(params)
 
                 if not result.get("items"):
@@ -232,15 +257,32 @@ class ExtractPeople(GitHubTool):
                         logger.info(f"No contributors found for {repo_full_name}")
                         continue
 
-                    # Filter out bots and get top contributors
-                    human_contributors = [
-                        c for c in contributors
-                        if isinstance(c, dict)
-                        and isinstance(c.get("login", ""), str)
-                        and (c.get("type") == "User")
-                        and not c["login"].endswith("[bot]")
-                        and not c["login"].endswith("-bot")
-                    ][:top_authors_per_repo]
+                    # Filter out bots and validate usernames
+                    import re
+                    human_contributors = []
+                    for c in contributors:
+                        if not isinstance(c, dict):
+                            continue
+                        login = c.get("login", "")
+                        if not isinstance(login, str):
+                            continue
+                        if c.get("type") != "User":
+                            continue
+                        if login.endswith("[bot]") or login.endswith("-bot"):
+                            continue
+                        
+                        # Additional validation: reject suspicious usernames
+                        if re.search(r'\d+$', login):
+                            logger.warning(f"Rejecting potentially fake contributor username: {login}")
+                            continue
+                        if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
+                            logger.warning(f"Rejecting test/fake contributor username: {login}")
+                            continue
+                        
+                        human_contributors.append(c)
+                        
+                        if len(human_contributors) >= top_authors_per_repo:
+                            break
 
                     for contributor in human_contributors:
                         candidate = {
@@ -420,19 +462,41 @@ class EnrichGitHubUsers(GitHubTool):
     async def execute(self, logins: List[str], **kwargs) -> ToolResult:
         """Enrich multiple user profiles"""
         try:
+            # Log all usernames being processed for debugging
+            logger.info(f"EnrichGitHubUsers called with logins: {logins}")
+            
+            # Additional validation at execution time
+            import re
+            validated_logins = []
+            for login in logins:
+                if re.search(r'\d+$', login):
+                    logger.error(f"BLOCKED: Fake username with numbers at end: {login}")
+                    continue
+                if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
+                    logger.error(f"BLOCKED: Test/fake username: {login}")
+                    continue
+                validated_logins.append(login)
+            
+            if not validated_logins:
+                logger.error("All usernames were blocked as fake/invalid")
+                return ToolResult(success=False, error="All provided usernames appear to be fake or invalid")
+            
+            if len(validated_logins) != len(logins):
+                logger.warning(f"Filtered {len(logins)} -> {len(validated_logins)} usernames")
+            
             profiles = []
             batch_size = kwargs.get("batch_size", 10)  # Process in smaller batches to avoid rate limits
             
             # Initialize progress tracker
             progress = LiveProgressTracker(
                 description="👤 Enriching user profiles",
-                total=len(logins),
+                total=len(validated_logins),
                 show_emails=False,
                 force_tqdm=kwargs.get("force_tqdm", True)
             )
 
-            for i in range(0, len(logins), batch_size):
-                batch_logins = logins[i:i + batch_size]
+            for i in range(0, len(validated_logins), batch_size):
+                batch_logins = validated_logins[i:i + batch_size]
 
                 for login in batch_logins:
                     try:

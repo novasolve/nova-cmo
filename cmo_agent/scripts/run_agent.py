@@ -143,163 +143,320 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
         result = await agent.run_job(goal)
         logger.info(f"Campaign completed: {result['success']}")
 
+        # Helper functions for result processing
+        from collections.abc import Mapping
+
+        def as_map(x):
+            if x is None:
+                return {}
+            if isinstance(x, Mapping):
+                return x
+            # Pydantic-style or custom objects
+            for attr in ("to_dict", "dict", "model_dump"):
+                if hasattr(x, attr):
+                    try:
+                        return getattr(x, attr)()
+                    except Exception:
+                        pass
+            # Dict-like (has items/keys)
+            try:
+                return dict(x)
+            except Exception:
+                pass
+            # Fallback: empty
+            return {}
+
+        def _generate_campaign_summary(final_state: dict, no_emoji: bool = False) -> str:
+            """Generate a detailed campaign summary with distinct emails and counts"""
+            
+            # Icons
+            icons = {
+                'summary': '📋 ' if not no_emoji else '',
+                'repos': '📦 ' if not no_emoji else '',
+                'people': '👥 ' if not no_emoji else '',
+                'emails': '📧 ' if not no_emoji else '',
+                'leads': '🎯 ' if not no_emoji else '',
+                'companies': '🏢 ' if not no_emoji else '',
+                'locations': '🌍 ' if not no_emoji else '',
+                'languages': '💻 ' if not no_emoji else '',
+                'quality': '⭐ ' if not no_emoji else '',
+                'success': '✅ ' if not no_emoji else '',
+                'warning': '⚠️ ' if not no_emoji else '',
+                'action': '🚀 ' if not no_emoji else '',
+            }
+            
+            # Extract data
+            repos = final_state.get('repos', [])
+            candidates = final_state.get('candidates', [])
+            leads = final_state.get('leads', [])
+            icp = final_state.get('icp', {})
+            
+            # Collect all emails found with detailed analysis
+            all_emails = set()
+            email_sources = {'profile': 0, 'commit': 0, 'public': 0, 'bio': 0, 'noreply': 0}
+            email_quality_scores = []
+            contactable_emails = []
+            
+            for lead in leads:
+                email = lead.get('email')
+                if email and '@' in email:
+                    email_lower = email.lower()
+                    
+                    # Skip noreply emails but count them
+                    if 'noreply' in email_lower or 'no-reply' in email_lower:
+                        email_sources['noreply'] += 1
+                        continue
+                    
+                    all_emails.add(email_lower)
+                    contactable_emails.append({
+                        'email': email,
+                        'name': lead.get('name', lead.get('login', 'Unknown')),
+                        'company': lead.get('company', ''),
+                        'location': lead.get('location', ''),
+                        'followers': lead.get('followers', 0),
+                        'bio': lead.get('bio', '')
+                    })
+                    
+                    # Track email source and quality
+                    quality_score = 0
+                    if lead.get('email_profile'):
+                        email_sources['profile'] += 1
+                        quality_score += 3  # Profile emails are high quality
+                    elif 'gmail.com' in email_lower and lead.get('bio') and email_lower.split('@')[0] in lead.get('bio', ''):
+                        email_sources['bio'] += 1
+                        quality_score += 2  # Bio emails are medium quality
+                    elif lead.get('email_public_commit') or lead.get('emails'):
+                        email_sources['commit'] += 1
+                        quality_score += 1  # Commit emails are lower quality
+                    else:
+                        email_sources['public'] += 1
+                        quality_score += 2  # Public profile emails are medium quality
+                    
+                    # Bonus points for verification indicators
+                    if lead.get('followers', 0) > 100:
+                        quality_score += 1
+                    if lead.get('company'):
+                        quality_score += 1
+                    
+                    email_quality_scores.append(quality_score)
+            
+            # Collect companies
+            companies = set()
+            for lead in leads:
+                company = lead.get('company')
+                if company and company.strip():
+                    companies.add(company.strip())
+            
+            # Collect locations
+            locations = set()
+            for lead in leads:
+                location = lead.get('location')
+                if location and location.strip():
+                    locations.add(location.strip())
+            
+            # Collect languages from repos
+            repo_languages = set()
+            total_stars = 0
+            for repo in repos:
+                lang = repo.get('primary_language') or repo.get('language')
+                if lang:
+                    repo_languages.add(lang)
+                stars = repo.get('stars', 0)
+                if isinstance(stars, (int, float)):
+                    total_stars += int(stars)
+            
+            # Build summary
+            lines = []
+            lines.append(f"\n{'='*60}")
+            lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
+            lines.append(f"{'='*60}")
+            
+            # WHO WE'RE TARGETING - Clear explanation at the top
+            lines.append(f"\n🎯 WHO WE'RE TARGETING:")
+            if icp and icp.get('goal'):
+                # Parse the goal to create a human-readable explanation
+                goal = icp['goal']
+                lines.append(f"   Campaign Focus: {goal}")
+                
+                # Add context about what we're looking for
+                if 'developer' in goal.lower():
+                    lines.append(f"   👨‍💻 Seeking: Software developers and engineers")
+                if 'python' in goal.lower():
+                    lines.append(f"   🐍 Tech Stack: Python ecosystem contributors")
+                if 'maintainer' in goal.lower():
+                    lines.append(f"   🔧 Role Focus: Open source maintainers and core contributors")
+                if 'active' in goal.lower() or 'activity' in goal.lower():
+                    activity_days = icp.get('activity_days', 90)
+                    lines.append(f"   ⚡ Activity: Recently active (last {activity_days} days)")
+                
+                # Show what we want to achieve
+                lines.append(f"   📧 Goal: Find contactable leads for outbound campaigns")
+                lines.append(f"   🎯 Outcome: Build targeted prospect list with verified emails")
+            else:
+                lines.append(f"   Campaign Focus: General prospect discovery")
+            
+            # ICP Criteria (detailed technical specs)
+            if icp:
+                lines.append(f"\n🔍 TECHNICAL CRITERIA:")
+                if icp.get('languages'):
+                    lines.append(f"   Languages: {', '.join(icp['languages'])}")
+                if icp.get('keywords'):
+                    lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
+                if icp.get('topics'):
+                    lines.append(f"   Topics: {', '.join(icp['topics'][:5])}")  # Show first 5 topics
+                if icp.get('stars_range'):
+                    lines.append(f"   Repository Stars: {icp['stars_range']}")
+                
+                # Show target progress
+                if icp.get('target_emails'):
+                    target_emails = icp['target_emails']
+                    progress_pct = min(100, (len(all_emails) / target_emails) * 100) if target_emails > 0 else 0
+                    status = "✅" if progress_pct >= 100 else "🔄" if progress_pct >= 50 else "📈"
+                    lines.append(f"   {status} Target Emails: {len(all_emails)}/{target_emails} ({progress_pct:.1f}%)")
+                if icp.get('target_leads'):
+                    target_leads = icp['target_leads']
+                    progress_pct = min(100, (len(leads) / target_leads) * 100) if target_leads > 0 else 0
+                    status = "✅" if progress_pct >= 100 else "🔄" if progress_pct >= 50 else "📈"
+                    lines.append(f"   {status} Target Leads: {len(leads)}/{target_leads} ({progress_pct:.1f}%)")
+            
+            # Repository Summary
+            lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")
+            lines.append(f"   Total: {len(repos)}")
+            if repo_languages:
+                lines.append(f"   Languages: {', '.join(sorted(repo_languages))}")
+            if total_stars > 0:
+                lines.append(f"   Total Stars: {total_stars:,}")
+            
+            # People Summary
+            lines.append(f"\n{icons['people']}PEOPLE DISCOVERED:")
+            lines.append(f"   Candidates: {len(candidates)}")
+            lines.append(f"   Leads: {len(leads)}")
+            
+            # Email Summary (enhanced with quality analysis)
+            lines.append(f"\n{icons['emails']}EMAIL DISCOVERY & QUALITY ANALYSIS:")
+            lines.append(f"   {icons['success']}Contactable Emails: {len(all_emails)}")
+            lines.append(f"   {icons['warning']}Noreply/Blocked: {email_sources['noreply']}")
+            
+            # Quality breakdown
+            if email_quality_scores:
+                avg_quality = sum(email_quality_scores) / len(email_quality_scores)
+                high_quality = sum(1 for score in email_quality_scores if score >= 4)
+                medium_quality = sum(1 for score in email_quality_scores if 2 <= score < 4)
+                low_quality = sum(1 for score in email_quality_scores if score < 2)
+                
+                lines.append(f"\n   {icons['quality']}EMAIL QUALITY BREAKDOWN:")
+                lines.append(f"   {icons['success']}High Quality (4+ score): {high_quality}")
+                lines.append(f"   🔶 Medium Quality (2-3 score): {medium_quality}")
+                lines.append(f"   🔸 Low Quality (<2 score): {low_quality}")
+                lines.append(f"   📊 Average Quality Score: {avg_quality:.1f}/6")
+            
+            # Source breakdown
+            lines.append(f"\n   📍 EMAIL SOURCES:")
+            if email_sources['profile'] > 0:
+                lines.append(f"   • Profile Emails: {email_sources['profile']} {icons['success']}")
+            if email_sources['bio'] > 0:
+                lines.append(f"   • Bio Extracted: {email_sources['bio']} 🔶")
+            if email_sources['public'] > 0:
+                lines.append(f"   • Public Profile: {email_sources['public']} 🔶")
+            if email_sources['commit'] > 0:
+                lines.append(f"   • Commit History: {email_sources['commit']} 🔸")
+            
+            # Actionable contact list
+            if len(contactable_emails) > 0:
+                lines.append(f"\n   {icons['action']}TOP PROSPECTS FOR OUTREACH:")
+                # Sort by quality (followers + company presence)
+                sorted_contacts = sorted(contactable_emails, 
+                                       key=lambda x: (x['followers'], bool(x['company']), bool(x['name'])), 
+                                       reverse=True)
+                
+                for i, contact in enumerate(sorted_contacts[:10], 1):  # Show top 10
+                    name = contact['name'] if contact['name'] != 'Unknown' else contact['email'].split('@')[0]
+                    company_info = f" @ {contact['company']}" if contact['company'] else ""
+                    location_info = f" ({contact['location']})" if contact['location'] else ""
+                    followers_info = f" • {contact['followers']} followers" if contact['followers'] > 0 else ""
+                    
+                    lines.append(f"   {i:2d}. {name}{company_info}{location_info}{followers_info}")
+                    lines.append(f"       📧 {contact['email']}")
+                    
+                if len(sorted_contacts) > 10:
+                    lines.append(f"   ... and {len(sorted_contacts) - 10} more prospects")
+                
+                # Quick stats for outreach planning
+                with_company = sum(1 for c in contactable_emails if c['company'])
+                with_location = sum(1 for c in contactable_emails if c['location'])
+                high_followers = sum(1 for c in contactable_emails if c['followers'] > 100)
+                
+                lines.append(f"\n   📈 OUTREACH INSIGHTS:")
+                lines.append(f"   • {with_company}/{len(contactable_emails)} have company info ({with_company/len(contactable_emails)*100:.0f}%)")
+                lines.append(f"   • {with_location}/{len(contactable_emails)} have location ({with_location/len(contactable_emails)*100:.0f}%)")
+                lines.append(f"   • {high_followers}/{len(contactable_emails)} are influencers (100+ followers)")
+            
+            elif len(all_emails) == 0 and leads:
+                lines.append(f"\n   {icons['warning']}No contactable emails found - all were noreply addresses")
+                lines.append(f"   💡 Consider: LinkedIn outreach, GitHub issue engagement, or Twitter DMs")
+            
+            # Company Summary
+            if companies:
+                lines.append(f"\n{icons['companies']}COMPANIES REPRESENTED:")
+                lines.append(f"   Distinct Companies: {len(companies)}")
+                top_companies = sorted(companies)[:10]
+                for company in top_companies:
+                    lines.append(f"   • {company}")
+                if len(companies) > 10:
+                    lines.append(f"   ... and {len(companies) - 10} more")
+            
+            # Location Summary
+            if locations:
+                lines.append(f"\n{icons['locations']}GEOGRAPHIC DISTRIBUTION:")
+                lines.append(f"   Distinct Locations: {len(locations)}")
+                top_locations = sorted(locations)[:10]
+                for location in top_locations:
+                    lines.append(f"   • {location}")
+                if len(locations) > 10:
+                    lines.append(f"   ... and {len(locations) - 10} more")
+            
+            # Campaign Performance Summary
+            lines.append(f"\n{icons['quality']}CAMPAIGN PERFORMANCE:")
+            total_processed = len(candidates)
+            conversion_rate = (len(leads) / total_processed * 100) if total_processed > 0 else 0
+            email_success_rate = (len(all_emails) / len(leads) * 100) if len(leads) > 0 else 0
+            
+            lines.append(f"   📊 Lead Conversion: {len(leads)}/{total_processed} ({conversion_rate:.1f}%)")
+            lines.append(f"   📧 Email Discovery: {len(all_emails)}/{len(leads)} ({email_success_rate:.1f}%)")
+            
+            if len(repos) > 0:
+                avg_stars = sum(repo.get('stars', 0) for repo in repos) / len(repos)
+                lines.append(f"   ⭐ Avg Repository Stars: {avg_stars:,.0f}")
+            
+            # Next Steps & Recommendations
+            lines.append(f"\n{icons['action']}RECOMMENDED NEXT STEPS:")
+            
+            if len(all_emails) > 0:
+                lines.append(f"   1. {icons['success']}Export contact list to CSV for outreach tools")
+                lines.append(f"   2. 📝 Craft personalized messages mentioning their repos/contributions")
+                lines.append(f"   3. 🎯 Prioritize high-quality prospects (4+ score) for initial outreach")
+                if high_quality > 0:
+                    lines.append(f"   4. 🚀 Start with {high_quality} high-quality prospects for best ROI")
+                lines.append(f"   5. 📊 Track response rates to optimize future campaigns")
+            else:
+                lines.append(f"   1. {icons['warning']}Expand search criteria - try different keywords/topics")
+                lines.append(f"   2. 🔍 Consider alternative contact methods (LinkedIn, Twitter)")
+                lines.append(f"   3. 📈 Target repositories with more recent activity")
+                lines.append(f"   4. 🎯 Focus on specific niches within Python ecosystem")
+            
+            # Data Export Info
+            if len(all_emails) > 0:
+                lines.append(f"\n💾 DATA EXPORT:")
+                lines.append(f"   • Contact data saved to campaign checkpoint")
+                lines.append(f"   • Use export_csv tool to create outreach-ready spreadsheet")
+                lines.append(f"   • Includes: names, emails, companies, locations, GitHub profiles")
+            
+            lines.append(f"{'='*60}")
+            
+            return '\n'.join(lines)
+
         # Print summary
         if result.get('success'):
-            from collections.abc import Mapping
-
-            def as_map(x):
-                if x is None:
-                    return {}
-                if isinstance(x, Mapping):
-                    return x
-                # Pydantic-style or custom objects
-                for attr in ("to_dict", "dict", "model_dump"):
-                    if hasattr(x, attr):
-                        try:
-                            return getattr(x, attr)()
-                        except Exception:
-                            pass
-                # Dict-like (has items/keys)
-                try:
-                    return dict(x)
-                except Exception:
-                    pass
-                # Fallback: empty
-                return {}
-
-            def _generate_campaign_summary(final_state: dict, no_emoji: bool = False) -> str:
-                """Generate a detailed campaign summary with distinct emails and counts"""
-                
-                # Icons
-                icons = {
-                    'summary': '📋 ' if not no_emoji else '',
-                    'repos': '📦 ' if not no_emoji else '',
-                    'people': '👥 ' if not no_emoji else '',
-                    'emails': '📧 ' if not no_emoji else '',
-                    'leads': '🎯 ' if not no_emoji else '',
-                    'companies': '🏢 ' if not no_emoji else '',
-                    'locations': '🌍 ' if not no_emoji else '',
-                    'languages': '💻 ' if not no_emoji else '',
-                }
-                
-                # Extract data
-                repos = final_state.get('repos', [])
-                candidates = final_state.get('candidates', [])
-                leads = final_state.get('leads', [])
-                icp = final_state.get('icp', {})
-                
-                # Collect all emails found
-                all_emails = set()
-                email_sources = {'profile': 0, 'commit': 0, 'public': 0}
-                
-                for lead in leads:
-                    email = lead.get('email')
-                    if email and '@' in email:
-                        all_emails.add(email.lower())
-                        # Track email source
-                        if lead.get('email_profile'):
-                            email_sources['profile'] += 1
-                        elif lead.get('email_public_commit') or lead.get('emails'):
-                            email_sources['commit'] += 1
-                        else:
-                            email_sources['public'] += 1
-                
-                # Collect companies
-                companies = set()
-                for lead in leads:
-                    company = lead.get('company')
-                    if company and company.strip():
-                        companies.add(company.strip())
-                
-                # Collect locations
-                locations = set()
-                for lead in leads:
-                    location = lead.get('location')
-                    if location and location.strip():
-                        locations.add(location.strip())
-                
-                # Collect languages from repos
-                repo_languages = set()
-                total_stars = 0
-                for repo in repos:
-                    lang = repo.get('primary_language') or repo.get('language')
-                    if lang:
-                        repo_languages.add(lang)
-                    stars = repo.get('stars', 0)
-                    if isinstance(stars, (int, float)):
-                        total_stars += int(stars)
-                
-                # Build summary
-                lines = []
-                lines.append(f"\n{'='*60}")
-                lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
-                lines.append(f"{'='*60}")
-                
-                # ICP Criteria
-                if icp:
-                    lines.append(f"\n🎯 TARGET PROFILE:")
-                    if icp.get('goal'):
-                        lines.append(f"   Goal: {icp['goal']}")
-                    if icp.get('languages'):
-                        lines.append(f"   Languages: {', '.join(icp['languages'])}")
-                    if icp.get('activity_days'):
-                        lines.append(f"   Activity: Last {icp['activity_days']} days")
-                    if icp.get('keywords'):
-                        lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
-                
-                # Repository Summary
-                lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")
-                lines.append(f"   Total: {len(repos)}")
-                if repo_languages:
-                    lines.append(f"   Languages: {', '.join(sorted(repo_languages))}")
-                if total_stars > 0:
-                    lines.append(f"   Total Stars: {total_stars:,}")
-                
-                # People Summary
-                lines.append(f"\n{icons['people']}PEOPLE DISCOVERED:")
-                lines.append(f"   Candidates: {len(candidates)}")
-                lines.append(f"   Leads: {len(leads)}")
-                
-                # Email Summary (the main feature requested)
-                lines.append(f"\n{icons['emails']}EMAIL DISCOVERY:")
-                lines.append(f"   Distinct Emails: {len(all_emails)}")
-                lines.append(f"   Profile Emails: {email_sources['profile']}")
-                lines.append(f"   Commit Emails: {email_sources['commit']}")
-                lines.append(f"   Public Emails: {email_sources['public']}")
-                
-                if len(all_emails) > 0:
-                    lines.append(f"\n   📧 DISTINCT EMAIL LIST:")
-                    # Sort emails and show them
-                    sorted_emails = sorted(all_emails)
-                    for i, email in enumerate(sorted_emails[:20], 1):  # Show first 20
-                        lines.append(f"   {i:2d}. {email}")
-                    if len(sorted_emails) > 20:
-                        lines.append(f"   ... and {len(sorted_emails) - 20} more")
-                
-                # Company Summary
-                if companies:
-                    lines.append(f"\n{icons['companies']}COMPANIES REPRESENTED:")
-                    lines.append(f"   Distinct Companies: {len(companies)}")
-                    top_companies = sorted(companies)[:10]
-                    for company in top_companies:
-                        lines.append(f"   • {company}")
-                    if len(companies) > 10:
-                        lines.append(f"   ... and {len(companies) - 10} more")
-                
-                # Location Summary
-                if locations:
-                    lines.append(f"\n{icons['locations']}GEOGRAPHIC DISTRIBUTION:")
-                    lines.append(f"   Distinct Locations: {len(locations)}")
-                    top_locations = sorted(locations)[:10]
-                    for location in top_locations:
-                        lines.append(f"   • {location}")
-                    if len(locations) > 10:
-                        lines.append(f"   ... and {len(locations) - 10} more")
-                
-                lines.append(f"{'='*60}")
-                
-                return '\n'.join(lines)
-
             final_state = as_map(result.get('final_state'))
             report = as_map(result.get('report'))
             summary = as_map(report.get('summary'))
@@ -341,6 +498,18 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             synced_people = attio.get("synced_people", []) if isinstance(attio.get("synced_people", []), list) else []
             print(f"{building}CRM sync: {len(synced_people)}")
 
+            # Print absolute path to the latest checkpoint for easy access
+            try:
+                checkpoints = final_state.get("checkpoints", [])
+                if isinstance(checkpoints, list) and checkpoints:
+                    last_path = checkpoints[-1].get("path")
+                    if last_path:
+                        abs_path = str(Path(last_path).resolve())
+                        puzzle = "🧩 " if not no_emoji else ""
+                        print(f"{puzzle}Checkpoint: {abs_path}")
+            except Exception:
+                pass
+
             # Optional interactive continuation
             if interactive:
                 answer = input(("Run another campaign? (y/N): "))
@@ -353,6 +522,17 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             if final_state:
                 campaign_summary = _generate_campaign_summary(final_state, no_emoji)
                 print(campaign_summary)
+                # Also show checkpoint path when available on failure
+                try:
+                    checkpoints = final_state.get("checkpoints", [])
+                    if isinstance(checkpoints, list) and checkpoints:
+                        last_path = checkpoints[-1].get("path")
+                        if last_path:
+                            abs_path = str(Path(last_path).resolve())
+                            puzzle = "🧩 " if not no_emoji else ""
+                            print(f"{puzzle}Checkpoint: {abs_path}")
+                except Exception:
+                    pass
             
             cross = "❌ " if not no_emoji else ""
             print(f"\n{cross}Campaign failed: {result.get('error', 'Unknown error')}")

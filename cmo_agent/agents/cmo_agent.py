@@ -146,6 +146,19 @@ class CMOAgent:
 
     def __init__(self, config: Dict[str, Any] = None):
         self.config = config or DEFAULT_CONFIG.copy()
+
+        # Normalize directories: default to cmo_agent/* to keep paths consistent
+        try:
+            pkg_dir = Path(__file__).resolve().parents[1]  # cmo_agent/
+            dirs = dict(self.config.get("directories", {}))
+            dirs.setdefault("checkpoints", str((pkg_dir / "checkpoints").resolve()))
+            dirs.setdefault("exports", str((pkg_dir / "exports").resolve()))
+            dirs.setdefault("logs", str((pkg_dir / "logs").resolve()))
+            dirs.setdefault("artifacts", str((pkg_dir / "artifacts").resolve()))
+            self.config["directories"] = dirs
+        except Exception:
+            # Fall back silently if path resolution fails
+            pass
         # Initialize all tools first
         self.tools = self._initialize_tools()
 
@@ -846,8 +859,47 @@ class CMOAgent:
                                 except Exception as e:
                                     logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
 
-                    # Auto-finalization: if we have leads with emails, render copy, export and finish if LLM doesn't
+                    # Auto-finalization: if we have leads with emails, check if we've reached target before finishing
                     leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+                    
+                    # Check if we've reached the target number of emails
+                    icp = state.get("icp", {})
+                    target_emails = icp.get("target_emails")
+                    target_leads = icp.get("target_leads")
+                    
+                    # Count unique emails
+                    unique_emails = set()
+                    for lead in leads_with_email:
+                        email = lead.get("email")
+                        if email and '@' in email:
+                            unique_emails.add(email.lower())
+                    
+                    current_email_count = len(unique_emails)
+                    should_continue_searching = False
+                    
+                    # Determine if we should continue searching
+                    if target_emails and current_email_count < target_emails:
+                        should_continue_searching = True
+                        logger.info(f"Target: {target_emails} emails, found: {current_email_count} - continuing search")
+                    elif target_leads and len(leads_with_email) < target_leads:
+                        should_continue_searching = True
+                        logger.info(f"Target: {target_leads} leads, found: {len(leads_with_email)} - continuing search")
+                    
+                    # If we should continue searching, try to find more repositories or people
+                    if should_continue_searching and not state.get("email_search_exhausted"):
+                        # Try to search for more repositories with different criteria
+                        repos = state.get("repos", [])
+                        if len(repos) < 50:  # Limit to prevent infinite expansion
+                            logger.info("Attempting to find more repositories to reach target...")
+                            # Let the agent continue with more repository searches
+                            # Don't end the campaign yet
+                            return state
+                        else:
+                            # Mark search as exhausted if we've already found many repos
+                            state["email_search_exhausted"] = True
+                            logger.info(f"Search exhausted: found {len(repos)} repos, proceeding with {current_email_count} emails")
+                    
+                    # Proceed with finalization if target is reached or search is exhausted
                     if leads_with_email and not state.get("ended"):
                         try:
                             # Attempt personalization: render copy for leads with emails if tool is available
@@ -1176,22 +1228,56 @@ class CMOAgent:
                 return hydrated, note
 
             if tool_name == "enrich_github_users":
-                # Prefer candidates from state over LLM-supplied examples
-                if not hydrated.get("logins"):
-                    candidates = state.get("candidates", [])
+                # Always constrain to discovered candidates to avoid LLM-invented usernames
+                candidates = state.get("candidates", [])
+                candidate_set = {c.get("login") for c in candidates if c.get("login")}
+
+                provided = list(hydrated.get("logins") or [])
+                if provided:
+                    # Intersect with candidate set; if intersection empty, fall back to candidates
+                    filtered = [l for l in provided if l in candidate_set]
+                    
+                    # Additional validation: reject usernames that look fake/generated
+                    import re
+                    validated = []
+                    for login in filtered:
+                        # Reject usernames with numbers at the end (likely LLM generated variants)
+                        if re.search(r'\d+$', login):
+                            logger.warning(f"Rejecting potentially fake username: {login}")
+                            continue
+                        # Reject usernames that are too similar to common patterns
+                        if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
+                            logger.warning(f"Rejecting test/fake username: {login}")
+                            continue
+                        validated.append(login)
+                    
+                    if validated:
+                        hydrated["logins"] = validated[:25]
+                        note = f"[auto] Restricted enrich_github_users logins to {len(hydrated['logins'])} validated candidates"
+                    else:
+                        provided = []  # force fallback
+
+                if not provided:
                     unique_logins = []
                     seen = set()
                     for c in candidates:
                         login = c.get("login")
                         if login and login not in seen:
+                            # Same validation for auto-filled candidates
+                            if re.search(r'\d+$', login):
+                                logger.warning(f"Skipping potentially fake candidate username: {login}")
+                                continue
+                            if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
+                                logger.warning(f"Skipping test/fake candidate username: {login}")
+                                continue
                             unique_logins.append(login)
                             seen.add(login)
                     if unique_logins:
-                        # Cap batch size conservatively
                         hydrated["logins"] = unique_logins[:25]
-                        note = f"[auto] Filled enrich_github_users logins from candidates: {len(hydrated['logins'])}"
+                        note = f"[auto] Filled enrich_github_users logins from validated candidates: {len(hydrated['logins'])}"
                     else:
-                        return None, "[auto] enrich_github_users skipped: no candidates available."
+                        return None, "[auto] enrich_github_users skipped: no valid candidates available."
+
                 return hydrated, note
 
             if tool_name == "find_commit_emails_batch":
@@ -1316,12 +1402,66 @@ class CMOAgent:
         elif "small" in goal_lower or "new" in goal_lower:
             stars_range = "10..500"
         
+        # Extract target numbers (emails, leads, contacts, etc.)
+        import re
+        target_emails = None
+        target_leads = None
+        
+        # Look for patterns like "find 50 emails", "get 100 contacts", "target 25 leads"
+        email_patterns = [
+            r'find\s+(\d+)\s+emails?',
+            r'get\s+(\d+)\s+emails?',
+            r'(\d+)\s+emails?',
+            r'target\s+(\d+)\s+emails?'
+        ]
+        
+        lead_patterns = [
+            r'find\s+(\d+)\s+(?:leads?|contacts?|maintainers?|developers?)',
+            r'get\s+(\d+)\s+(?:leads?|contacts?|maintainers?|developers?)',
+            r'(\d+)\s+(?:leads?|contacts?|maintainers?|developers?)',
+            r'target\s+(\d+)\s+(?:leads?|contacts?|maintainers?|developers?)'
+        ]
+        
+        # Try to extract email targets
+        for pattern in email_patterns:
+            match = re.search(pattern, goal_lower)
+            if match:
+                target_emails = int(match.group(1))
+                break
+        
+        # Try to extract lead targets  
+        for pattern in lead_patterns:
+            match = re.search(pattern, goal_lower)
+            if match:
+                target_leads = int(match.group(1))
+                break
+        
+        # If we found an email target but no lead target, assume they're the same
+        if target_emails and not target_leads:
+            target_leads = target_emails
+        elif target_leads and not target_emails:
+            target_emails = target_leads
+        
+        # Default targets from config params if still missing
+        try:
+            params_cfg = self.config.get("params", {}) if isinstance(self.config.get("params"), dict) else {}
+            default_target = params_cfg.get("target_leads") or params_cfg.get("target_emails")
+            if default_target and isinstance(default_target, int):
+                if target_leads is None:
+                    target_leads = default_target
+                if target_emails is None:
+                    target_emails = default_target
+        except Exception:
+            pass
+        
         return {
             "languages": languages,
             "activity_days": activity_days,
             "keywords": keywords,
             "topics": topics,
             "stars_range": stars_range,
+            "target_emails": target_emails,
+            "target_leads": target_leads,
             "goal": goal  # Keep original goal for reference
         }
 
@@ -1333,6 +1473,12 @@ class CMOAgent:
         icp = state.get("icp", {})
         icp_info = ""
         if icp:
+            target_info = ""
+            if icp.get("target_emails"):
+                target_info += f"- TARGET EMAILS: {icp.get('target_emails')}\n"
+            if icp.get("target_leads"):
+                target_info += f"- TARGET LEADS: {icp.get('target_leads')}\n"
+            
             icp_info = f"""
 ICP CRITERIA:
 - Languages: {icp.get('languages', [])}
@@ -1340,7 +1486,7 @@ ICP CRITERIA:
 - Keywords: {icp.get('keywords', [])}
 - Topics: {icp.get('topics', [])}
 - Stars range: {icp.get('stars_range', '100..2000')}
-"""
+{target_info}"""
 
         prompt = f"""You are a CMO operator. Your task: {state['goal']}
 {icp_info}
@@ -1357,12 +1503,17 @@ FOLLOW THIS EXACT SEQUENCE:
 10. export_csv - Export results
 11. done - FINISH the campaign
 
-CRITICAL: Call done("Completed") immediately after any major step if you have meaningful results.
+CRITICAL: Continue searching until you reach the TARGET number of emails/leads specified above. Only call done("Completed") when targets are met or search is exhausted.
+
+TARGET ACHIEVEMENT:
+- If TARGET EMAILS or TARGET LEADS are specified, continue searching until you reach those numbers
+- Search more repositories, extract more people, find more emails until targets are met
+- Only finish when you have enough emails/leads OR when search is clearly exhausted
 
 RULES TO AVOID LOOPS:
-- If repositories already exist in state, do NOT call search_github_repos again. Proceed to extract_people.
-- Use the assistant function result summaries in the conversation to update your plan. Do not repeat tools that already succeeded unless new inputs are provided.
-- If leads have emails, proceed towards mx_check, export_csv and done.
+- If repositories already exist but you need more emails, search for MORE repositories with different criteria
+- Use the assistant function result summaries in the conversation to update your plan
+- If you have leads with emails but haven't reached targets, continue searching for more
 
 Available tools: {', '.join(self.tools.keys())}
 """
@@ -1377,6 +1528,41 @@ Available tools: {', '.join(self.tools.keys())}
         try:
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
+            
+            # Parse goal to create ICP criteria and print at start for visibility
+            parsed_icp = self._parse_goal_to_icp(goal)
+            try:
+                icp_summary = {
+                    "languages": parsed_icp.get("languages"),
+                    "activity_days": parsed_icp.get("activity_days"),
+                    "stars_range": parsed_icp.get("stars_range"),
+                    "keywords": parsed_icp.get("keywords"),
+                    "topics": parsed_icp.get("topics"),
+                    "target_emails": parsed_icp.get("target_emails"),
+                    "target_leads": parsed_icp.get("target_leads"),
+                }
+                # Human-readable
+                logger.info(f"Campaign goal: {goal}")
+                logger.info(f"Derived ICP: {icp_summary}")
+                # Structured log for JSON
+                try:
+                    logger.info(
+                        "campaign_start",
+                        extra={
+                            "structured": {
+                                "event": "campaign_start",
+                                "goal": goal,
+                                "icp": icp_summary,
+                                "job_id": job_meta.job_id,
+                            }
+                        },
+                    )
+                except Exception:
+                    pass
+                print(f"🎯 Goal: {goal}")
+                print(f"🧭 ICP: {icp_summary}")
+            except Exception:
+                pass
             
             # Validate GitHub token early to fail fast
             if self.config.get("GITHUB_TOKEN") and not self.config.get("features", {}).get("dry_run", False):
@@ -1394,8 +1580,7 @@ Available tools: {', '.join(self.tools.keys())}
                 logger.warning(f"Failed to initialize beautiful logging: {e}")
                 self.beautiful_logger = None
 
-            # Parse goal to create ICP criteria
-            parsed_icp = self._parse_goal_to_icp(goal)
+            # (parsed_icp already computed above)
             
             # Initialize state
             initial_state = RunState(
@@ -1660,9 +1845,10 @@ Available tools: {', '.join(self.tools.keys())}
             import json
             from pathlib import Path
 
-            # Create checkpoints directory
+            # Create checkpoints directory (absolute path for clickable links)
             checkpoints_dir = Path(self.config.get("directories", {}).get("checkpoints", "./checkpoints"))
-            checkpoints_dir.mkdir(exist_ok=True)
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+            checkpoints_dir = checkpoints_dir.resolve()
 
             # Create checkpoint file
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1681,6 +1867,12 @@ Available tools: {', '.join(self.tools.keys())}
             # Save to file
             with open(checkpoint_file, 'w') as f:
                 json.dump(checkpoint_data, f, indent=2, default=str)
+            try:
+                # Ensure fs sync so downstream tools can find it immediately
+                f.flush()
+                os.fsync(f.fileno())
+            except Exception:
+                pass
 
             # Add to state's checkpoints list
             state.setdefault("checkpoints", []).append({
