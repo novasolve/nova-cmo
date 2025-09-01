@@ -1643,8 +1643,43 @@ Available tools: {', '.join(self.tools.keys())}
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
             
-            # Parse goal to create ICP criteria and print at start for visibility
-            parsed_icp = self._parse_goal_to_icp(goal)
+            # Parse goal to create ICP criteria (AI YAMLizer path with validation)
+            try:
+                from ..yamlizer.yamlizer import make_yaml_config, to_yaml
+                from ..yamlizer.planner import build_plan
+                cfg = make_yaml_config(goal)
+                parsed_icp = {
+                    "languages": [cfg.params.language],
+                    "activity_days": cfg.params.activity_days,
+                    "stars_range": cfg.params.stars_range,
+                    "topics": cfg.params.topics or [],
+                    "target_leads": cfg.params.target_leads,
+                }
+                # Emit config snapshot
+                try:
+                    if progress_callback:
+                        await progress_callback({
+                            "stage": "initialization",
+                            "current_item": "config_snapshot",
+                            "config": cfg.model_dump(),
+                            "config_yaml": to_yaml(cfg),
+                        })
+                except Exception:
+                    pass
+                # Build a plan (for observability)
+                try:
+                    plan = build_plan(cfg)
+                    if progress_callback:
+                        await progress_callback({
+                            "stage": "initialization",
+                            "current_item": "plan_snapshot",
+                            "plan": plan,
+                        })
+                except Exception:
+                    pass
+            except Exception:
+                # Fallback to legacy ICP parser
+                parsed_icp = self._parse_goal_to_icp(goal)
             try:
                 icp_summary = {
                     "languages": parsed_icp.get("languages"),
