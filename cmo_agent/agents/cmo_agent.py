@@ -1239,15 +1239,10 @@ class CMOAgent:
                     # Intersect with candidate set; if intersection empty, fall back to candidates
                     filtered = [l for l in provided if l in candidate_set]
                     
-                    # Additional validation: reject usernames that look fake/generated
-                    import re
+                    # Additional validation: reject usernames that are clearly fake/test patterns
                     validated = []
                     for login in filtered:
-                        # Reject usernames with numbers at the end (likely LLM generated variants)
-                        if re.search(r'\d+$', login):
-                            logger.warning(f"Rejecting potentially fake username: {login}")
-                            continue
-                        # Reject usernames that are too similar to common patterns
+                        # Only reject usernames that are obviously fake/test patterns
                         if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
                             logger.warning(f"Rejecting test/fake username: {login}")
                             continue
@@ -1265,10 +1260,7 @@ class CMOAgent:
                     for c in candidates:
                         login = c.get("login")
                         if login and login not in seen:
-                            # Same validation for auto-filled candidates
-                            if re.search(r'\d+$', login):
-                                logger.warning(f"Skipping potentially fake candidate username: {login}")
-                                continue
+                            # Same validation for auto-filled candidates - only reject obvious test patterns
                             if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
                                 logger.warning(f"Skipping test/fake candidate username: {login}")
                                 continue

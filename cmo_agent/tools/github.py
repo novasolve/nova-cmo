@@ -271,10 +271,7 @@ class ExtractPeople(GitHubTool):
                         if login.endswith("[bot]") or login.endswith("-bot"):
                             continue
                         
-                        # Additional validation: reject suspicious usernames
-                        if re.search(r'\d+$', login):
-                            logger.warning(f"Rejecting potentially fake contributor username: {login}")
-                            continue
+                        # Additional validation: reject obvious test/fake usernames
                         if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
                             logger.warning(f"Rejecting test/fake contributor username: {login}")
                             continue
@@ -465,13 +462,9 @@ class EnrichGitHubUsers(GitHubTool):
             # Log all usernames being processed for debugging
             logger.info(f"EnrichGitHubUsers called with logins: {logins}")
             
-            # Additional validation at execution time
-            import re
+            # Additional validation at execution time - only reject obvious test patterns
             validated_logins = []
             for login in logins:
-                if re.search(r'\d+$', login):
-                    logger.error(f"BLOCKED: Fake username with numbers at end: {login}")
-                    continue
                 if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
                     logger.error(f"BLOCKED: Test/fake username: {login}")
                     continue
