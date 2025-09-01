@@ -400,6 +400,40 @@ async def api_get_job_artifacts(job_id: str):
     }
 
 
+@app.api_route("/api/chat", methods=["GET", "POST"])
+async def api_chat_stub():
+    """Stub chat endpoint to avoid 404s when UI posts to /api/chat.
+    Returns 200 with a simple note; real chat is handled client-side.
+    """
+    return JSONResponse({"ok": True, "note": "Chat is not implemented in API."}, status_code=200)
+
+
+@app.delete("/api/jobs/{job_id}/artifacts")
+async def api_delete_job_artifacts(job_id: str):
+    """Best-effort delete of files listed in job artifacts for this job.
+    Useful for PII retention/cleanup without depending on registry internals.
+    """
+    import os
+    import json as _json
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    deleted = 0
+    errors = 0
+    artifacts = status.get("artifacts") or []
+    for a in artifacts:
+        try:
+            path = (a or {}).get("path")
+            if path and os.path.isfile(path):
+                os.remove(path)
+                deleted += 1
+        except Exception:
+            errors += 1
+            continue
+    return {"ok": True, "deleted": deleted, "errors": errors}
+
+
 @app.post("/api/jobs/{job_id}/pause")
 async def api_pause_job(job_id: str):
     eng = _require_engine()
