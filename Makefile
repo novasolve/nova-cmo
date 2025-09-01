@@ -433,6 +433,12 @@ diag-summary:
 	  fi; \
 	} | tee "$(DIAG_DIR)/SUMMARY.txt" >/dev/null
 
+check-entrypoints: ## Check that critical entrypoints exist
+	python tools/check_entrypoints.py
+
+smoke-test: ## Run smoke tests to verify critical functionality
+	PYTHONPATH=. python tests/test_smoke.py
+
 # Catch-all target to prevent "make: *** No rule to make target" errors
 %:
 	@:
