@@ -468,6 +468,17 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                 avg_stars = sum(repo.get('stars', 0) for repo in repos) / len(repos)
                 lines.append(f"   ⭐ Avg Repository Stars: {avg_stars:,.0f}")
             
+            # Distinct Email List for easy copy-paste
+            if len(all_emails) > 0:
+                lines.append(f"\n📧 DISTINCT EMAIL ADDRESSES ({len(all_emails)} total):")
+                sorted_emails = sorted(all_emails)
+                for i, email in enumerate(sorted_emails, 1):
+                    lines.append(f"   {i:2d}. {email}")
+                
+                # Add copy-paste friendly format
+                lines.append(f"\n📋 COPY-PASTE FORMAT:")
+                lines.append(f"   {', '.join(sorted_emails)}")
+            
             # Next Steps & Recommendations
             lines.append(f"\n{icons['action']}RECOMMENDED NEXT STEPS:")
             
