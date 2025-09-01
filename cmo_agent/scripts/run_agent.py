@@ -120,13 +120,33 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
     return config
 
 
+def _print_campaign_banner(goal: str, config_path: Optional[str], no_emoji: bool = False) -> None:
+    """Render a clean, readable campaign banner at startup."""
+    try:
+        border = "=" * 60
+        rocket = "🚀  " if not no_emoji else ""
+        target = "🎯 " if not no_emoji else ""
+        folder = "🗂️  " if not no_emoji else ""
+
+        lines = []
+        lines.append("\n" + border)
+        lines.append(f"{rocket}CMO Agent Campaign")
+        lines.append(border)
+        lines.append(f"{target}Goal: {goal}")
+        if config_path:
+            lines.append(f"{folder}Config: {config_path}")
+        print("\n".join(lines))
+    except Exception:
+        # Fail quietly and do nothing if terminal does not support emojis
+        print(f"\nCMO Agent Campaign\n{'=' * 60}\nGoal: {goal}\nConfig: {config_path or 'defaults'}")
+
+
 async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bool = False, no_emoji: bool = False, interactive: bool = False):
     """Run a CMO Agent campaign"""
     try:
         logger.info(f"Starting CMO Agent campaign: {goal}")
         # Friendly banner
-        rocket = "🚀 " if not no_emoji else ""
-        print(f"\n{rocket}Starting campaign…")
+        _print_campaign_banner(goal, config_path, no_emoji)
         t0 = time.perf_counter()
 
         # Load configuration
