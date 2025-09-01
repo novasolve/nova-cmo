@@ -622,6 +622,10 @@ class CMOAgent:
                             logger.info(f"Skipping tool {tool_name} due to insufficient arguments after hydration")
                             continue
 
+                        # Add beautiful_logger to tool execution for tqdm progress bars
+                        if hasattr(self, 'beautiful_logger') and self.beautiful_logger:
+                            hydrated_args['beautiful_logger'] = self.beautiful_logger
+
                         result = await tool.execute(**hydrated_args)
 
                         # Store result
