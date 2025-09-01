@@ -637,28 +637,23 @@ class CMOAgent:
                 state.setdefault("counters", {})
                 state["counters"]["no_tool_call_streak"] = state["counters"].get("no_tool_call_streak", 0) + 1
                 limit = self.config.get("no_tool_call_limit", 3)
-                # Reset the streak if we detect legitimate auto-progress signals
-                auto_progress_indicator = False
-                try:
-                    # If repos/candidates/leads counts are increasing, or stage advanced, consider it progress
-                    prev_stage = state.get("current_stage") or ""
-                    repos = state.get("repos") or []
-                    candidates = state.get("candidates") or []
-                    leads = state.get("leads") or []
-                    if len(repos) > 0 or len(candidates) > 0 or len(leads) > 0 or prev_stage in ("discovery","extraction","enrichment","validation","personalization","sending","sync","export"):
-                        auto_progress_indicator = True
-                except Exception:
-                    pass
 
-                if auto_progress_indicator:
-                    state["counters"]["no_tool_call_streak"] = 0
-                    logger.info("No tool calls, but auto-progress detected; resetting no_tool_call_streak")
-                elif state["counters"]["no_tool_call_streak"] >= limit:
-                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} consecutive steps; continuing due to auto-mode")
-                    # Do NOT fail; just log and continue in autonomous mode
-                    state["counters"]["no_tool_call_streak"] = 0
+                if state["counters"]["no_tool_call_streak"] >= limit:
+                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} steps; marking job failed.")
+                    state.setdefault("errors", []).append({
+                        "stage": "agent_step",
+                        "error": "No tool calls from LLM for consecutive iterations",
+                        "error_type": "NoToolCalls",
+                        "timestamp": datetime.now().isoformat(),
+                        "critical": True,
+                        "streak": state["counters"]["no_tool_call_streak"],
+                    })
+                    state["ended"] = True
+                    state["current_stage"] = "failed"
+                    state["end_reason"] = "no_tool_calls_limit"
+                    return state  # stop further processing immediately
                 else:
-                    logger.info("No tool calls, continuing to agent")
+                    logger.info("No tool calls, continuing (auto-progress if enabled)")
 
                 # Update step counter and return early
                 state.setdefault("counters", {})
@@ -2121,6 +2116,10 @@ Available tools: {', '.join(self.tools.keys())}
                 leads = final_state.get("leads", [])
                 if leads:
                     artifacts.append(await self._export_leads_data(job_id, leads, job_status))
+                    # Also export contactable emails as CSV
+                    contact_art = await self._export_contactable_emails(job_id, leads, job_status)
+                    if contact_art:
+                        artifacts.append(contact_art)
 
                 # Collect candidates data
                 candidates = final_state.get("candidates", [])
@@ -2230,6 +2229,62 @@ Available tools: {', '.join(self.tools.keys())}
 
         except Exception as e:
             logger.error(f"Failed to export leads data: {e}")
+            return None
+
+    async def _export_contactable_emails(self, job_id: str, leads: list, job_status: str):
+        """Export contactable emails as CSV excluding noreply addresses"""
+        try:
+            # Filter out GitHub noreply emails and duplicates
+            valid_emails = []
+            for lead in leads:
+                email = lead.get("email") or lead.get("primary_email")
+                if not email:
+                    continue
+                em = email.strip().lower()
+                if em.endswith("@users.noreply.github.com") or em.endswith("@noreply.github.com"):
+                    continue  # skip GitHub noreply addresses
+                # (Optionally, skip other blocked/bounced emails if flagged in lead data)
+                valid_emails.append(em)
+            valid_emails = sorted(set(valid_emails))
+            if not valid_emails:
+                return None
+
+            # Write CSV content (one email per line)
+            export_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            job_dir = export_dir / job_id
+            job_dir.mkdir(parents=True, exist_ok=True)
+            csv_path = job_dir / "leads_contactable.csv"
+            csv_path.write_text("\n".join(valid_emails))
+
+            # Register artifact in index
+            artifact_id = await self.artifact_manager.store_artifact(
+                job_id=job_id,
+                filename="leads_contactable.csv",
+                data={"emails": valid_emails},        # store list as JSON for index (content already written as CSV)
+                artifact_type="contacts",
+                retention_policy="default",
+                compress=False,
+                tags=["contactable", job_status]
+            )
+
+            # Overwrite path to point to the CSV file we wrote (artifact manager stored a JSON, but we want the CSV file for download)
+            meta = await self.artifact_manager.get_artifact_metadata(artifact_id)
+            if meta:
+                meta.path = str(csv_path)  # update to actual CSV file path
+                meta.filename = "leads_contactable.csv"
+                # Update internal index as well
+                self.artifact_manager._index[artifact_id]["path"] = str(csv_path)
+                self.artifact_manager._index[artifact_id]["filename"] = "leads_contactable.csv"
+
+            return {
+                "type": "contacts",
+                "artifact_id": artifact_id,
+                "filename": "leads_contactable.csv",
+                "count": len(valid_emails)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export contactable emails: {e}")
             return None
 
     async def _export_candidates_data(self, job_id: str, candidates: list, job_status: str):

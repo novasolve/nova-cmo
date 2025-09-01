@@ -58,78 +58,57 @@ def configure_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.addFilter(PathFilter())
 
-    if _HAS_STRUCTLOG:
-        # PII-safe email masker; allow override via LOG_PII=allow
-        EMAIL_RE = re.compile(r"([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})", re.IGNORECASE)
-        ALLOW_PII = os.getenv("LOG_PII", "deny").lower() == "allow"
+    # PII-safe email masker; allow override via LOG_PII=allow
+    EMAIL_RE = re.compile(r"([A-Z0-9._%+-]+)@([A-Z0-9.-]+\.[A-Z]{2,})", re.IGNORECASE)
+    ALLOW_PII = os.getenv("LOG_PII", "deny").lower() == "allow"
 
-        def _mask_emails(value: str) -> str:
-            if ALLOW_PII or not isinstance(value, str):
-                return value
-            def repl(m):
-                user = m.group(1)
-                domain = m.group(2)
-                if "noreply" in user.lower():
-                    return f"{user}@{domain}"
-                if len(user) <= 2:
-                    return "***@" + domain
-                return user[0] + "***@" + domain
-            return EMAIL_RE.sub(repl, value)
+    def _mask_emails(value: str) -> str:
+        if ALLOW_PII or not isinstance(value, str):
+            return value
+        def repl(m):
+            user = m.group(1)
+            domain = m.group(2)
+            if "noreply" in user.lower():
+                return f"{user}@{domain}"
+            if len(user) <= 2:
+                return "***@" + domain
+            return user[0] + "***@" + domain
+        return EMAIL_RE.sub(repl, value)
 
-        def pii_redactor(_logger, _name, event_dict):
-            try:
-                # mask values that look like emails and redact secrets
-                for k in list(event_dict.keys()):
-                    v = event_dict[k]
+    class JsonFormatter(logging.Formatter):
+        def format(self, record: logging.LogRecord) -> str:
+            import json
+            from datetime import datetime
+
+            log_event = {
+                "ts": datetime.utcnow().isoformat(),
+                "level": record.levelname,
+            }
+            # If structured data was passed via extra:
+            structured = getattr(record, "structured", None)
+            if structured and isinstance(structured, dict):
+                # Merge structured keys (like event, jobId, etc.)
+                log_event.update(structured)
+                # Apply PII masking to structured fields
+                for k in list(log_event.keys()):
+                    v = log_event[k]
                     if isinstance(v, str):
-                        event_dict[k] = _mask_emails(v)
+                        log_event[k] = _mask_emails(v)
                     elif isinstance(v, (list, tuple)):
-                        event_dict[k] = [_mask_emails(x) if isinstance(x, str) else x for x in v]
-                for k in list(event_dict.keys()):
+                        log_event[k] = [_mask_emails(x) if isinstance(x, str) else x for x in v]
+                # Redact secrets
+                for k in list(log_event.keys()):
                     lk = k.lower()
                     if "key" in lk or "token" in lk or "secret" in lk:
-                        event_dict[k] = "***"
-            except Exception:
-                # never break logging on redaction failure
-                return event_dict
-            return event_dict
+                        log_event[k] = "***"
+            else:
+                # Fallback to the raw message with PII masking
+                log_event["message"] = _mask_emails(record.getMessage())
+            return json.dumps(log_event)
 
-        timestamper = TimeStamper(fmt="iso", utc=True)
-        structlog.configure(
-            processors=[
-                filter_by_level,
-                add_log_level,
-                timestamper,
-                pii_redactor,
-                structlog.processors.StackInfoRenderer(),
-                structlog.processors.format_exc_info,
-                JSONRenderer(),
-            ],
-            context_class=dict,
-            logger_factory=structlog.stdlib.LoggerFactory(),
-            wrapper_class=structlog.stdlib.BoundLogger,
-            cache_logger_on_first_use=True,
-        )
-        root.addHandler(handler)
-        root.setLevel(level)
-    else:
-        # Fallback: minimal JSON-ish formatter
-        class JsonFormatter(logging.Formatter):
-            def format(self, record: logging.LogRecord) -> str:  # noqa: D401
-                import json
-                payload = {
-                    "level": record.levelname.lower(),
-                    "logger": record.name,
-                    "message": record.getMessage(),
-                }
-                # Merge extra fields if present
-                if hasattr(record, "_extra") and isinstance(record._extra, dict):  # type: ignore[attr-defined]
-                    payload.update(record._extra)  # type: ignore[attr-defined]
-                return json.dumps(payload, ensure_ascii=False)
-
-        handler.setFormatter(JsonFormatter())
-        root.addHandler(handler)
-        root.setLevel(getattr(logging, level.upper(), logging.INFO))
+    handler.setFormatter(JsonFormatter())
+    root.addHandler(handler)
+    root.setLevel(getattr(logging, level.upper(), logging.INFO))
 
 
 def with_request_context(req, thread_id: Optional[str] = None) -> None:

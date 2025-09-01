@@ -97,13 +97,35 @@ async def on_startup():
 # -----------------------
 # Prometheus Metrics
 # -----------------------
+from prometheus_client import Gauge, Counter, Histogram
+
+_jobs_total = Gauge("cmo_jobs_total", "Total jobs processed")
 _jobs_running = Gauge("cmo_jobs_running", "Jobs currently running")
+_jobs_failed = Gauge("cmo_jobs_failed", "Jobs that failed")
+_jobs_completed = Gauge("cmo_jobs_completed", "Jobs that completed successfully")
 _sse_errors = Counter("cmo_sse_errors_total", "SSE errors")
+_api_requests = Counter("cmo_api_requests_total", "API requests", ["method", "endpoint"])
+_request_duration = Histogram("cmo_request_duration_seconds", "Request duration in seconds", ["method", "endpoint"])
 
 
 @app.get("/metrics")
-def metrics():
+async def metrics():
     try:
+        # Update metrics from engine stats if available
+        if engine:
+            try:
+                # Get basic stats from engine
+                stats = await engine.get_stats_async() if hasattr(engine, 'get_stats_async') else {}
+                jobs_stats = stats.get("jobs", {})
+
+                _jobs_total.set(jobs_stats.get("total", 0))
+                _jobs_running.set(jobs_stats.get("running", 0))
+                _jobs_failed.set(jobs_stats.get("failed", 0))
+                _jobs_completed.set(jobs_stats.get("completed", 0))
+            except Exception:
+                # If engine stats fail, just return current metrics
+                pass
+
         return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
     except Exception as e:
         return Response(f"metrics unavailable: {e}", status_code=503)
@@ -450,6 +472,24 @@ async def api_delete_job_artifacts(job_id: str):
             errors += 1
             continue
     return {"ok": True, "deleted": deleted, "errors": errors}
+
+
+@app.get("/api/artifacts/{artifact_id}")
+async def api_download_artifact(artifact_id: str):
+    """Download an artifact by ID"""
+    eng = _require_engine()
+    # Fetch artifact metadata to get file path and name
+    meta = await eng.get_artifact_metadata(artifact_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    file_path = Path(meta.path)
+    if not file_path.exists():
+        raise HTTPException(status_code=410, detail="Artifact file not available")
+    # Set appropriate content type
+    filename = meta.filename
+    content_type = "text/csv" if filename.endswith(".csv") else "application/json"
+    # Return file directly (streaming file response)
+    return FileResponse(path=file_path, media_type=content_type, filename=filename)
 
 
 @app.post("/api/jobs/{job_id}/pause")
@@ -827,7 +867,7 @@ async def api_job_events(request: Request, job_id: str):
                     continue
 
         except Exception as e:
-            # Send error and continue with keep-alives
+            # Send a stream error event then keep alive
             try:
                 _sse_errors.inc()
             except Exception:
@@ -836,11 +876,11 @@ async def api_job_events(request: Request, job_id: str):
                 "job_id": job_id,
                 "timestamp": datetime.now().isoformat(),
                 "event": "job.stream_error",
-                "data": {"error": str(e)},
+                "data": {"error": str(e)}
             }
+            yield "event: error\n"
             yield f"data: {_json.dumps(error_msg)}\n\n"
-
-            # Keep connection alive even on errors
+            # Continue sending keep-alives so client can catch the error event
             while True:
                 if await request.is_disconnected():
                     break

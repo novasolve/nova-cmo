@@ -29,6 +29,17 @@ function isConversationalMessage(text: string): boolean {
 }
 import { getThread, createThread, updateThread, generateThreadName } from "@/lib/threadStorage";
 
+export async function GET(req: Request) {
+  // Simply return an empty conversation or a message to prevent 404
+  return new Response(JSON.stringify({
+    success: false,
+    message: "No chat history available."
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" }
+  });
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
