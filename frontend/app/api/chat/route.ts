@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     // Convert autonomy level to numeric autopilot for backend compatibility
     const autopilot = autonomyToAutopilot(autonomyLevel);
 
-    // Create a job in the CMO Agent backend
+    // Create a job in the CMO Agent backend; if no backend, return a friendly stub
     if (process.env.API_URL) {
       try {
         const jobPayload = {
@@ -175,14 +175,15 @@ export async function POST(req: Request) {
       }
     }
 
-    // No backend configured
+    // No backend configured: return OK stub to avoid UI 404s
     return new Response(JSON.stringify({
-      success: false,
-      error: "No backend configured. Set API_URL environment variable.",
+      success: true,
+      ok: true,
+      note: "Chat is not implemented yet and no backend configured.",
       threadId,
       timestamp: new Date().toISOString()
     }), {
-      status: 500,
+      status: 200,
       headers: { "Content-Type": "application/json" },
     });
 

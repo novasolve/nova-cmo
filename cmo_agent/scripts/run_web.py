@@ -11,7 +11,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -48,7 +48,10 @@ load_dotenv(find_dotenv(usecwd=True))
 
 from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
 from cmo_agent.scripts.run_execution import ExecutionEngine
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Gauge
+from cmo_agent.obs.logging import configure_logging
 
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 app = FastAPI(title="CMO Agent - Minimal UI")
 app.add_middleware(RequestLogMiddleware)
 
@@ -89,6 +92,21 @@ async def on_startup():
     except Exception as e:
         # If engine fails, API endpoints will raise 503s
         print(f"[startup] ExecutionEngine error: {e}")
+
+
+# -----------------------
+# Prometheus Metrics
+# -----------------------
+_jobs_running = Gauge("cmo_jobs_running", "Jobs currently running")
+_sse_errors = Counter("cmo_sse_errors_total", "SSE errors")
+
+
+@app.get("/metrics")
+def metrics():
+    try:
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        return Response(f"metrics unavailable: {e}", status_code=503)
 
 
 @app.on_event("shutdown")
@@ -810,6 +828,10 @@ async def api_job_events(request: Request, job_id: str):
 
         except Exception as e:
             # Send error and continue with keep-alives
+            try:
+                _sse_errors.inc()
+            except Exception:
+                pass
             error_msg = {
                 "job_id": job_id,
                 "timestamp": datetime.now().isoformat(),

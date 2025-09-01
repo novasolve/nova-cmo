@@ -1,4 +1,63 @@
 "use client";
+import React, { useMemo, useState } from "react";
+import { useJobStream } from "@/app/hooks/useJobStream";
+
+type Summary = {
+  duration_ms: number;
+  repos: number;
+  candidates: number;
+  leads_with_emails: number;
+};
+type Artifact = { kind: string; filename: string; bytes: number; url: string };
+
+export default function ThreadJobPage({ params }: { params: { id: string } }) {
+  const threadId = params.id;
+  const [finalStatus, setFinalStatus] = useState<string | null>(null);
+  const [summary, setSummary] = useState<Summary | null>(null);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
+  const jobId = useMemo(() => threadId, [threadId]);
+
+  useJobStream(jobId, {
+    onProgress: (evt) => setEvents((prev) => prev.concat(evt)),
+    onFinalized: (status, s, arts) => {
+      setFinalStatus(status);
+      setSummary(s);
+      setArtifacts(arts);
+    },
+  });
+
+  return (
+    <div className="space-y-4 p-4">
+      {summary && (
+        <div className="w-full rounded-2xl border p-4 flex items-center justify-between text-sm">
+          <span><b>{summary.leads_with_emails}</b> emails</span>
+          <span><b>{summary.candidates}</b> candidates</span>
+          <span><b>{summary.repos}</b> repos</span>
+          <span>⏱ {Math.round((summary.duration_ms||0)/1000)}s</span>
+        </div>
+      )}
+      {events.length > 0 && (
+        <pre className="text-xs whitespace-pre-wrap rounded-xl border p-3 max-h-72 overflow-auto">
+          {events.map((e, i) => <div key={i}>{JSON.stringify(e)}</div>)}
+        </pre>
+      )}
+      {artifacts.length > 0 && (
+        <div className="rounded-2xl border p-4">
+          <h3 className="font-semibold mb-2">Artifacts</h3>
+          <ul className="list-disc pl-5 text-sm">
+            {artifacts.map((a, i) => (
+              <li key={i}><a className="underline" href={a.url} target="_blank" rel="noreferrer">{a.filename}</a></li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {finalStatus && <div className="text-sm opacity-80">Job status: {finalStatus}</div>}
+    </div>
+  );
+}
+
+"use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { ChatMessage, SSEEvent, LanggraphEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
