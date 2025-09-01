@@ -27,6 +27,7 @@ if cmo_agent_dir not in sys.path:
 
 try:
     from ..core.state import RunState, JobMetadata, DEFAULT_CONFIG
+    from ..obs.beautiful_logging import setup_beautiful_logging, StageAwareLogger
     from ..tools.github import SearchGitHubRepos, ExtractPeople, EnrichGitHubUser, FindCommitEmails, EnrichGitHubUsers, FindCommitEmailsBatch
     from ..tools.hygiene import MXCheck, ICPScores
     from ..tools.personalization import RenderCopy, SendInstantly
@@ -37,6 +38,7 @@ except ImportError:
     # Handle relative import issues when running as standalone
     try:
         from core.state import RunState, JobMetadata, DEFAULT_CONFIG
+        from obs.beautiful_logging import setup_beautiful_logging, StageAwareLogger
         from tools.github import SearchGitHubRepos, ExtractPeople, EnrichGitHubUser, FindCommitEmails, EnrichGitHubUsers, FindCommitEmailsBatch
         from tools.hygiene import MXCheck, ICPScores
         from tools.personalization import RenderCopy, SendInstantly

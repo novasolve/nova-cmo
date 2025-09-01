@@ -8,6 +8,11 @@ features:
   dry_run: false # Real execution for progress visibility
   enable_auto_progress: true
   enable_progress_streaming: true
+  enable_langfuse: false
+  enable_background_jobs: true
+  enable_rate_limiting: true
+  enable_distributed_workers: false
+  enable_fault_tolerance: true
 
 # Enhanced logging with beautiful console output and tqdm progress
 logging:
@@ -69,3 +74,62 @@ email_search:
 max_repos: 50
 max_people: 100
 max_leads: 25
+
+# Rate limits (CRITICAL - missing from original)
+rate_limits:
+  github_per_hour: 5000
+  instantly_per_inbox_daily: 50
+  attio_per_minute: 60
+  linear_per_minute: 30
+
+# Timeouts (CRITICAL - missing from original)
+timeouts:
+  github_api: 15
+  instantly_api: 30
+  attio_api: 20
+  linear_api: 20
+
+# Retries configuration (CRITICAL - missing from original)
+retries:
+  max_attempts: 3
+  backoff_multiplier: 2.0
+  jitter: true
+  max_backoff_seconds: 300
+  rate_limit_retry_after: 60
+
+# Error handling (CRITICAL - missing from original)
+error_handling:
+  retryable_errors:
+    - "ConnectionError"
+    - "TimeoutError"
+    - "httpx.ConnectTimeout"
+    - "httpx.ReadTimeout"
+    - "httpx.PoolTimeout"
+    - "aiohttp.ClientConnectorError"
+  rate_limit_errors:
+    - "RateLimitError"
+    - "TooManyRequests"
+    - "GitHubRateLimitError"
+    - "CircuitBreakerOpenError"
+  permanent_errors:
+    - "AuthenticationError"
+    - "AuthorizationError"
+    - "NotFoundError"
+    - "ValidationError"
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout: 300
+    expected_exception: Exception
+
+# Export configuration
+export_dir: "./exports"
+checkpoint_every: 200
+
+# Artifact management
+artifacts:
+  cleanup_interval_seconds: 3600
+  retention_days: 30
+  max_per_job: 20
+  compress_large_datasets: true
+  auto_cleanup: true
+  storage_backend: filesystem
