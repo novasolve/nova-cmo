@@ -3,6 +3,7 @@
 CMO Agent Runner - Execute outbound campaigns
 """
 import asyncio
+import time
 import logging
 import os
 import sys
@@ -11,6 +12,7 @@ from typing import Dict, Any, Optional
 
 import yaml
 from dotenv import load_dotenv
+from tqdm.contrib.logging import logging_redirect_tqdm
 
 # Ensure project root on sys.path for absolute imports
 project_root = str(Path(__file__).resolve().parents[2])
@@ -54,6 +56,39 @@ def _setup_logging_from_config(cfg: dict):
         fh.setFormatter(JsonExtraFormatter())
         root.addHandler(fh)
 
+    # Quiet noisy dependencies
+    for noisy in ("httpx", "openai", "urllib3", "asyncio"):
+        try:
+            logging.getLogger(noisy).setLevel(logging.WARNING)
+        except Exception:
+            pass
+
+    # Simple de-dup filter to reduce repeated log spam
+    class _DedupFilter(logging.Filter):
+        def __init__(self, window_s: float = 4.0, max_repeats: int = 3):
+            super().__init__()
+            self.window = window_s
+            self.max_repeats = max_repeats
+            self._last = {}
+            self._count = {}
+        def filter(self, record: logging.LogRecord) -> bool:
+            key = (record.levelno, record.getMessage())
+            now = time.monotonic()
+            last = self._last.get(key, 0.0)
+            if now - last > self.window:
+                self._last[key] = now
+                self._count[key] = 0
+                return True
+            self._count[key] = self._count.get(key, 0) + 1
+            return self._count[key] in (1, self.max_repeats)
+
+    dedup = _DedupFilter()
+    for h in root.handlers:
+        try:
+            h.addFilter(dedup)
+        except Exception:
+            pass
+
 _setup_logging_from_config(_DEF)
 logger = logging.getLogger(__name__)
 
@@ -92,6 +127,7 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
         # Friendly banner
         rocket = "🚀 " if not no_emoji else ""
         print(f"\n{rocket}Starting campaign…")
+        t0 = time.perf_counter()
 
         # Load configuration
         config = load_config(config_path)
@@ -140,7 +176,9 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             config['features'] = cfg_features
             agent.config = config
         print(("🔍 Discovering repositories…" if not no_emoji else "Discovering repositories…"))
-        result = await agent.run_job(goal)
+        # Make tqdm play nicely with logging
+        with logging_redirect_tqdm():
+            result = await agent.run_job(goal)
         logger.info(f"Campaign completed: {result['success']}")
 
         # Helper functions for result processing
@@ -330,7 +368,7 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             # People Summary
             lines.append(f"\n{icons['people']}PEOPLE DISCOVERED:")
             lines.append(f"   Candidates: {len(candidates)}")
-            lines.append(f"   Leads: {len(leads)}")
+            lines.append(f"   Leads (with email): {len([l for l in leads if l.get('email')])}")
             
             # Email Summary (enhanced with quality analysis)
             lines.append(f"\n{icons['emails']}EMAIL DISCOVERY & QUALITY ANALYSIS:")
@@ -418,11 +456,12 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             # Campaign Performance Summary
             lines.append(f"\n{icons['quality']}CAMPAIGN PERFORMANCE:")
             total_processed = len(candidates)
-            conversion_rate = (len(leads) / total_processed * 100) if total_processed > 0 else 0
-            email_success_rate = (len(all_emails) / len(leads) * 100) if len(leads) > 0 else 0
+            leads_with_email = [l for l in leads if l.get('email')]
+            conversion_rate = (len(leads_with_email) / total_processed * 100) if total_processed > 0 else 0
+            email_success_rate = (len(all_emails) / len(leads_with_email) * 100) if len(leads_with_email) > 0 else 0
             
-            lines.append(f"   📊 Lead Conversion: {len(leads)}/{total_processed} ({conversion_rate:.1f}%)")
-            lines.append(f"   📧 Email Discovery: {len(all_emails)}/{len(leads)} ({email_success_rate:.1f}%)")
+            lines.append(f"   📊 Lead Conversion (email-present): {len(leads_with_email)}/{total_processed} ({conversion_rate:.1f}%)")
+            lines.append(f"   📧 Email Discovery: {len(all_emails)}/{len(leads_with_email)} ({email_success_rate:.1f}%)")
             
             if len(repos) > 0:
                 avg_stars = sum(repo.get('stars', 0) for repo in repos) / len(repos)
@@ -469,15 +508,21 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                     return int(default)
 
             leads_list = final_state.get('leads')
-            leads_count = len(leads_list) if isinstance(leads_list, list) else 0
+            leads_with_email_list = [l for l in (leads_list or []) if isinstance(l, dict) and l.get('email')]
+            leads_count = len(leads_with_email_list)
             to_send_list = final_state.get('to_send')
             to_send_count = len(to_send_list) if isinstance(to_send_list, list) else 0
 
+            repos_count = len(final_state.get('repos', []))
+            candidates_count = len(final_state.get('candidates', []))
             stats = {
                 "steps": max(to_int(summary.get("steps_completed"), 0), to_int(counters.get("steps"), 0)),
                 "api_calls": max(to_int(summary.get("api_calls_made"), 0), to_int(counters.get("api_calls"), 0)),
+                "repos": repos_count,
+                "candidates": candidates_count,
                 "leads": max(to_int(summary.get("leads_processed"), 0), leads_count),
                 "emails_prepared": max(to_int(summary.get("emails_prepared"), 0), to_send_count),
+                "duration_s": round(time.perf_counter() - t0, 2),
             }
 
             party = "🎉 " if not no_emoji else ""

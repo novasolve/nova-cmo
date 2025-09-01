@@ -660,6 +660,7 @@ class CMOAgent:
                 if tool_name and tool_name in self.tools:
                     logger.info(f"Executing tool: {tool_name}")
                     try:
+                        start_ts = datetime.now()
                         tool = self.tools[tool_name]
                         # Hydrate missing or unsafe args from state for robustness
                         raw_args = call.get("args", {})
@@ -686,7 +687,8 @@ class CMOAgent:
                         state = self._reduce_tool_result(state, tool_name, result)
                         self.stats["tools_executed"] += 1
 
-                        logger.info(f"Tool {tool_name} executed successfully")
+                        duration_ms = int((datetime.now() - start_ts).total_seconds() * 1000)
+                        logger.info(f"Tool {tool_name} executed successfully in {duration_ms}ms")
 
                         # Append a function-style summary to conversation history for LLM awareness
                         try:
