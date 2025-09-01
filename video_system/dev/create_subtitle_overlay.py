@@ -12,7 +12,7 @@ import sys
 def create_subtitle_aware_overlay(base_video_path, background_video_path, output_path, overlay_duration=36):
     """
     Create background overlay while preserving subtitles by cropping subtitle area.
-    
+
     Approach:
     1. Use background video as main layer for first 36 seconds
     2. Crop subtitle area from base video and overlay it
@@ -36,7 +36,7 @@ def create_subtitle_aware_overlay(base_video_path, background_video_path, output
 
         # Take first overlay_duration seconds from background video
         background_overlay = background_clip.subclipped(0, min(overlay_duration, background_clip.duration))
-        
+
         # Take first overlay_duration seconds from base video
         base_overlay_part = base_clip.subclipped(0, min(overlay_duration, base_clip.duration))
 
@@ -48,14 +48,14 @@ def create_subtitle_aware_overlay(base_video_path, background_video_path, output
         # Assuming subtitles are in bottom 20% of screen
         subtitle_height = int(height * 0.2)  # Bottom 20% for subtitles
         subtitle_y_start = height - subtitle_height
-        
+
         print(f"📐 Cropping subtitle area: bottom {subtitle_height}px (from y={subtitle_y_start})")
-        
+
         # Crop just the subtitle area from the base video
         subtitle_area = base_overlay_part.cropped(
-            x1=0, 
-            y1=subtitle_y_start, 
-            x2=width, 
+            x1=0,
+            y1=subtitle_y_start,
+            x2=width,
             y2=height
         )
 

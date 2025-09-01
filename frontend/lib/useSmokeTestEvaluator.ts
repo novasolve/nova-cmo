@@ -67,7 +67,7 @@ export function useSmokeTestEvaluator() {
       if (event.kind === "event") {
         // Handle LangGraph events
         const langEvent = event.event;
-        
+
         // Check for queue & stream
         if (langEvent?.node && !newChecks.find(c => c.id === "queue_stream")?.passed) {
           const queueCheck = newChecks.find(c => c.id === "queue_stream");
@@ -125,8 +125,8 @@ export function useSmokeTestEvaluator() {
               const samples = message.card.samples;
               newMetrics.draftsCount = samples.length;
               const validDrafts = samples.filter(s => s.score >= SMOKE_TEST_CRITERIA.min_draft_score);
-              
-              outboxCheck.passed = samples.length >= SMOKE_TEST_CRITERIA.min_drafts_count && 
+
+              outboxCheck.passed = samples.length >= SMOKE_TEST_CRITERIA.min_drafts_count &&
                                  validDrafts.length >= SMOKE_TEST_CRITERIA.min_drafts_count;
               outboxCheck.details = `${samples.length} drafts, ${validDrafts.length} with score ≥80`;
             }
@@ -161,7 +161,7 @@ export function useSmokeTestEvaluator() {
       // Check if all required checks are complete
       const requiredChecks = newChecks.filter(c => c.required);
       const passedRequired = requiredChecks.filter(c => c.passed);
-      
+
       if (passedRequired.length === requiredChecks.length) {
         // All required checks passed - finalize test
         setTimeout(() => finalizeSmokeTest(threadId, true), 1000);

@@ -15,13 +15,13 @@ export async function GET(
     const currentJobId = getJobIdForThread(threadId) || thread?.currentJobId;
 
     let jobStatus = null;
-    
+
     // If we have a job ID and backend is available, get real job status
     if (currentJobId && process.env.API_URL) {
       try {
         // Try to get job status from backend (this endpoint may not exist yet)
         const jobResponse = await fetch(`${process.env.API_URL}/api/jobs/${currentJobId}/status`);
-        
+
         if (jobResponse.ok) {
           jobStatus = await jobResponse.json();
         }
@@ -45,11 +45,11 @@ export async function GET(
   } catch (error) {
     console.error("Thread status API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }

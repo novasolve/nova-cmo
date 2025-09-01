@@ -12,7 +12,7 @@ export async function GET(
       const response = await fetch(`${process.env.API_URL}/api/jobs/${jobId}`, {
         headers: { Accept: "application/json" },
       });
-      
+
       if (response.ok) {
         const jobData = await response.json();
         return new Response(JSON.stringify(jobData), {
@@ -38,11 +38,11 @@ export async function GET(
   } catch (error) {
     console.error("Job status API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }

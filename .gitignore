@@ -216,3 +216,4 @@ coverage/
 **/cache/*.json
 .cache/*.json
 cache/*.json
+*.jsonl

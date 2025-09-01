@@ -81,7 +81,7 @@ export function clearTestThreads(): void {
   const threadsToDelete: string[] = [];
 
     for (const [id, thread] of Array.from(threads.entries())) {
-    if (id.includes('test') || 
+    if (id.includes('test') ||
         thread.name.toLowerCase().includes('test')) {
       threadsToDelete.push(id);
     }

@@ -2,7 +2,7 @@
 export const runtime = "nodejs";
 
 export async function GET(
-  request: Request, 
+  request: Request,
   { params }: { params: { id: string } }
 ) {
   const { id: jobId } = params;
@@ -31,7 +31,7 @@ export async function GET(
 
   } catch (error) {
     console.error(`SSE proxy error for job ${jobId}:`, error);
-    
+
     // Return a minimal SSE stream with error info
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -42,10 +42,10 @@ export async function GET(
           event: "job.proxy_error",
           data: { error: error instanceof Error ? error.message : String(error) }
         };
-        
+
         controller.enqueue(encoder.encode(`retry: 1500\n\n`));
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
-        
+
         // Keep connection alive
         const keepAlive = setInterval(() => {
           try {

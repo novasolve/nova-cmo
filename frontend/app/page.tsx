@@ -4,5 +4,3 @@ export default function Home() {
   // Redirect to the new chat console
   redirect('/threads/default');
 }
-
-

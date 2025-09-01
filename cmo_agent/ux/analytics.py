@@ -43,5 +43,3 @@ def emit(event: str, props: Optional[Dict[str, Any]] = None) -> None:
     except Exception:
         # Best-effort; do not crash the caller
         pass
-
-

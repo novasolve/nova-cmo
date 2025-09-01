@@ -162,7 +162,7 @@ class GitHubTool(BaseTool):
                         raise Exception(f"Rate limited until {reset_datetime or 'later'}")
 
                     response.raise_for_status()
-                    
+
                     # Handle 204 No Content responses (empty body)
                     if response.status == 204:
                         result = {}

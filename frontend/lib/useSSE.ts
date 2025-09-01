@@ -60,6 +60,13 @@ export function useSSE<T = any>(url: string | null, options?: SSEHookOptions<T>)
         try {
           const event = JSON.parse(e.data) as T;
           onEventRef.current?.(event);
+          // If server indicates terminal state, stop reconnects and close
+          if (isTerminal(event)) {
+            isIntentionalClose = true;
+            try { es?.close(); } catch {}
+            updateConnectionStatus('disconnected');
+            return;
+          }
         } catch (error) {
           const snippet = typeof e.data === 'string' ? e.data.slice(0, 200) : '';
           console.warn('[SSE] failed to parse event', { url, error, snippet });
@@ -118,4 +125,19 @@ export function useSSE<T = any>(url: string | null, options?: SSEHookOptions<T>)
   }, [url]);
 
   return { connectionStatus };
+}
+
+// Recognize terminal events produced by our proxy/API
+function isTerminal(evt: any): boolean {
+  if (!evt) return false;
+  if (evt.kind === 'event') {
+    const node = String(evt.event?.node || '').toLowerCase();
+    const status = String(evt.event?.status || '').toLowerCase();
+    const msg = String(evt.event?.msg || '').toLowerCase();
+    if (node === 'completion') return true;
+    if (msg === 'job.stream_end') return true;
+    if (status === 'completed' || status === 'failed' || status === 'cancelled') return true;
+  }
+  if (evt.kind === 'status' && evt.status?.closed) return true;
+  return false;
 }

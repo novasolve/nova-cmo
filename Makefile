@@ -7,7 +7,7 @@ ifneq (,$(wildcard .env))
     export
 endif
 
-.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom run run-config dry-run wizard icp-wizard icp-list icp-details smoke-tools
+.PHONY: help install test clean scrape attio url setup intelligence intelligence-dashboard intelligence-analyze attio-setup attio-objects attio-test phase2 phase2-simple phase2-test phase2-integration-test phase2-custom run run-config dry-run wizard icp-wizard icp-list icp-details smoke-tools doctor diag.env diag.api diag.github diag.openai diag.queue diag.smoke diag.export smoke-real smoke-dry tail-api tail-frontend tail-all diagnose diagnose-clean diag-env diag-tools diag-local diag-engine diag-stream diag-collect-logs diag-summary
 
 # Default target
 help: ## Show this help message
@@ -243,6 +243,193 @@ clean: ## Clean up files
 clean-intelligence: ## Clean up intelligence data only
 	rm -rf lead_intelligence/data/
 	@echo "✅ Intelligence data cleaned up"
+
+# Diagnostics (doctor legacy, diagnose preferred)
+
+CMO_API_URL ?= http://localhost:8000
+CMO_FRONTEND_URL ?= http://localhost:3000
+LOG_API ?= /tmp/cmo_api.log
+LOG_FE ?= /tmp/cmo_frontend.log
+GOAL ?= Find maintainers of Python repos stars:1000..3000 pushed:>=2025-06-01; prioritize active 90 days; export CSV.
+DIAG_TIME_LIMIT ?= 120
+DIAG_API_URL ?= http://localhost:8000
+
+# Legacy alias
+doctor: ## Legacy: alias to diagnose
+	@$(MAKE) diagnose
+
+diag.env: ## Verify required env and tools
+	@set -e; \
+	[ -n "$$GITHUB_TOKEN" ] || { echo "❌ GITHUB_TOKEN missing"; exit 1; }; \
+	[ -n "$$OPENAI_API_KEY" ] || { echo "❌ OPENAI_API_KEY missing"; exit 1; }; \
+	command -v jq >/dev/null 2>&1 || { echo "❌ jq not installed (brew install jq)"; exit 1; }; \
+	echo "✅ env ok"
+
+diag.api: ## Ping API endpoints
+	@set -e; \
+	curl -sSf "$(CMO_API_URL)/" >/dev/null && echo "✅ API root ok"; \
+	curl -sSf "$(CMO_API_URL)/api/jobs" >/dev/null && echo "✅ /api/jobs ok"
+
+diag.github: ## Validate GitHub token by checking rate limit
+	@set -e; \
+	curl -sS -H "Authorization: Bearer $$GITHUB_TOKEN" https://api.github.com/rate_limit | jq -e '.resources.core.remaining' >/dev/null \
+	&& echo "✅ GitHub token valid (rate limit reachable)" || { echo "❌ GitHub token invalid"; exit 1; }
+
+diag.openai: ## Validate OpenAI key
+	@set -e; \
+	curl -sS -H "Authorization: Bearer $$OPENAI_API_KEY" https://api.openai.com/v1/models | jq -e '.data' >/dev/null \
+	&& echo "✅ OpenAI key valid" || { echo "❌ OpenAI key invalid"; exit 1; }
+
+diag.queue: ## Remind to start workers (non-destructive)
+	@echo "ℹ️  Ensure workers are running in another terminal: make -C cmo_agent start-workers"; \
+	echo "   (Skipping hard start here to avoid backgrounding processes.)"; \
+	echo "✅ queue precheck done"
+
+diag.smoke: ## Create a real job and stream SSE briefly, then fetch summary
+	@set -e; \
+	jid=$$(curl -sS -X POST "$(CMO_API_URL)/api/jobs" \
+	  -H 'Content-Type: application/json' \
+	  --data "$$(jq -n --arg g '$(GOAL)' '{goal:$$g, dryRun:false, config_path:null, metadata:{created_by:"doctor", test_type:"doctor", campaign_type:"smoke_test", max_leads:5}}')" \
+	  | jq -r '.id'); \
+	[ "$$jid" != "null" ] && [ -n "$$jid" ] || { echo "❌ failed to create job"; exit 1; }; \
+	echo "▶ Streaming SSE for job $$jid"; \
+	( command -v timeout >/dev/null 2>&1 && timeout 30s curl -Ns "$(CMO_API_URL)/api/jobs/$$jid/events" || curl -Ns "$(CMO_API_URL)/api/jobs/$$jid/events" ) | head -n 3 || true; \
+	curl -sS "$(CMO_API_URL)/api/jobs/$$jid/summary" | jq -e '.status' >/dev/null \
+	&& echo "✅ summary reachable" || { echo "❌ no summary"; exit 1; }
+
+diag.export: ## Export hints (implementation-specific)
+	@echo "ℹ️  If your flow writes CSV, verify the export dir was updated (implementation-specific)."; \
+	echo "✅ export check complete"
+
+smoke-real: ## Run the diag.smoke target
+	@$(MAKE) diag.smoke
+
+smoke-dry: ## Submit a dry-run job via API
+	@curl -sS -X POST "$(CMO_API_URL)/api/jobs" \
+	  -H 'Content-Type: application/json' \
+	  --data "$$(jq -n --arg g '$(GOAL)' '{goal:$$g, dryRun:true, metadata:{created_by:"smoke_dry"}}')" | jq
+
+tail-api: ## Tail API log
+	@echo "Tailing $(LOG_API)"; [ -f "$(LOG_API)" ] && tail -f "$(LOG_API)" || echo "No API log at $(LOG_API)"
+
+tail-frontend: ## Tail frontend log
+	@echo "Tailing $(LOG_FE)"; [ -f "$(LOG_FE)" ] && tail -f "$(LOG_FE)" || echo "No FE log at $(LOG_FE)"
+
+tail-all: ## Tail both logs
+	@$(MAKE) -j2 tail-api tail-frontend
+
+# -------- Diagnose (preferred) --------
+diagnose: ## One-command triage: env + tools + local dry-run + engine + SSE + logs
+	@set -euo pipefail; \
+	DIAG_DIR="$${DIAG_DIR:-/tmp/cmo_diag_$$(date +%Y%m%d_%H%M%S)}"; \
+	mkdir -p "$$DIAG_DIR"; \
+	echo "==> DIAG_DIR=$$DIAG_DIR"; \
+	$(MAKE) diag-env DIAG_DIR="$$DIAG_DIR"; \
+	$(MAKE) diag-tools DIAG_DIR="$$DIAG_DIR"; \
+	$(MAKE) diag-local DIAG_DIR="$$DIAG_DIR" GOAL="$(GOAL)" CONFIG="$(CONFIG)"; \
+	$(MAKE) diag-engine DIAG_DIR="$$DIAG_DIR" GOAL="$(GOAL)" DIAG_TIME_LIMIT="$(DIAG_TIME_LIMIT)"; \
+	$(MAKE) diag-stream DIAG_DIR="$$DIAG_DIR" DIAG_API_URL="$(DIAG_API_URL)"; \
+	$(MAKE) diag-collect-logs DIAG_DIR="$$DIAG_DIR"; \
+	$(MAKE) diag-summary DIAG_DIR="$$DIAG_DIR"; \
+	echo ""; echo "✅ Diagnose complete. Artifacts: $$DIAG_DIR"
+
+diagnose-clean: ## Remove the last created diag folder (pass DIAG_DIR=... to target a specific one)
+	@set -e; \
+	if [ -z "$${DIAG_DIR:-}" ]; then \
+		ls -1dt /tmp/cmo_diag_* 2>/dev/null | head -1 | xargs -I {} rm -rf "{}" || true; \
+	else rm -rf "$$DIAG_DIR"; fi; \
+	echo "🧹 Cleaned."
+
+diag-env:
+	@set -e; \
+	{ \
+	  echo "# Env checks"; \
+	  test -n "$${GITHUB_TOKEN:-}" && echo "GITHUB_TOKEN: present" || { echo "GITHUB_TOKEN: MISSING"; exit 11; }; \
+	} | tee "$(DIAG_DIR)/env.txt" >/dev/null
+
+diag-tools:
+	@set -e; \
+	echo "==> check-tools"; \
+	$(MAKE) -C cmo_agent check-tools | tee "$(DIAG_DIR)/check-tools.log" >/dev/null || { echo "Tool check failed"; exit 12; }; \
+	echo "==> smoke-tools"; \
+	$(MAKE) smoke-tools | tee "$(DIAG_DIR)/smoke-tools.log" >/dev/null || { echo "Smoke-tools failed"; exit 13; }
+
+diag-local:
+	@set -e; \
+	echo "==> local dry-run"; \
+	if [ -n "$(CONFIG)" ]; then \
+	  echo "CONFIG=$(CONFIG)"; \
+	  $(MAKE) run-config CONFIG="$(CONFIG)" GOAL="$(GOAL)" \
+	    | tee "$(DIAG_DIR)/local_dry_run.log" >/dev/null; \
+	else \
+	  $(MAKE) dry-run GOAL="$(GOAL)" \
+	    | tee "$(DIAG_DIR)/local_dry_run.log" >/dev/null; \
+	fi
+
+diag-engine:
+	@set -e; \
+	echo "==> engine one-shot run-job"; \
+	$(MAKE) -s -C cmo_agent run-job GOAL="$(GOAL)" \
+	  | tee "$(DIAG_DIR)/engine_run_job.log" >/dev/null || true; \
+	echo "==> capture latest JOB_ID"; \
+	make -s -C cmo_agent list-jobs | tee "$(DIAG_DIR)/list-jobs.log" >/dev/null; \
+	JOB_ID=$$(sed -n 's/.*\(cmo-[A-Za-z0-9_-]\{6,64\}\).*/\1/p' "$(DIAG_DIR)/list-jobs.log" | tail -1); \
+	if [ -z "$$JOB_ID" ]; then echo "Could not detect JOB_ID"; exit 14; fi; \
+	echo "$$JOB_ID" > "$(DIAG_DIR)/JOB_ID"; \
+	echo "JOB_ID=$$JOB_ID"; \
+	echo "==> poll job-status (timeout $(DIAG_TIME_LIMIT)s)"; \
+	SECS=0; STATUS=""; \
+	while [ $$SECS -lt $(DIAG_TIME_LIMIT) ]; do \
+	  make -s -C cmo_agent job-status JOB_ID="$$JOB_ID" \
+	    | tee "$(DIAG_DIR)/job-status.log" >/dev/null; \
+	  STATUS=$$(grep -Eo 'completed|failed|running|queued' "$(DIAG_DIR)/job-status.log" | tail -1 || true); \
+	  [ "$$STATUS" = "completed" ] && break; \
+	  [ "$$STATUS" = "failed" ] && { echo "Job failed"; exit 14; }; \
+	  sleep 2; SECS=$$((SECS+2)); \
+	done; \
+	if [ "$$STATUS" != "completed" ]; then echo "Job did not complete in time"; exit 14; fi
+
+diag-stream:
+	@set -e; \
+	echo "==> SSE probe"; \
+	JOB_ID=$$(cat "$(DIAG_DIR)/JOB_ID"); \
+	curl -s -D "$(DIAG_DIR)/sse_headers.txt" -o /dev/null "$(DIAG_API_URL)/api/jobs/$$JOB_ID/events" || true; \
+	if ! grep -q "HTTP/1.1 200" "$(DIAG_DIR)/sse_headers.txt"; then \
+	  echo "SSE endpoint not returning 200 (check API / dev.sh)"; \
+	fi
+
+diag-collect-logs:
+	@set -e; \
+	[ -f /tmp/cmo_api.log ] && cp /tmp/cmo_api.log "$(DIAG_DIR)/api.log" || true; \
+	[ -f /tmp/cmo_frontend.log ] && cp /tmp/cmo_frontend.log "$(DIAG_DIR)/frontend.log" || true
+
+diag-summary:
+	@set -e; \
+	echo "==> summary"; \
+	JOB_ID=$$(cat "$(DIAG_DIR)/JOB_ID" 2>/dev/null || true); \
+	STATUS=$$(grep -Eo 'completed|failed|running|queued' "$(DIAG_DIR)/job-status.log" 2>/dev/null | tail -1 || true); \
+	{ \
+	  echo "# Diagnose Summary"; \
+	  echo "Artifacts: $(DIAG_DIR)"; \
+	  echo "JOB_ID: $${JOB_ID:-n/a}"; \
+	  echo "Engine status: $${STATUS:-n/a}"; \
+	  echo ""; \
+	  echo "Next actions:"; \
+	  if grep -q "MISSING" "$(DIAG_DIR)/env.txt"; then \
+	    echo "- Export required env vars (see env.txt) and re-run diagnose."; \
+	  fi; \
+	  if grep -qi "error" "$(DIAG_DIR)/check-tools.log" 2>/dev/null; then \
+	    echo "- Fix toolbelt failures (see check-tools.log)."; \
+	  fi; \
+	  if grep -qi "error" "$(DIAG_DIR)/smoke-tools.log" 2>/dev/null; then \
+	    echo "- Investigate smoke-tools failures (see smoke-tools.log)."; \
+	  fi; \
+	  if [ "$${STATUS:-}" != "completed" ]; then \
+	    echo "- Use engine flow manually: make -C cmo_agent start-workers; make -C cmo_agent submit-job GOAL=\"$(GOAL)\"; make -C cmo_agent list-jobs; make -C cmo_agent job-status JOB_ID=<id>"; \
+	  else \
+	    echo "- Engine completed. If output looks empty, re-run dry-run and inspect local_dry_run.log for discovery/email stats."; \
+	  fi; \
+	} | tee "$(DIAG_DIR)/SUMMARY.txt" >/dev/null
 
 # Catch-all target to prevent "make: *** No rule to make target" errors
 %:

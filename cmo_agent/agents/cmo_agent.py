@@ -645,7 +645,8 @@ class CMOAgent:
             for call in tool_calls:
                 tool_name = call.get("name")
                 if tool_name and tool_name in self.tools:
-                    logger.info(f"Executing tool: {tool_name}")
+                    job_id = state.get("job_id")
+                    logger.info(f"Executing tool: {tool_name} for job {job_id}", extra={"structured": {"event": "tool_started", "tool": tool_name, "job_id": job_id}})
                     try:
                         tool = self.tools[tool_name]
                         # Hydrate missing or unsafe args from state for robustness
@@ -683,7 +684,10 @@ class CMOAgent:
                         state = self._reduce_tool_result(state, tool_name, result)
                         self.stats["tools_executed"] += 1
 
-                        logger.info(f"Tool {tool_name} executed successfully")
+                        logger.info(
+                            f"Tool {tool_name} executed successfully",
+                            extra={"structured": {"event": "tool_completed", "tool": tool_name, "job_id": job_id, "success": True}}
+                        )
 
                         # Append a function-style summary to conversation history for LLM awareness
                         try:
@@ -703,11 +707,17 @@ class CMOAgent:
                         if tool_name == "done":
                             state["ended"] = True
                             state["end_reason"] = "done"
-                            logger.info("Done tool called - ending workflow")
+                            logger.info(
+                                "Done tool called - ending workflow",
+                                extra={"structured": {"event": "workflow_done", "job_id": job_id}}
+                            )
                             break
 
                     except Exception as e:
-                        logger.error(f"Tool {tool_name} execution failed: {e}")
+                        logger.error(
+                            f"Tool {tool_name} execution failed: {e}",
+                            extra={"structured": {"event": "tool_failed", "tool": tool_name, "job_id": job_id, "error": str(e)}}
+                        )
                         error_result = ToolResult(success=False, error=str(e))
                         state = self._reduce_tool_result(state, tool_name, error_result)
                         self.stats["errors_encountered"] += 1
@@ -723,8 +733,10 @@ class CMOAgent:
             state.setdefault("counters", {})
             state["counters"]["steps"] = state["counters"].get("steps", 0) + 1
 
-            # Log state persistence info for debugging
-            logger.info(f"Agent step completed - executed {len(tool_calls)} tools, ended: {state.get('ended')}, steps: {state['counters']['steps']}")
+            # Log state persistence info for debugging (demoted to DEBUG to reduce noise)
+            logger.debug(
+                f"Agent step completed - executed {len(tool_calls)} tools, ended: {state.get('ended')}, steps: {state['counters']['steps']}"
+            )
 
             return state
 
@@ -1396,7 +1408,7 @@ Available tools: {', '.join(self.tools.keys())}
                 "error_type": type(e).__name__,
             }
 
-        
+
 
     def _extract_progress_info(self, state: RunState) -> Dict[str, Any]:
         """Extract progress information from RunState"""
@@ -1446,7 +1458,7 @@ Available tools: {', '.join(self.tools.keys())}
 
         return progress_info
 
-    
+
 
     async def _save_checkpoint(self, job_id: str, state: RunState, checkpoint_type: str = "periodic"):
         """Save a checkpoint of the current job state"""

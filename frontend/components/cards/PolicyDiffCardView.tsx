@@ -15,7 +15,7 @@ export function PolicyDiffCardView({ card }: { card: PolicyDiffCard }) {
             <div className="text-sm font-medium text-gray-700 mb-2">
               {change.field}
             </div>
-            
+
             <div className="grid grid-cols-2 gap-3 mb-2">
               <div>
                 <div className="text-xs text-gray-500 mb-1">Before:</div>

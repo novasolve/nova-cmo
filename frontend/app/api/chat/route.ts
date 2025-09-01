@@ -11,7 +11,7 @@ function isConversationalMessage(text: string): boolean {
     /^(thanks|thank you|ok|okay|cool|nice|great)/i,
     /(going on|what's up|status|update|progress)/i
   ];
-  
+
   const campaignPatterns = [
     /find \d+/i,
     /(python|javascript|react|go|rust) (maintainers|developers|contributors)/i,
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { threadId, text, message, options } = body;
     const messageText = text || message; // Support both 'text' and 'message' parameters
-    
+
     // Validate required parameters
     if (!threadId || !messageText) {
       return new Response(JSON.stringify({
@@ -56,9 +56,9 @@ export async function POST(req: Request) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      
+
       const convResult = await convResp.json();
-      
+
       if (convResp.ok && convResult.success) {
         return new Response(JSON.stringify({
           success: true,
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         });
       }
     }
-    
+
     // Ensure thread exists in storage
     let thread = getThread(threadId);
     if (!thread) {
@@ -80,12 +80,12 @@ export async function POST(req: Request) {
       thread = createThread(threadId, threadName);
       console.log(`Created new thread: ${threadId} - ${threadName}`);
     }
-    
+
     // Update thread with latest message
     updateThread(threadId, {
       lastActivity: messageText.length > 50 ? messageText.substring(0, 50) + "..." : messageText
     });
-    
+
     // Convert autonomy level to numeric autopilot for backend compatibility
     const autopilot = options?.autonomy ? autonomyToAutopilot(options.autonomy) : 0;
 
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
       try {
         // Detect if this is a smoke test
         const isSmokeTest = messageText.toLowerCase().includes('smoke test');
-        
+
         const jobPayload = {
           goal: messageText,
           dryRun: autopilot === 0, // L0 = dry run, L1+ = real execution
@@ -109,7 +109,7 @@ export async function POST(req: Request) {
             created_at: new Date().toISOString()
           }
         };
-        
+
         console.log(`Creating job for thread: ${threadId}`);
         console.log(`Job payload:`, JSON.stringify(jobPayload, null, 2));
 
@@ -118,21 +118,21 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(jobPayload),
         });
-        
+
         if (resp.ok) {
           const jobResult = await resp.json();
-          
+
           // Store the mapping so the events endpoint knows which job to stream
           const actualJobId = jobResult.job_id || jobResult.id;
           console.log(`Job result:`, jobResult);
           console.log(`Storing thread mapping: ${threadId} -> ${actualJobId}`);
           storeThreadJobMapping(threadId, actualJobId);
-          
+
           // Update thread with job status
           updateThread(threadId, {
             lastActivity: `🚀 Job started: ${jobResult.id}`
           });
-          
+
           return new Response(JSON.stringify({
             success: true,
             jobId: actualJobId,
@@ -149,7 +149,7 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error("Backend connection failed:", error);
-        
+
         // Return error response
         return new Response(JSON.stringify({
           success: false,
@@ -177,12 +177,12 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Chat API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }

@@ -34,20 +34,20 @@ export async function POST(req: Request) {
     // Sync each job to thread storage
     for (const job of jobs) {
       const threadId = job.metadata?.threadId;
-      
+
       if (threadId) {
         // Check if thread already exists
         let thread = getThread(threadId);
-        
+
         if (!thread) {
           // Create new thread from job
           const threadName = generateThreadNameFromJob(job);
-          thread = createThread(threadId, threadName, 
+          thread = createThread(threadId, threadName,
             job.metadata?.test_type === 'smoke_test' ? 'smoke_test' : 'real_campaign'
           );
           syncedCount++;
         }
-        
+
         // Update thread with latest job info
         updateThread(threadId, {
           currentJobId: job.job_id || job.id,
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
 
 function generateThreadNameFromJob(job: any): string {
   const goal = job.goal || "";
-  
+
   // Extract meaningful name from goal
   if (goal.toLowerCase().includes("python")) {
     const match = goal.match(/find (\d+)/i);

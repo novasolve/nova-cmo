@@ -4,6 +4,7 @@ import { ChatMessage, SSEEvent, LanggraphEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
+import { useJobStream } from "@/app/hooks/useJobStream";
 import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
 import { getThread, createThread, updateThread } from "@/lib/threadStorage";
 import { useJobState } from "@/lib/jobContext";
@@ -19,6 +20,9 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const { jobState, updateJobState, setActiveThread } = useJobState();
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  // Keep latest jobState in a ref to avoid changing handler identity
+  const jobStateRef = useRef(jobState);
+  useEffect(() => { jobStateRef.current = jobState; }, [jobState]);
 
   // Set active thread for job context and check for thread mismatches
   useEffect(() => {
@@ -116,24 +120,21 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     if (evt.kind === "message") {
       setMessages((prev) => [...prev, evt.message as ChatMessage]);
     } else if (evt.kind === "event" && evt.event) {
-      // Update job state based on event
-      const latestEvent = evt.event;
-      const newEvents = [...jobState.events, latestEvent];
-
-      const derivedStatus = latestEvent.status === 'error' ? 'failed' :
-        (latestEvent.status === 'ok' && latestEvent.node === 'completion' ? 'completed' : 'running');
+      const prev = jobStateRef.current;
+      const e = evt.event;
+      const derivedStatus = e.status === 'error' ? 'failed' : (e.node === 'completion' ? 'completed' : 'running');
 
       updateJobState({
         status: derivedStatus,
-        currentNode: latestEvent.node || jobState.currentNode,
-        progress: latestEvent.msg || jobState.progress,
+        currentNode: e.node || prev.currentNode,
+        progress: e.msg || prev.progress,
         metrics: {
-          ...jobState.metrics,
-          nodesCompleted: jobState.metrics.nodesCompleted + (latestEvent.status === 'ok' ? 1 : 0),
-          totalCost: jobState.metrics.totalCost + (latestEvent.costUSD || 0),
-          avgLatency: latestEvent.latencyMs || jobState.metrics.avgLatency
+          ...prev.metrics,
+          nodesCompleted: prev.metrics.nodesCompleted + (e.status === 'ok' ? 1 : 0),
+          totalCost: (prev.metrics.totalCost || 0) + (e.costUSD || 0),
+          avgLatency: e.latencyMs ?? prev.metrics.avgLatency
         },
-        events: newEvents.slice(-50) // Keep last 50 events
+        events: [...prev.events, e].slice(-50)
       });
 
       // Stop streaming once job completes or fails
@@ -157,7 +158,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     setTimeout(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }, 100);
-  }, [id, jobState.events, jobState.currentNode, jobState.progress, jobState.metrics, updateJobState]);
+  }, [id, updateJobState]);
 
   // Only establish SSE connection when there's an active job
   const sseUrl = currentJobId ? `/api/threads/${id}/events?jobId=${currentJobId}` : null;
@@ -165,6 +166,38 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,
     onConnectionChange: setConnectionStatus,
+  });
+
+  // Also subscribe directly to job events to catch terminal event and final sync
+  useJobStream(currentJobId, {
+    onProgress: (evt) => {
+      // No-op: thread SSE handles live progress UI
+    },
+    onFinalized: (status, summary, artifacts) => {
+      // Update job state and surface a capsule message
+      updateJobState({
+        status: status as any,
+        progress: `Run ${status}`,
+        events: jobStateRef.current.events,
+      });
+      if (summary) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "assistant",
+            createdAt: new Date().toISOString(),
+            text: `✅ ${summary.leads_with_emails} emails • ${summary.repos} repos • ${summary.candidates} candidates • ${Math.round(summary.duration_ms/1000)}s`,
+          },
+        ]);
+      }
+      // Stop thread SSE
+      setCurrentJobId(null);
+    },
+    onStreamEnd: () => {
+      // Nothing extra; finalSync in hook handles snapshot
+    },
   });
 
   // Log thread-scoped SSE diagnostics

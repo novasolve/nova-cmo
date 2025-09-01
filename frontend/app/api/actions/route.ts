@@ -9,7 +9,7 @@ export async function POST(req: Request) {
 
     // Get the job ID for this thread
     const jobId = getJobIdForThread(threadId);
-    
+
     if (!jobId) {
       return new Response(JSON.stringify({
         success: false,
@@ -70,7 +70,7 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: Object.keys(requestBody).length > 0 ? JSON.stringify(requestBody) : undefined,
         });
-        
+
         if (resp.ok) {
           const result = await resp.json();
           return new Response(JSON.stringify({
@@ -110,12 +110,12 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Actions API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }

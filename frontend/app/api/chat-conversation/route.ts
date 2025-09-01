@@ -8,7 +8,7 @@ export async function POST(req: Request) {
 
     // Check if this is a conversational message (not a campaign goal)
     const isConversational = isConversationalMessage(text);
-    
+
     if (isConversational) {
       // Handle as conversation, not job creation
       if (process.env.API_URL) {
@@ -24,7 +24,7 @@ export async function POST(req: Request) {
               context: "cmo_agent_console"
             }),
           });
-          
+
           if (resp.ok) {
             const result = await resp.json();
             return new Response(JSON.stringify({
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
 
       // Fallback: Generate a helpful response about the CMO Agent
       const response = generateConversationalResponse(text);
-      
+
       return new Response(JSON.stringify({
         success: true,
         response,
@@ -71,12 +71,12 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Conversation API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }
@@ -92,7 +92,7 @@ function isConversationalMessage(text: string): boolean {
     /^(thanks|thank you|ok|okay|cool|nice|great)/i,
     /(going on|what's up|status|update|progress)/i
   ];
-  
+
   const campaignPatterns = [
     /find \d+/i,
     /(python|javascript|react|go|rust) (maintainers|developers|contributors)/i,
@@ -122,7 +122,7 @@ function generateConversationalResponse(text: string): string {
 
 **Quick Actions**:
 • **🧪 Self‑Test** - Validate the pipeline with 5 Python maintainers
-• **"Find 20 Python maintainers"** - Start a real campaign  
+• **"Find 20 Python maintainers"** - Start a real campaign
 • **"Brief"** - Generate campaign overview
 • **"Preflight"** - Run simulations before execution
 
@@ -135,7 +135,7 @@ What would you like to work on? 🚀`;
 I'm your CMO Agent - I can help you:
 • **Find leads** from GitHub (Python, JS, React, Go developers)
 • **Enrich profiles** with emails and activity data
-• **Personalize outreach** with evidence-based messaging  
+• **Personalize outreach** with evidence-based messaging
 • **Sync to CRM** (Attio, Linear) with full tracking
 
 Try saying something like:
@@ -177,13 +177,13 @@ What campaign would you like to start? 🎯`;
 
 **Not sure what to ask?** Try:
 • *"What's going on?"* - Current status
-• *"What can you do?"* - My capabilities  
+• *"What can you do?"* - My capabilities
 • *"Find 10 Python maintainers"* - Start a campaign
 • *"🧪 Self‑Test"* - Quick validation run
 
 **Or just tell me your goal** like:
 • "I need React developers for our startup"
-• "Find contributors to popular Python packages"  
+• "Find contributors to popular Python packages"
 • "Generate a brief for JavaScript framework maintainers"
 
 I'll help you discover leads, personalize outreach, and manage the entire campaign! 🎯`;

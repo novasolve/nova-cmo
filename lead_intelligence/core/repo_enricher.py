@@ -34,7 +34,7 @@ class RepoEnricher:
 
         self.rate_limiter = {'last_request': 0, 'min_delay': 1.0}
         self._last_auth_error = None
-        
+
         # Test authentication on initialization
         self._verify_authentication()
 
@@ -88,16 +88,16 @@ class RepoEnricher:
 
         try:
             response = self.session.get(url, params=params, timeout=30)
-            
+
             # Check for authentication errors specifically
             if response.status_code == 401:
                 logger.error(f"Authentication failed for {url}. Status: {response.status_code}")
                 logger.error(f"Response: {response.text[:200]}")
                 logger.debug(f"Using auth header format: {self.session.headers.get('Authorization', 'None')[:20]}...")
-                
+
             response.raise_for_status()
             return response.json()
-            
+
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
                 self._last_auth_error = "Invalid or expired GitHub token"

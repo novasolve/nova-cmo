@@ -133,5 +133,3 @@ else:
             super().error(msg, extra=kwargs)
 
     log = _ShimLogger(logging.getLogger("cmo"), {})
-
-

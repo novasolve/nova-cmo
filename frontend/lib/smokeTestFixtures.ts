@@ -20,7 +20,7 @@ export const SMOKE_TEST_FIXTURES = {
         recent_activity: "2024-01-15T10:30:00Z"
       },
       {
-        name: "Sam Maintainer", 
+        name: "Sam Maintainer",
         email: "sam@example.com",
         topics: ["email", "PEP 594"],
         github_url: "https://github.com/sam-maintainer",
@@ -28,7 +28,7 @@ export const SMOKE_TEST_FIXTURES = {
       },
       {
         name: "Rae Maintainer",
-        email: "rae@example.com", 
+        email: "rae@example.com",
         topics: ["packaging", "pip"],
         github_url: "https://github.com/rae-maintainer",
         recent_activity: "2024-01-25T09:15:00Z"
@@ -39,7 +39,7 @@ export const SMOKE_TEST_FIXTURES = {
     alerts: [
       {
         type: "rate_limit",
-        node: "fetch_github_profile", 
+        node: "fetch_github_profile",
         occurrences: 3,
         message: "GitHub API rate limit exceeded - retrying with backoff"
       }
@@ -79,7 +79,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
       details: "Job created, SSE connected, events flowing"
     },
     {
-      id: "brief_rendered", 
+      id: "brief_rendered",
       name: "Brief Rendered",
       required: true,
       passed: false,
@@ -87,7 +87,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
     },
     {
       id: "simulation_rendered",
-      name: "Simulation Rendered", 
+      name: "Simulation Rendered",
       required: true,
       passed: false,
       details: "Simulation Pack with forecasts"
@@ -95,7 +95,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
     {
       id: "drafts_rendered",
       name: "Drafts Rendered",
-      required: true, 
+      required: true,
       passed: false,
       details: "≥2 draft emails with scores ≥80"
     },
@@ -110,7 +110,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
       id: "alerts_captured",
       name: "Alerts Captured",
       required: true,
-      passed: false, 
+      passed: false,
       details: "Error injected and Alerts card rendered"
     },
     {
@@ -122,7 +122,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
     },
     {
       id: "summary_rendered",
-      name: "Summary Rendered", 
+      name: "Summary Rendered",
       required: true,
       passed: false,
       details: "Run Summary with valid metrics"
@@ -137,7 +137,7 @@ export function createSmokeTestChecks(): SmokeTestCheck[] {
     {
       id: "determinism_check",
       name: "Determinism Check",
-      required: false, 
+      required: false,
       passed: false,
       details: "Fixture hash matches expected"
     }

@@ -21,5 +21,3 @@ class RequestLogMiddleware(BaseHTTPMiddleware):
             except Exception:
                 pass
             log.info("http_res", evt="http_res", status=status, path=request.url.path, latency_ms=dur_ms)
-
-

@@ -95,6 +95,10 @@ class ExecutionEngine:
         # State
         self.is_running = False
         self._shutdown_event = asyncio.Event()
+        # Throttled queue logging state
+        self._last_queue_log_ts: float = 0.0
+        self._last_queue_stats: Optional[dict] = None
+        self._queue_log_interval_seconds: int = 60
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -150,6 +154,15 @@ class ExecutionEngine:
             _setup_logging_from_config(config)
             # Apply monitoring thresholds
             configure_metrics_from_config(config)
+
+            # Configure queue stats logging interval from monitoring if present
+            try:
+                monitoring_cfg = config.get("monitoring", {}) if isinstance(config.get("monitoring"), dict) else {}
+                interval = int(monitoring_cfg.get("metrics_interval", 60))
+                # Use same interval for queue stats to avoid noise; minimum 5s
+                self._queue_log_interval_seconds = max(5, interval)
+            except Exception:
+                self._queue_log_interval_seconds = 60
 
             # Initialize queue with configured storage dir if provided
             try:
@@ -259,10 +272,43 @@ class ExecutionEngine:
         # - Processing completed jobs
         # - Logging statistics
 
-        # For now, just log stats periodically
+        # For now, just log stats with throttling to avoid noise
         stats = await self.queue.get_queue_stats()
-        if stats["total_jobs"] > 0:
-            logger.info(f"Queue stats: {stats}")
+        if stats.get("total_jobs", 0) > 0:
+            import time
+            now = time.monotonic()
+            should_log = False
+
+            # Log on significant change (e.g., queue depth or running count changes)
+            try:
+                last = self._last_queue_stats or {}
+                key_fields = (
+                    stats.get("queued_jobs"),
+                    stats.get("jobs_by_status", {}),
+                    stats.get("active_streams"),
+                )
+                last_key_fields = (
+                    last.get("queued_jobs"),
+                    last.get("jobs_by_status", {}),
+                    last.get("active_streams"),
+                )
+                if key_fields != last_key_fields:
+                    should_log = True
+            except Exception:
+                # On any comparison issue, fall back to interval-based logging
+                pass
+
+            # Also log at a fixed interval
+            if now - self._last_queue_log_ts >= self._queue_log_interval_seconds:
+                should_log = True
+
+            if should_log:
+                logger.info(f"Queue stats: {stats}")
+                self._last_queue_log_ts = now
+                self._last_queue_stats = stats
+            else:
+                # Debug-level for per-second loop to aid diagnostics when needed
+                logger.debug(f"Queue stats (throttled): {stats}")
 
     async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0, metadata: Dict[str, Any] = None, config_path: str = None) -> str:
         """Submit a new job for execution"""

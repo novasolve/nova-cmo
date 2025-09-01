@@ -72,5 +72,3 @@ def load_latest_state(
     if latest is None:
         return None
     return load_state_from_file(latest)
-
-

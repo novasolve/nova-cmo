@@ -36,7 +36,7 @@ kill_service() {
     local service=$1
     local port=$2
     local pidfile=$3
-    
+
     # Kill by PID file first
     if [[ -f "$pidfile" ]]; then
         local pid=$(cat "$pidfile")
@@ -46,7 +46,7 @@ kill_service() {
         fi
         rm -f "$pidfile"
     fi
-    
+
     # Kill by port as backup
     local pids=$(lsof -ti:$port 2>/dev/null || echo "")
     if [[ -n "$pids" ]]; then
@@ -54,18 +54,18 @@ kill_service() {
         sleep 1
         echo "$pids" | xargs kill -KILL 2>/dev/null || true
     fi
-    
+
     log "Stopped $service"
 }
 
 start_api() {
     log "Starting API server on port $API_PORT..."
     cd "$(dirname "$0")"
-    
+
     # Use the direct method that works with environment loaded
     bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     echo $! > "$PIDFILE_API"
-    
+
     # Wait and verify
     sleep 3
     if curl -s http://localhost:$API_PORT/ >/dev/null 2>&1; then
@@ -82,15 +82,15 @@ start_api() {
 start_dev() {
     log "Starting development environment..."
     stop_all
-    
+
     cd "$(dirname "$0")"
-    
+
     # Start API in background with environment loaded
     log "🚀 Starting API server..."
     bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     local api_pid=$!
     echo $api_pid > "$PIDFILE_API"
-    
+
     # Wait for API
     sleep 3
     if ! curl -s http://localhost:$API_PORT/ >/dev/null 2>&1; then
@@ -98,8 +98,8 @@ start_dev() {
         return 1
     fi
     success "API running at http://localhost:$API_PORT"
-    
-    # Start frontend in background  
+
+    # Start frontend in background
     log "🎨 Starting frontend..."
     cd frontend
     if [[ ! -d "node_modules" ]]; then
@@ -110,7 +110,7 @@ start_dev() {
     local frontend_pid=$!
     echo $frontend_pid > "$PIDFILE_FRONTEND"
     cd ..
-    
+
     # Wait for frontend
     sleep 5
     if ! curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
@@ -118,7 +118,7 @@ start_dev() {
     else
         success "Frontend running at http://localhost:$FRONTEND_PORT"
     fi
-    
+
     success "🎉 Development environment ready!"
     echo ""
     echo "📱 Frontend: http://localhost:$FRONTEND_PORT"
@@ -127,10 +127,10 @@ start_dev() {
     echo ""
     log "Press Ctrl+C to stop all services"
     echo ""
-    
+
     # Setup trap to cleanup on exit
     trap 'log "Shutting down..."; kill $api_pid $frontend_pid 2>/dev/null; stop_all; exit 0' INT TERM
-    
+
     # Follow logs in foreground
     tail -f /tmp/cmo_api.log /tmp/cmo_frontend.log
 }
@@ -138,16 +138,16 @@ start_dev() {
 start_frontend() {
     log "Starting frontend server on port $FRONTEND_PORT..."
     cd "$(dirname "$0")/frontend"
-    
+
     # Install deps if needed
     if [[ ! -d "node_modules" ]]; then
         log "Installing frontend dependencies..."
         npm install
     fi
-    
+
     nohup npm run dev > /tmp/cmo_frontend.log 2>&1 &
     echo $! > "$PIDFILE_FRONTEND"
-    
+
     # Wait and verify
     sleep 5
     if curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
@@ -168,21 +168,21 @@ stop_all() {
 
 status() {
     log "Service Status:"
-    
+
     # API Status
     if curl -s http://localhost:$API_PORT/ >/dev/null 2>&1; then
         echo -e "  API:      ${GREEN}✓ Running${NC} (http://localhost:$API_PORT)"
     else
         echo -e "  API:      ${RED}✗ Not running${NC}"
     fi
-    
-    # Frontend Status  
+
+    # Frontend Status
     if curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
         echo -e "  Frontend: ${GREEN}✓ Running${NC} (http://localhost:$FRONTEND_PORT)"
     else
         echo -e "  Frontend: ${RED}✗ Not running${NC}"
     fi
-    
+
     # PID files
     echo ""
     log "Process Info:"

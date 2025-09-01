@@ -35,7 +35,7 @@ if check_backend; then
     echo "✅ Backend is already running on port 8000"
 else
     echo "🔧 Starting CMO Agent backend..."
-    
+
     # Start backend in background
     (
         cd ../cmo_agent
@@ -44,10 +44,10 @@ else
         fi
         python scripts/run_web.py
     ) &
-    
+
     BACKEND_PID=$!
     echo "🔄 Backend started with PID $BACKEND_PID"
-    
+
     # Wait for backend to be ready
     echo "⏳ Waiting for backend to start..."
     for i in {1..30}; do

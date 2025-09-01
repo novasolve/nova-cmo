@@ -88,7 +88,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
               <div className="whitespace-pre-wrap streaming-text">{message.text}</div>
             ) : (
               // Assistant/system messages with markdown rendering
-              <ReactMarkdown 
+              <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 className="prose prose-sm prose-gray max-w-none streaming-text"
                 components={{
@@ -128,7 +128,7 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
         {message.card?.type === "smoke_test_results" && (
           <SmokeTestResultsCardView card={message.card} />
         )}
-        
+
         <div className="mt-2 text-xs text-gray-400">
           {new Date(message.createdAt).toLocaleTimeString()}
         </div>

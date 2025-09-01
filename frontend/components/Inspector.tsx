@@ -13,7 +13,7 @@ export function Inspector() {
     <div className="h-full flex flex-col">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-3">Run Monitor</h2>
-        
+
         <div className="grid grid-cols-2 gap-1 bg-gray-100 rounded-lg p-1 text-xs">
           <button
             onClick={() => setActiveTab("runstate")}

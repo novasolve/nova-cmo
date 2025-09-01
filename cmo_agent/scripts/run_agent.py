@@ -175,7 +175,7 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             attio = reports.get("attio", {}) if isinstance(reports.get("attio", {}), dict) else {}
             synced_people = attio.get("synced_people", []) if isinstance(attio.get("synced_people", []), list) else []
             print(f"{building}CRM sync: {len(synced_people)}")
-            
+
             # Optional interactive continuation
             if interactive:
                 answer = input(("Run another campaign? (y/N): "))

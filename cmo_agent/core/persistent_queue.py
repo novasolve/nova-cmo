@@ -94,7 +94,7 @@ class PersistentJobQueue(JobQueue):
                     if job.status in [JobStatus.QUEUED, JobStatus.RUNNING]:
                         queue_item = QueueItem(job=job, priority=1 if job.status == JobStatus.RUNNING else 0)
                         self._queue.append(queue_item)
-                        
+
                         # Create progress stream for reloaded jobs
                         self._progress_streams[job_id] = asyncio.Queue()
                         self._progress_listeners[job_id] = 0
@@ -166,6 +166,14 @@ class PersistentJobQueue(JobQueue):
                         await self._progress_streams[job_id].put(job.progress)
                     except Exception:
                         pass  # Stream might be closed
+
+                # If job reached a terminal state, close the progress stream
+                if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                    if job_id in self._progress_streams:
+                        try:
+                            await self._progress_streams[job_id].put(None)
+                        except Exception:
+                            pass
 
     async def get_job_progress(self, job_id: str) -> Optional[ProgressInfo]:
         """Get job progress information"""

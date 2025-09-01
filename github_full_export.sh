@@ -675,5 +675,3 @@ ln -sfn "$(basename "$OUT_DIR")" "$OUT_BASE/latest"
 echo "- Latest symlink: $OUT_BASE/latest"
 
 echo "🎉 Done."
-
-

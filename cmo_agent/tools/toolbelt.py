@@ -210,5 +210,3 @@ class Toolbelt:
             record_error("toolbelt", type(e).__name__, is_critical=False)
             log_error(e, component="toolbelt", tool=tool_name, job_id=job_id)
             return ToolResult(success=False, error=str(e), metadata={"tool": tool_name})
-
-

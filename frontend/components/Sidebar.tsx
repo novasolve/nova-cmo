@@ -21,7 +21,7 @@ export function Sidebar() {
       try {
         // Sync backend jobs to thread storage
         await fetch('/api/threads/sync', { method: 'POST' });
-        
+
         // Refresh local state
         setThreads(getAllThreads());
         setCampaigns(getAllCampaigns());
@@ -45,27 +45,27 @@ export function Sidebar() {
   const handleNewThread = () => {
     // Generate a unique thread ID
     const newThreadId = `thread-${Date.now()}`;
-    
+
     // Create the thread in storage
     const newThread = createThread(newThreadId, "New Thread");
-    
+
     // Update local state immediately
     setThreads(getAllThreads());
-    
+
     // Navigate to the new thread
     router.push(`/threads/${newThreadId}`);
   };
 
   const handleNewCampaign = () => {
-    // Generate a unique campaign ID  
+    // Generate a unique campaign ID
     const newCampaignId = `campaign-${Date.now()}`;
-    
+
     // Create the campaign thread in storage
     const newThread = createThread(newCampaignId, "New Campaign");
-    
+
     // Update local state immediately
     setThreads(getAllThreads());
-    
+
     // Navigate to the new campaign thread
     router.push(`/threads/${newCampaignId}`);
   };
@@ -74,7 +74,7 @@ export function Sidebar() {
     <div className="h-full flex flex-col">
       <div className="mb-4">
         <h2 className="text-lg font-semibold text-gray-900 mb-3">CMO Agent</h2>
-        
+
         <div className="flex bg-gray-100 rounded-lg p-1">
           <button
             onClick={() => setActiveTab("threads")}
@@ -104,7 +104,7 @@ export function Sidebar() {
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-700">Chat Threads</h3>
-              <button 
+              <button
                 onClick={handleNewThread}
                 className="text-xs text-blue-600 hover:text-blue-800"
               >
@@ -135,7 +135,7 @@ export function Sidebar() {
           <div className="space-y-2">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-medium text-gray-700">Campaigns</h3>
-              <button 
+              <button
                 onClick={handleNewCampaign}
                 className="text-xs text-blue-600 hover:text-blue-800"
               >

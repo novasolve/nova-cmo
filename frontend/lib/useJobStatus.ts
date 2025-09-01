@@ -37,11 +37,11 @@ export function useJobStatus(jobId: string | null) {
     const fetchJobStatus = async () => {
       setLoading(true);
       setError(null);
-      
+
       try {
         // Try to get job status from backend
         const response = await fetch(`${process.env.NEXT_PUBLIC_API_BASE}/api/jobs/${jobId}/status`);
-        
+
         if (response.ok) {
           const status = await response.json();
           setJobStatus(status);
@@ -74,10 +74,10 @@ export function useJobStatus(jobId: string | null) {
     };
 
     fetchJobStatus();
-    
+
     // Poll for updates every 5 seconds
     const interval = setInterval(fetchJobStatus, 5000);
-    
+
     return () => clearInterval(interval);
   }, [jobId]);
 

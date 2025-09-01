@@ -19,12 +19,18 @@ from fastapi.staticfiles import StaticFiles
 project_root = str(Path(__file__).resolve().parents[2])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
-    
+
 from cmo_agent.obs.logging import configure_logging, log, with_job_context
 from cmo_agent.middleware import RequestLogMiddleware
 
-# Configure structured logging early
+# Configure structured logging early (route uvicorn logs through our handler via root logger)
 configure_logging("INFO")
+import logging as _logging
+for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    _lg = _logging.getLogger(_name)
+    _lg.propagate = True
+    # Avoid duplicate handlers; rely on root's structured handler
+    _lg.handlers.clear()
 logger = logging.getLogger(__name__)
 
 # Load /Users/seb/leads/cmo_agent/.env or nearest .env upward from CWD
@@ -51,6 +57,51 @@ app.add_middleware(
 static_dir = Path(__file__).parent / "static"
 static_dir.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+# Expose config files (e.g., smoke_prompt.yaml) by ensuring a config symlink/copy exists in static
+try:
+    cfg_src = Path(__file__).resolve().parents[1] / "config" / "smoke_prompt.yaml"
+    cfg_dst_dir = static_dir / "config"
+    cfg_dst_dir.mkdir(parents=True, exist_ok=True)
+    cfg_dst = cfg_dst_dir / "smoke_prompt.yaml"
+    if cfg_src.exists():
+        # Copy on startup to avoid FS permission issues with symlinks in some envs
+        import shutil
+        try:
+            shutil.copyfile(str(cfg_src), str(cfg_dst))
+        except Exception:
+            pass
+except Exception:
+    pass
+
+# -----------------------
+# Self-test API (smoke test)
+# -----------------------
+from fastapi import APIRouter
+
+selftest_router = APIRouter(prefix="/api/self-test")
+
+@selftest_router.post("/start")
+async def api_selftest_start(mode: str = "mock"):
+    eng = _require_engine()
+    # Start a constrained smoke job via normal job submission path
+    job_id = await eng.submit_job(
+        goal="🧪 Self‑Test: vertical slice",
+        metadata={
+            "threadId": "default",
+            "test_type": "smoke_test" if mode != "live-lite" else "smoke_test_real",
+            "mode": mode,
+            "created_by": "self_test",
+        },
+    )
+    return {"jobId": job_id, "mode": mode}
+
+@selftest_router.get("/status/{job_id}")
+async def api_selftest_status(job_id: str):
+    # Reuse summary snapshot
+    return await api_get_job_summary(job_id)
+
+app.include_router(selftest_router)
 
 
 INDEX_HTML = """
@@ -204,7 +255,7 @@ async def api_create_job(payload: Dict[str, Any]):
     # Extract metadata from payload
     metadata = (payload or {}).get("metadata", {})
     config_path = (payload or {}).get("config_path")
-    
+
     # Optional dryRun flag affects agent config globally for now
     dry_run = bool((payload or {}).get("dryRun", True))
     try:
@@ -252,6 +303,37 @@ async def api_get_job(job_id: str):
     }
 
 
+@app.get("/api/jobs/{job_id}/summary")
+async def api_get_job_summary(job_id: str):
+    """Return a final snapshot for a job: status, summary, artifacts.
+    Safe for late calls after SSE closes.
+    """
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Build summary from progress metrics if available
+    summary = None
+    try:
+        prog = status.get("progress") or {}
+        metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
+        summary = {
+            "duration_ms": int(metrics.get("duration_ms") or 0),
+            "repos": int(metrics.get("repos") or 0),
+            "candidates": int(metrics.get("candidates") or 0),
+            "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
+        }
+    except Exception:
+        summary = None
+
+    return {
+        "status": status.get("status"),
+        "summary": summary,
+        "artifacts": status.get("artifacts") or [],
+    }
+
+
 @app.post("/api/jobs/{job_id}/pause")
 async def api_pause_job(job_id: str):
     eng = _require_engine()
@@ -296,10 +378,10 @@ async def api_job_events(request: Request, job_id: str):
             pass
         import asyncio, json as _json
         from datetime import datetime
-        
+
         # Always start with retry instruction
         yield "retry: 1500\n\n"
-        
+
         # Check if engine is available
         if not engine or not engine.is_running:
             # Engine not available - send status message and keep connection alive
@@ -311,16 +393,16 @@ async def api_job_events(request: Request, job_id: str):
             }
             yield "event: status\n"
             yield f"data: {_json.dumps(status_msg)}\n\n"
-            
+
             # Keep connection alive with periodic status checks
             while True:
                 if await request.is_disconnected():
                     break
-                    
+
                 # Send keep-alive
                 yield ": keep-alive\n\n"
                 await asyncio.sleep(10)
-                
+
                 # Check if engine came online
                 if engine and engine.is_running:
                     online_msg = {
@@ -332,7 +414,7 @@ async def api_job_events(request: Request, job_id: str):
                     yield "event: status\n"
                     yield f"data: {_json.dumps(online_msg)}\n\n"
                     break
-            
+
             # If engine is still not available after waiting, continue with keep-alives
             if not engine or not engine.is_running:
                 while True:
@@ -350,21 +432,30 @@ async def api_job_events(request: Request, job_id: str):
                 if status:
                     # If job already terminal, send terminal frame and exit (late connect)
                     if status["status"] in ["completed", "failed", "cancelled"]:
+                        # Replay a terminal event with summary/artifacts and close
                         yield "retry: 30000\n\n"
-                        final = {
-                            "job_id": status["job_id"],
-                            "timestamp": datetime.now().isoformat(),
-                            "event": f"job.{status['status']}",
-                            "data": {"progress": status.get("progress")},
+                        # Try to build summary/artifacts snapshot from status/progress
+                        summary = None
+                        artifacts = status.get("artifacts") or []
+                        try:
+                            prog = status.get("progress") or {}
+                            metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
+                            summary = {
+                                "duration_ms": int(metrics.get("duration_ms") or 0),
+                                "repos": int(metrics.get("repos") or 0),
+                                "candidates": int(metrics.get("candidates") or 0),
+                                "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
+                            }
+                        except Exception:
+                            summary = None
+                        final_evt = {
+                            "evt": "job_finalized",
+                            "status": status["status"],
+                            "summary": summary,
+                            "artifacts": artifacts,
                         }
-                        yield f"data: {_json.dumps(final)}\n\n"
-                        eos = {
-                            "job_id": job_id,
-                            "timestamp": datetime.now().isoformat(),
-                            "event": "job.stream_end",
-                            "data": None,
-                        }
-                        yield f"data: {_json.dumps(eos)}\n\n"
+                        yield "event: job_finalized\n"
+                        yield f"data: {_json.dumps(final_evt)}\n\n"
                         return
                     initial = {
                         "job_id": status["job_id"],
@@ -388,7 +479,7 @@ async def api_job_events(request: Request, job_id: str):
             # Try to get progress stream
             try:
                 queue = await engine.queue.get_progress_stream(job_id)
-                
+
                 # Check if this is a dummy queue (returns None immediately)
                 # This happens when the job doesn't have an active progress stream
                 try:
@@ -403,11 +494,11 @@ async def api_job_events(request: Request, job_id: str):
                 except asyncio.TimeoutError:
                     # Queue is empty but valid - proceed with normal streaming
                     pass
-                    
+
             except Exception as e:
                 # If progress stream fails, fall back to polling
                 logger.info(f"No active progress stream for job {job_id}, using polling mode: {e}")
-                
+
                 # Send initial status
                 try:
                     status = await engine.get_job_status(job_id)
@@ -417,14 +508,14 @@ async def api_job_events(request: Request, job_id: str):
                             "timestamp": datetime.now().isoformat(),
                             "event": f"job.status.{status['status']}",
                             "data": {
-                                "status": status["status"], 
+                                "status": status["status"],
                                 "progress": status.get("progress"),
                                 "message": "Using polling mode - job may be completed or inactive"
                             },
                         }
                         yield "event: status\n"
                         yield f"data: {_json.dumps(initial_msg)}\n\n"
-                        
+
                         # If job is already done, close the stream gracefully
                         if status["status"] in ["completed", "failed", "cancelled"]:
                             final_msg = {
@@ -438,13 +529,13 @@ async def api_job_events(request: Request, job_id: str):
                             return
                 except Exception:
                     pass
-                
+
                 # Poll for status updates
                 poll_count = 0
                 while poll_count < 60:  # Limit polling to 5 minutes (60 * 5s)
                     if await request.is_disconnected():
                         break
-                    
+
                     try:
                         status = await engine.get_job_status(job_id)
                         if status:
@@ -456,16 +547,16 @@ async def api_job_events(request: Request, job_id: str):
                             }
                             yield "event: status\n"
                             yield f"data: {_json.dumps(poll_msg)}\n\n"
-                            
+
                             # Exit if job is done
                             if status["status"] in ["completed", "failed", "cancelled"]:
                                 break
                     except Exception:
                         pass
-                    
+
                     await asyncio.sleep(5)
                     poll_count += 1
-                    
+
                 # Send final message before closing
                 close_msg = {
                     "job_id": job_id,
@@ -489,30 +580,56 @@ async def api_job_events(request: Request, job_id: str):
                     continue
 
                 if item is None:
-                    # Stream end signal
-                    done = {
-                        "job_id": job_id,
-                        "timestamp": datetime.now().isoformat(),
-                        "event": "job.stream_end",
-                        "data": None,
+                    # Stream end signal: emit a terminal job_finalized event if possible
+                    try:
+                        status = await engine.get_job_status(job_id)
+                    except Exception:
+                        status = None
+                    summary = None
+                    artifacts = []
+                    state_status = "completed"
+                    try:
+                        if status:
+                            state_status = status.get("status") or state_status
+                            artifacts = status.get("artifacts") or []
+                            prog = status.get("progress") or {}
+                            metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
+                            summary = {
+                                "duration_ms": int(metrics.get("duration_ms") or 0),
+                                "repos": int(metrics.get("repos") or 0),
+                                "candidates": int(metrics.get("candidates") or 0),
+                                "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
+                            }
+                    except Exception:
+                        pass
+                    final_evt = {
+                        "evt": "job_finalized",
+                        "status": state_status,
+                        "summary": summary,
+                        "artifacts": artifacts,
                     }
-                    yield "event: done\n"
-                    yield f"data: {_json.dumps(done)}\n\n"
-                    break
+                    yield "event: job_finalized\n"
+                    yield f"data: {_json.dumps(final_evt)}\n\n"
+                    return
 
                 try:
-                    payload = {
-                        "job_id": job_id,
-                        "timestamp": datetime.now().isoformat(),
-                        "event": "job.progress",
-                        "data": item.to_dict() if hasattr(item, "to_dict") else item,
-                    }
-                    yield "event: progress\n"
-                    yield f"data: {_json.dumps(payload)}\n\n"
+                    # Support named events when a dict with 'evt' is pushed to the stream
+                    if isinstance(item, dict) and item.get("evt"):
+                        yield f"event: {item.get('evt')}\n"
+                        yield f"data: {_json.dumps(item)}\n\n"
+                    else:
+                        payload = {
+                            "job_id": job_id,
+                            "timestamp": datetime.now().isoformat(),
+                            "event": "job.progress",
+                            "data": item.to_dict() if hasattr(item, "to_dict") else item,
+                        }
+                        yield "event: progress\n"
+                        yield f"data: {_json.dumps(payload)}\n\n"
                 except Exception:
                     # Skip malformed event
                     continue
-                    
+
         except Exception as e:
             # Send error and continue with keep-alives
             error_msg = {
@@ -522,7 +639,7 @@ async def api_job_events(request: Request, job_id: str):
                 "data": {"error": str(e)},
             }
             yield f"data: {_json.dumps(error_msg)}\n\n"
-            
+
             # Keep connection alive even on errors
             while True:
                 if await request.is_disconnected():
@@ -544,7 +661,7 @@ async def api_job_events(request: Request, job_id: str):
             pass
 
     response = StreamingResponse(event_stream(), media_type="text/event-stream", headers={
-        "Cache-Control": "no-cache",
+        "Cache-Control": "no-cache, no-transform",
         "Connection": "keep-alive",
         "X-Accel-Buffering": "no",
     })
@@ -580,5 +697,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

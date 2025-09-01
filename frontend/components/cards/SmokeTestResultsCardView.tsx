@@ -69,7 +69,7 @@ export function SmokeTestResultsCardView({ card }: { card: SmokeTestResultsCard 
       <div className="mb-4 p-3 bg-white rounded border">
         <div className="text-sm font-medium mb-2">
           Status: <span className={`${
-            card.status === "passed" ? "text-green-700" : 
+            card.status === "passed" ? "text-green-700" :
             card.status === "failed" ? "text-red-700" : "text-blue-700"
           }`}>
             {card.status.charAt(0).toUpperCase() + card.status.slice(1)}
