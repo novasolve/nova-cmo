@@ -1,6 +1,6 @@
 "use client";
 import { PolicyDiffCard } from "@/types";
-import { ActionButton } from "./ActionButton";
+import { ActionButton } from "../ActionButton";
 
 export function PolicyDiffCardView({ card }: { card: PolicyDiffCard }) {
   return (

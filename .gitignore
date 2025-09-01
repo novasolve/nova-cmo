@@ -145,3 +145,24 @@ frontend/.next/
 frontend/node_modules/
 cmo_agent/.env
 cmo_agent/checkpoints/
+# Data and export files
+cmo_agent/exports/
+cmo_agent/data/jobs/
+cmo_agent/logs/
+cmo_agent/artifacts/
+lead_intelligence/analysis/reports/
+lead_intelligence/logs/
+
+# Cache and build artifacts
+.cache/
+.next/
+frontend/.next/
+frontend/node_modules/
+node_modules/
+
+# JSON data files that may contain sensitive info
+*.json
+!package.json
+!tsconfig.json
+!**/package.json
+!**/tsconfig.json
