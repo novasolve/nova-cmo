@@ -143,7 +143,7 @@ export function useSmokeTestEvaluator() {
           case "error_group":
             const alertsCheck = newChecks.find(c => c.id === "alerts_captured");
             if (alertsCheck && message.card.errors) {
-              alertsCheck.passed = message.card.errors.length >= SMOKE_TEST_CRITERIA.min_alerts_count;
+              alertsCheck.passed = message.card.errors.length >= 1;
               alertsCheck.details = `${message.card.errors.length} error groups captured`;
             }
             break;
@@ -235,9 +235,9 @@ export function useSmokeTestEvaluator() {
         checks: smokeTestState.checks,
         metrics: smokeTestState.metrics,
         actions: [
-          { id: "view-logs", label: "View Logs", action: "view_logs", variant: "secondary" },
-          { id: "retry-smoke", label: "Retry", action: "retry_smoke", variant: "primary" },
-          { id: "export-results", label: "Export", action: "export_results", variant: "secondary" }
+          { id: "view_logs", label: "View Logs", variant: "secondary" },
+          { id: "retry_smoke", label: "Retry", variant: "primary" },
+          { id: "export_results", label: "Export", variant: "secondary" }
         ]
       };
     }
