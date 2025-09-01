@@ -78,6 +78,13 @@ class JobWorker:
                         self.failed_jobs += 1
 
                     finally:
+                        # Signal end of progress stream
+                        if job and job.id in self.queue._progress_streams:
+                            try:
+                                await self.queue._progress_streams[job.id].put(None)  # Signal end of stream
+                            except Exception as e:
+                                logger.debug(f"Failed to signal end of progress stream for job {job.id}: {e}")
+                        
                         self.current_job = None
 
                 else:
@@ -93,11 +100,73 @@ class JobWorker:
         start_time = datetime.now()
 
         try:
-            # Update progress
+            # Update progress and emit to stream
             job.update_progress(stage="initializing", current_item="Setting up job execution")
+            
+            # Emit initial progress to stream
+            if job.id in self.queue._progress_streams:
+                try:
+                    await self.queue._progress_streams[job.id].put(job.progress)
+                except Exception as e:
+                    logger.debug(f"Failed to emit initial progress for job {job.id}: {e}")
 
-            # Run the CMO Agent
-            result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'))
+            # Create progress callback that forwards updates to the queue's progress stream
+            async def progress_callback(progress_info):
+                """Forward progress updates to the queue's progress stream"""
+                # Normalize and update the job's progress
+                if isinstance(progress_info, dict):
+                    current = job.progress or None
+
+                    provided_stage = (
+                        progress_info.get("stage")
+                        or progress_info.get("node")
+                        or progress_info.get("event")
+                    )
+                    provided_stage_str = (
+                        provided_stage.strip() if isinstance(provided_stage, str) else provided_stage
+                    )
+                    is_unknown_stage = (
+                        provided_stage_str is None
+                        or (isinstance(provided_stage_str, str) and provided_stage_str.strip().lower() in {"", "unknown"})
+                    )
+
+                    update_payload = {k: v for k, v in progress_info.items() if v is not None}
+
+                    # Merge metrics dictionaries
+                    if "metrics" in update_payload and isinstance(update_payload["metrics"], dict):
+                        prev_metrics = (current.metrics if current and isinstance(current.metrics, dict) else {})
+                        update_payload["metrics"] = {**prev_metrics, **update_payload["metrics"]}
+
+                    if is_unknown_stage:
+                        # Drop placeholder fields; keep previous stage/step
+                        update_payload.pop("stage", None)
+                        update_payload.pop("node", None)
+                        update_payload.pop("event", None)
+                        update_payload.pop("current_item", None)
+                        update_payload.pop("step", None)
+                    else:
+                        update_payload["stage"] = provided_stage_str
+                        # Only increment step on real stage transition when step not provided
+                        step_provided = ("step" in progress_info and progress_info.get("step") is not None)
+                        if not step_provided:
+                            if current and current.stage != provided_stage_str:
+                                update_payload["step"] = current.step + 1
+                            else:
+                                update_payload.pop("step", None)
+
+                    job.update_progress(**update_payload)
+                else:
+                    job.progress = progress_info
+
+                # Forward to queue's progress stream for SSE
+                if job.id in self.queue._progress_streams:
+                    try:
+                        await self.queue._progress_streams[job.id].put(job.progress)
+                    except Exception as e:
+                        logger.debug(f"Failed to emit progress for job {job.id}: {e}")
+
+            # Run the CMO Agent with progress callback
+            result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'), progress_callback)
 
             # Calculate duration
             duration = (datetime.now() - start_time).total_seconds()
@@ -107,6 +176,13 @@ class JobWorker:
                 stage="completed",
                 items_processed=result.get('final_state', {}).get('counters', {}).get('steps', 0)
             )
+            
+            # Emit final progress to stream
+            if job.id in self.queue._progress_streams:
+                try:
+                    await self.queue._progress_streams[job.id].put(job.progress)
+                except Exception as e:
+                    logger.debug(f"Failed to emit final progress for job {job.id}: {e}")
 
             # Record successful job completion
             record_job_completed(duration)
@@ -125,6 +201,13 @@ class JobWorker:
             duration = (datetime.now() - start_time).total_seconds()
             logger.error(f"Job processing error for {job.id}: {e}")
             job.update_progress(stage="failed", errors=[str(e)])
+            
+            # Emit failed progress to stream
+            if job.id in self.queue._progress_streams:
+                try:
+                    await self.queue._progress_streams[job.id].put(job.progress)
+                except Exception as e:
+                    logger.debug(f"Failed to emit failed progress for job {job.id}: {e}")
 
             # Record job failure
             record_job_failed("job_processing")
