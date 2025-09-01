@@ -107,11 +107,21 @@ class SearchGitHubRepos(GitHubTool):
                 except Exception:
                     pass
 
+            # Page size and sorting (tunable via kwargs or env)
+            try:
+                per_page_cfg = int(kwargs.get("per_page") or os.getenv("GITHUB_SEARCH_PER_PAGE", "100"))
+            except Exception:
+                per_page_cfg = 100
+            per_page_cfg = max(1, min(per_page_cfg, 100))
+
+            sort_by = (kwargs.get("sort") or os.getenv("GITHUB_SEARCH_SORT", "updated")).strip() or "updated"
+            order_by = (kwargs.get("order") or os.getenv("GITHUB_SEARCH_ORDER", "desc")).strip() or "desc"
+
             params = {
                 "q": raw_q,
-                "sort": "stars",
-                "order": "desc",
-                "per_page": min(max_repos, 100),  # GitHub API limit
+                "sort": sort_by,
+                "order": order_by,
+                "per_page": per_page_cfg,
             }
 
             repos = []
@@ -230,6 +240,9 @@ class SearchGitHubRepos(GitHubTool):
                         continue
                     if str(repo_data.get("name") or "").lower() == ".github":
                         continue
+                    # De-duplicate by id
+                    if any(r.get("id") == repo_data["id"] for r in repos):
+                        continue
                     repos.append(repo_data)
                     repos_added_this_page += 1
 
@@ -298,7 +311,17 @@ class ExtractPeople(GitHubTool):
                 activity_days = 90
             cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=max(1, activity_days))).isoformat().replace("+00:00", "Z")
 
-            for repo in repos[:50]:  # Limit to avoid rate limits
+            # Prioritize repos by recent activity (pushed_at) before processing
+            try:
+                repos_sorted = sorted(
+                    repos,
+                    key=lambda r: (r.get("pushed_at") or r.get("updated_at") or ""),
+                    reverse=True,
+                )
+            except Exception:
+                repos_sorted = repos
+
+            for repo in repos_sorted[:50]:  # Limit to avoid rate limits
                 try:
                     # Tolerate minimal/malformed repo inputs
                     repo_full_name = repo.get("full_name") or repo.get("repo_full_name")

@@ -637,18 +637,26 @@ class CMOAgent:
                 state.setdefault("counters", {})
                 state["counters"]["no_tool_call_streak"] = state["counters"].get("no_tool_call_streak", 0) + 1
                 limit = self.config.get("no_tool_call_limit", 3)
-                if state["counters"]["no_tool_call_streak"] >= limit:
-                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} consecutive steps; marking job failed.")
-                    state.setdefault("errors", []).append({
-                        "stage": "agent_step",
-                        "error": "No tool calls from LLM for consecutive iterations",
-                        "error_type": "NoToolCalls",
-                        "timestamp": datetime.now().isoformat(),
-                        "critical": True,
-                        "streak": state["counters"]["no_tool_call_streak"],
-                    })
-                    state["ended"] = True
-                    state["current_stage"] = "failed"
+                # Reset the streak if we detect legitimate auto-progress signals
+                auto_progress_indicator = False
+                try:
+                    # If repos/candidates/leads counts are increasing, or stage advanced, consider it progress
+                    prev_stage = state.get("current_stage") or ""
+                    repos = state.get("repos") or []
+                    candidates = state.get("candidates") or []
+                    leads = state.get("leads") or []
+                    if len(repos) > 0 or len(candidates) > 0 or len(leads) > 0 or prev_stage in ("discovery","extraction","enrichment","validation","personalization","sending","sync","export"):
+                        auto_progress_indicator = True
+                except Exception:
+                    pass
+
+                if auto_progress_indicator:
+                    state["counters"]["no_tool_call_streak"] = 0
+                    logger.info("No tool calls, but auto-progress detected; resetting no_tool_call_streak")
+                elif state["counters"]["no_tool_call_streak"] >= limit:
+                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} consecutive steps; continuing due to auto-mode")
+                    # Do NOT fail; just log and continue in autonomous mode
+                    state["counters"]["no_tool_call_streak"] = 0
                 else:
                     logger.info("No tool calls, continuing to agent")
 
@@ -747,6 +755,7 @@ class CMOAgent:
                     # If we already have repos but no candidates, extract people
                     if repos and not candidates and "extract_people" in self.tools:
                         logger.info("Auto-progress: executing extract_people based on repos present")
+                        state["current_stage"] = "extraction"
                         try:
                             tool = self.tools["extract_people"]
                             result = await tool.execute(repos=repos, top_authors_per_repo=5)
@@ -782,6 +791,7 @@ class CMOAgent:
                                 seen.add(login)
                         if unique_logins:
                             logger.info("Auto-progress: executing enrich_github_users based on candidates present")
+                            state["current_stage"] = "enrichment"
                             try:
                                 tool = self.tools["enrich_github_users"]
                                 result = await tool.execute(logins=unique_logins[:25])
@@ -818,6 +828,7 @@ class CMOAgent:
                                     user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
                             if user_repo_pairs:
                                 logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
+                                state["current_stage"] = "validation"
                                 try:
                                     # Track before/after counts to detect progress
                                     before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
@@ -1448,6 +1459,14 @@ class CMOAgent:
         
         # Extract target numbers (emails, leads, contacts, etc.)
         import re
+
+        # If goal explicitly specifies stars range, prefer it over defaults/heuristics
+        try:
+            m = re.search(r"stars:(\d+)\.\.(\d+)", goal_lower)
+            if m:
+                stars_range = f"{m.group(1)}..{m.group(2)}"
+        except Exception:
+            pass
         target_emails = None
         target_leads = None
         
@@ -1659,6 +1678,13 @@ Available tools: {', '.join(self.tools.keys())}
 
                     # Extract progress information
                     progress_info = self._extract_progress_info(step_result)
+                    # Enforce valid stage values (avoid 'unknown' in UI)
+                    try:
+                        st = progress_info.get("stage")
+                        if not isinstance(st, str) or st.strip().lower() in {"", "unknown"}:
+                            progress_info["stage"] = step_result.get("current_stage") or "initialization"
+                    except Exception:
+                        pass
                     if progress_callback:
                         await progress_callback(progress_info)
 

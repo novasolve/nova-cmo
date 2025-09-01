@@ -13,6 +13,39 @@ export function ChatComposer({
   const [autonomy, setAutonomy] = useState<AutonomyLevel>("L2");
   const [budget, setBudget] = useState<number | undefined>(undefined);
 
+  // YAML-driven smoke test config (mirrors cmo_agent/config/smoke_prompt.yaml)
+  const SMOKE_YAML = `## YAML-driven smoke test config (no typed GOAL required)
+##
+## How to run:
+## - From repo root:
+##     make run-config CONFIG=cmo_agent/config/smoke_prompt.yaml
+##     make dry-run    CONFIG=cmo_agent/config/smoke_prompt.yaml
+## - Inline overrides (no file edits needed):
+##     make run-config CONFIG=cmo_agent/config/smoke_prompt.yaml SET="language=Go target_leads=50"
+##     make dry-run    CONFIG=cmo_agent/config/smoke_prompt.yaml SET="stars_range=500..5000 activity_days=60"
+##
+## Notes:
+## - pushed_since auto-computes to today - activity_days when null
+## - No goal string is required. If goal_template is omitted, a friendly
+##   display-only line is synthesized from params for logs/UI.
+
+version: 1
+
+# Parameters used to render the smoke-test prompt and display plan
+params:
+  language: "Python"
+  stars_range: "300..2000"
+  activity_days: 90
+  target_leads: 20
+  budget_per_day: 10
+
+# If provided, overrides computed pushed_since; otherwise computed as today - activity_days
+pushed_since: null # e.g., "2025-06-01"
+
+## Optional: You may still provide a goal_template to control the display line
+## goal_template: |
+##   Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>={{pushed_since}}; prioritize active {{activity_days}} days; export CSV.`;
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 flex-wrap">
@@ -47,7 +80,21 @@ export function ChatComposer({
             setBudget(e.target.value ? Number(e.target.value) : undefined)
           }
         />
-        {/* Quick action buttons removed */}
+        <button
+          className="text-xs px-3 py-1.5 rounded border bg-white text-gray-700 hover:bg-gray-50 border-gray-300"
+          onClick={() => {
+            // Prefer callback if provided; otherwise reuse onSend to go through the same /api/chat path
+            if (onSmokeTest) {
+              onSmokeTest();
+            } else {
+              onSend(SMOKE_YAML, { autonomy, budget });
+            }
+          }}
+          aria-label="Run built-in self-test using smoke YAML"
+          title="Run built-in self-test using smoke YAML"
+        >
+          🧪 Self‑Test
+        </button>
       </div>
 
       <div className="flex gap-2">

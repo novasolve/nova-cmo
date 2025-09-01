@@ -171,6 +171,27 @@ class CMOAgentAdapter:
             lines.append("\n" + "="*60)
             lines.append("📋 CAMPAIGN SUMMARY")
             lines.append("="*60)
+
+            # Goal & ICP overview
+            try:
+                if icp:
+                    goal_text = icp.get('goal')
+                    if goal_text:
+                        lines.append("\n🎯 GOAL:")
+                        lines.append(f"   {goal_text}")
+                    lines.append("\n🧭 ICP:")
+                    if icp.get('languages'):
+                        lines.append(f"   Languages: {', '.join(icp['languages'])}")
+                    if icp.get('stars_range'):
+                        lines.append(f"   Stars: {icp['stars_range']}")
+                    if icp.get('activity_days'):
+                        lines.append(f"   Activity: last {icp['activity_days']} days")
+                    if icp.get('keywords'):
+                        lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
+                    if icp.get('topics'):
+                        lines.append(f"   Topics: {', '.join(icp['topics'][:5])}")
+            except Exception:
+                pass
             
             # Repository Summary
             lines.append(f"\n📦 REPOSITORIES ANALYZED:")

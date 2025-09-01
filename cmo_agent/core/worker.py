@@ -447,6 +447,27 @@ class JobWorker:
         lines.append(f"\n{'='*60}")
         lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
         lines.append(f"{'='*60}")
+
+        # Goal & ICP overview
+        try:
+            if icp:
+                goal_text = icp.get('goal')
+                if goal_text:
+                    lines.append(f"\n🎯 GOAL:")
+                    lines.append(f"   {goal_text}")
+                lines.append(f"\n🧭 ICP:")
+                if icp.get('languages'):
+                    lines.append(f"   Languages: {', '.join(icp['languages'])}")
+                if icp.get('stars_range'):
+                    lines.append(f"   Stars: {icp['stars_range']}")
+                if icp.get('activity_days'):
+                    lines.append(f"   Activity: last {icp['activity_days']} days")
+                if icp.get('keywords'):
+                    lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
+                if icp.get('topics'):
+                    lines.append(f"   Topics: {', '.join(icp['topics'][:5])}")
+        except Exception:
+            pass
         
         # Repository Summary
         lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")
