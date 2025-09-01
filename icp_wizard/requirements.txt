@@ -1,14 +1,17 @@
-# Core dependencies for ICP Wizard
-langchain>=0.1.0
-langchain-openai>=0.1.0
-langchain-core>=0.2.0
-langgraph>=0.1.0
-langchain-community>=0.0.20
-openai>=1.0.0
+# ICP Wizard Dependencies
+# Core LangChain ecosystem
+langchain>=0.1.0,<1.0.0
+langchain-openai>=0.1.0,<1.0.0
+langchain-core>=0.2.0,<1.0.0
+langchain-community>=0.0.20,<1.0.0
 
-# Data processing
+# LangGraph for conversation flow
+langgraph>=0.1.0,<1.0.0
+
+# OpenAI and utilities
+openai>=1.0.0,<2.0.0
+python-dotenv>=1.0.0,<2.0.0
 PyYAML>=6.0
-python-dotenv>=1.0.0
 
 # Development and testing
 pytest>=7.0.0
@@ -17,5 +20,4 @@ black>=23.0.0
 flake8>=6.0.0
 mypy>=1.0.0
 
-# Logging and utilities
 typing-extensions>=4.5.0

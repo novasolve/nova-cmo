@@ -8,9 +8,12 @@ import os
 import sys
 import json
 import asyncio
+import hashlib
 from pathlib import Path
-from typing import Dict, List, Optional, Any, TypedDict
-from datetime import datetime
+from typing import Dict, List, Optional, Any, TypedDict, Tuple
+from datetime import datetime, timedelta
+from collections import defaultdict
+import pickle
 
 # Add parent directories to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,8 +27,194 @@ from langchain_openai import ChatOpenAI
 from lead_intelligence.core.beautiful_logger import beautiful_logger, log_header, log_separator
 
 
+class ConversationMemory:
+    """Advanced conversation memory system for ICP Wizard"""
+
+    def __init__(self, memory_dir: Optional[Path] = None):
+        self.memory_dir = memory_dir or Path("lead_intelligence/data/conversation_memory")
+        self.memory_dir.mkdir(parents=True, exist_ok=True)
+        self.user_memories = {}
+        self.session_context = {}
+        self.learning_patterns = defaultdict(lambda: defaultdict(int))
+
+    def _get_user_hash(self, user_identifier: str) -> str:
+        """Generate consistent hash for user identification"""
+        return hashlib.md5(user_identifier.encode()).hexdigest()
+
+    def load_user_memory(self, user_identifier: str) -> Dict[str, Any]:
+        """Load user's conversation memory and preferences"""
+        user_hash = self._get_user_hash(user_identifier)
+        memory_file = self.memory_dir / f"{user_hash}_memory.pkl"
+
+        if memory_file.exists():
+            try:
+                with open(memory_file, 'rb') as f:
+                    return pickle.load(f)
+            except Exception as e:
+                beautiful_logger.logger.warning(f"Could not load user memory: {e}")
+                return self._create_default_memory()
+
+        return self._create_default_memory()
+
+    def save_user_memory(self, user_identifier: str, memory: Dict[str, Any]):
+        """Save user's conversation memory and preferences"""
+        user_hash = self._get_user_hash(user_identifier)
+        memory_file = self.memory_dir / f"{user_hash}_memory.pkl"
+
+        try:
+            with open(memory_file, 'wb') as f:
+                pickle.dump(memory, f)
+        except Exception as e:
+            beautiful_logger.logger.error(f"Could not save user memory: {e}")
+
+    def _create_default_memory(self) -> Dict[str, Any]:
+        """Create default memory structure for new users"""
+        return {
+            "conversation_count": 0,
+            "successful_icps": [],
+            "preferred_icp_types": [],
+            "common_industries": [],
+            "technical_preferences": [],
+            "conversation_patterns": [],
+            "last_conversation": None,
+            "learning_data": {
+                "preferred_stages": {},
+                "successful_refinements": [],
+                "rejected_suggestions": []
+            }
+        }
+
+    def update_memory(self, user_identifier: str, conversation_data: Dict[str, Any]):
+        """Update user's memory with new conversation insights"""
+        memory = self.load_user_memory(user_identifier)
+
+        # Update conversation count
+        memory["conversation_count"] += 1
+
+        # Store successful ICP creation
+        if conversation_data.get("final_icp_config"):
+            icp_config = conversation_data["final_icp_config"]
+            memory["successful_icps"].append({
+                "icp_id": icp_config.get("icp_id"),
+                "timestamp": datetime.now().isoformat(),
+                "success_score": conversation_data.get("success_score", 1.0)
+            })
+
+        # Update preferences based on conversation
+        self._learn_from_conversation(memory, conversation_data)
+
+        # Keep only recent successful ICPs (last 10)
+        memory["successful_icps"] = memory["successful_icps"][-10:]
+
+        self.save_user_memory(user_identifier, memory)
+        return memory
+
+    def _learn_from_conversation(self, memory: Dict[str, Any], conversation_data: Dict[str, Any]):
+        """Learn patterns from successful conversations"""
+        messages = conversation_data.get("messages", [])
+
+        # Extract ICP preferences
+        if conversation_data.get("final_icp_config"):
+            icp_config = conversation_data["final_icp_config"]
+            icp_id = icp_config.get("icp_id", "")
+
+            # Add to preferred ICP types
+            if icp_id not in memory["preferred_icp_types"]:
+                memory["preferred_icp_types"].append(icp_id)
+
+        # Extract industry preferences from conversation
+        conversation_text = " ".join([msg.get("content", "") for msg in messages if msg.get("role") == "user"])
+        industries = self._extract_industries(conversation_text)
+        for industry in industries:
+            if industry not in memory["common_industries"]:
+                memory["common_industries"].append(industry)
+
+        # Extract technical preferences
+        tech_stack = self._extract_tech_preferences(conversation_text)
+        for tech in tech_stack:
+            if tech not in memory["technical_preferences"]:
+                memory["technical_preferences"].append(tech)
+
+    def _extract_industries(self, text: str) -> List[str]:
+        """Extract industry mentions from conversation text"""
+        industries = []
+        industry_keywords = {
+            "saas": ["saas", "software as a service", "cloud service"],
+            "fintech": ["fintech", "financial", "banking", "payment"],
+            "healthtech": ["healthtech", "healthcare", "medical", "health"],
+            "ecommerce": ["ecommerce", "e-commerce", "retail", "shopping"],
+            "ai": ["artificial intelligence", "ai", "machine learning", "ml"],
+            "blockchain": ["blockchain", "crypto", "cryptocurrency"],
+            "gaming": ["gaming", "game", "entertainment"],
+            "education": ["education", "learning", "edtech"],
+            "enterprise": ["enterprise", "b2b", "business software"]
+        }
+
+        text_lower = text.lower()
+        for industry, keywords in industry_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                industries.append(industry)
+
+        return industries
+
+    def _extract_tech_preferences(self, text: str) -> List[str]:
+        """Extract technical preferences from conversation text"""
+        tech_stack = []
+        tech_keywords = {
+            "python": ["python", "django", "flask", "fastapi"],
+            "javascript": ["javascript", "node", "react", "vue", "angular"],
+            "java": ["java", "spring", "kotlin"],
+            "golang": ["golang", "go"],
+            "rust": ["rust"],
+            "typescript": ["typescript"],
+            "mobile": ["ios", "android", "mobile", "react native"],
+            "cloud": ["aws", "azure", "gcp", "cloud"],
+            "devops": ["docker", "kubernetes", "ci/cd", "jenkins", "github actions"]
+        }
+
+        text_lower = text.lower()
+        for tech, keywords in tech_keywords.items():
+            if any(keyword in text_lower for keyword in keywords):
+                tech_stack.append(tech)
+
+        return tech_stack
+
+    def get_personalized_suggestions(self, user_identifier: str, current_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Get personalized suggestions based on user's history"""
+        memory = self.load_user_memory(user_identifier)
+
+        suggestions = {
+            "preferred_icps": memory.get("preferred_icp_types", [])[:3],
+            "common_industries": memory.get("common_industries", [])[:3],
+            "technical_preferences": memory.get("technical_preferences", [])[:3],
+            "conversation_count": memory.get("conversation_count", 0),
+            "success_rate": len(memory.get("successful_icps", [])) / max(memory.get("conversation_count", 1), 1)
+        }
+
+        return suggestions
+
+    def get_context_aware_prompt(self, user_identifier: str, base_prompt: str) -> str:
+        """Enhance prompts with user's historical context"""
+        memory = self.load_user_memory(user_identifier)
+        suggestions = self.get_personalized_suggestions(user_identifier, {})
+
+        if suggestions["conversation_count"] > 0:
+            context_addition = f"""
+
+Based on your previous conversations, I notice you often work with:
+- Preferred ICP types: {', '.join(suggestions['preferred_icps']) if suggestions['preferred_icps'] else 'None yet'}
+- Common industries: {', '.join(suggestions['common_industries']) if suggestions['common_industries'] else 'Various'}
+- Technical preferences: {', '.join(suggestions['technical_preferences']) if suggestions['technical_preferences'] else 'Mixed'}
+
+I can use this context to provide more personalized recommendations."""
+
+            return base_prompt + context_addition
+
+        return base_prompt
+
+
 class ICPWizardState(TypedDict):
-    """State for the ICP Wizard conversation"""
+    """Enhanced state for the ICP Wizard conversation with memory and context"""
     messages: List[Dict[str, Any]]
     user_profile: Dict[str, Any]
     current_icp: Optional[Dict[str, Any]]
@@ -33,18 +222,33 @@ class ICPWizardState(TypedDict):
     conversation_stage: str
     refinement_criteria: Dict[str, Any]
     final_icp_config: Optional[Dict[str, Any]]
+    # Enhanced memory and context features
+    conversation_memory: Dict[str, Any]
+    user_preferences: Dict[str, Any]
+    context_awareness: Dict[str, Any]
+    conversation_history: List[Dict[str, Any]]
+    learning_data: Dict[str, Any]
 
 
 class ICPWizard:
-    """Interactive ICP Wizard using LangGraph for conversational ICP discovery"""
+    """Enhanced Interactive ICP Wizard with memory and context awareness"""
 
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize the ICP Wizard with LangGraph"""
+    def __init__(self, api_key: Optional[str] = None, user_identifier: Optional[str] = None):
+        """Initialize the ICP Wizard with LangGraph and memory system"""
         self.api_key = api_key or os.environ.get('OPENAI_API_KEY')
         if not self.api_key:
             raise ValueError("OpenAI API key required. Set OPENAI_API_KEY environment variable.")
 
-        # Initialize LLM
+        # User identification for memory system
+        self.user_identifier = user_identifier or self._generate_user_id()
+
+        # Initialize memory system
+        self.memory_system = ConversationMemory()
+
+        # Load user's memory and preferences
+        self.user_memory = self.memory_system.load_user_memory(self.user_identifier)
+
+        # Initialize LLM with enhanced context
         self.llm = ChatOpenAI(
             model="gpt-4o",
             temperature=0.7,
@@ -54,8 +258,25 @@ class ICPWizard:
         # Load ICP options
         self.icp_options = self._load_icp_options()
 
-        # Create the conversation graph
+        # Create the enhanced conversation graph
         self.graph = self._create_conversation_graph()
+
+        # Initialize analytics tracking
+        self.analytics = {
+            "conversation_start_time": None,
+            "stage_transitions": [],
+            "user_satisfaction_score": None,
+            "completion_status": "in_progress"
+        }
+
+    def _generate_user_id(self) -> str:
+        """Generate a unique user identifier"""
+        import socket
+        import getpass
+
+        # Create a unique identifier based on system info
+        system_info = f"{socket.gethostname()}_{getpass.getuser()}_{datetime.now().strftime('%Y%m%d')}"
+        return hashlib.md5(system_info.encode()).hexdigest()[:8]
 
     def _load_icp_options(self) -> List[Dict[str, Any]]:
         """Load available ICP options from config"""
@@ -69,32 +290,107 @@ class ICPWizard:
             beautiful_logger.logger.warning(f"Could not load ICP config: {e}")
             return []
 
+    def _create_enhanced_initial_state(self) -> ICPWizardState:
+        """Create enhanced initial state with memory and context"""
+        # Get personalized suggestions from memory
+        personalized_suggestions = self.memory_system.get_personalized_suggestions(
+            self.user_identifier, {}
+        )
+
+        return {
+            "messages": [],
+            "user_profile": {
+                "identifier": self.user_identifier,
+                "conversation_count": personalized_suggestions.get("conversation_count", 0),
+                "success_rate": personalized_suggestions.get("success_rate", 0.0),
+                "preferred_icps": personalized_suggestions.get("preferred_icps", []),
+                "common_industries": personalized_suggestions.get("common_industries", []),
+                "technical_preferences": personalized_suggestions.get("technical_preferences", [])
+            },
+            "current_icp": None,
+            "icp_options": self.icp_options,
+            "conversation_stage": "greeting",
+            "refinement_criteria": {},
+            "final_icp_config": None,
+            # Enhanced memory and context features
+            "conversation_memory": self.user_memory,
+            "user_preferences": personalized_suggestions,
+            "context_awareness": {
+                "has_previous_conversations": personalized_suggestions.get("conversation_count", 0) > 0,
+                "preferred_stages": self.user_memory.get("learning_data", {}).get("preferred_stages", {}),
+                "conversation_context": []
+            },
+            "conversation_history": [],
+            "learning_data": {
+                "stage_transitions": [],
+                "user_feedback": [],
+                "improvement_suggestions": []
+            }
+        }
+
     def _create_conversation_graph(self) -> StateGraph:
-        """Create the LangGraph conversation flow"""
+        """Create the enhanced LangGraph conversation flow with memory"""
 
         def greeting_node(state: ICPWizardState) -> ICPWizardState:
-            """Initial greeting and ICP overview"""
+            """Enhanced greeting with memory and context awareness"""
             messages = state.get('messages', [])
+            user_profile = state.get('user_profile', {})
+            context_awareness = state.get('context_awareness', {})
 
-            greeting_prompt = """
-            You are an expert sales intelligence consultant helping a user discover their Ideal Customer Profile (ICP).
+            # Check if user has previous conversations
+            has_history = context_awareness.get('has_previous_conversations', False)
+            conversation_count = user_profile.get('conversation_count', 0)
 
-            Available ICPs:
-            {icp_list}
+            if has_history and conversation_count > 0:
+                # Personalized greeting for returning users
+                greeting_prompt = """
+                You are an expert sales intelligence consultant helping a user discover their Ideal Customer Profile (ICP).
 
-            Start by greeting the user and asking what type of customers they're looking for.
-            Be conversational and ask open-ended questions to understand their needs.
-            """
+                This is a returning user with {conversation_count} previous conversations and a {success_rate:.1f}% success rate.
+                Their preferences include:
+                - Preferred ICP types: {preferred_icps}
+                - Common industries: {common_industries}
+                - Technical preferences: {technical_preferences}
 
-            icp_list = "\n".join([
-                f"- {icp['id']}: {icp['name']}"
-                for icp in self.icp_options
-            ])
+                Welcome them back warmly and ask what specific type of customers or ICP they're looking for this time.
+                Keep your response conversational and ask open-ended questions to understand their current needs.
+                Don't list all available ICPs - focus on having a natural conversation first.
+                """
 
-            prompt = ChatPromptTemplate.from_template(greeting_prompt)
+                preferred_icps = ', '.join(user_profile.get('preferred_icps', [])) or 'Various'
+                common_industries = ', '.join(user_profile.get('common_industries', [])) or 'Various'
+                technical_preferences = ', '.join(user_profile.get('technical_preferences', [])) or 'Mixed'
+
+                formatted_prompt = greeting_prompt.format(
+                    conversation_count=conversation_count,
+                    success_rate=user_profile.get('success_rate', 0) * 100,
+                    preferred_icps=preferred_icps,
+                    common_industries=common_industries,
+                    technical_preferences=technical_preferences
+                )
+            else:
+                # Standard greeting for new users
+                greeting_prompt = """
+                You are an expert sales intelligence consultant helping a user discover their Ideal Customer Profile (ICP).
+
+                This appears to be their first conversation with the ICP Wizard.
+
+                Give a warm welcome and briefly explain that you'll help them discover their ideal customer profile through conversation.
+                Ask open-ended questions to understand:
+                - What type of customers they're targeting
+                - What industry or sector they're in
+                - What kind of companies they're looking for
+                - Any specific characteristics they have in mind
+
+                Keep it conversational and engaging. Don't overwhelm them with technical details.
+                """
+
+                formatted_prompt = greeting_prompt
+
+            prompt = ChatPromptTemplate.from_template(formatted_prompt)
             chain = prompt | self.llm
 
-            response = chain.invoke({"icp_list": icp_list})
+            response = chain.invoke({})
 
             new_message = {
                 "role": "assistant",
@@ -103,58 +399,83 @@ class ICPWizard:
                 "stage": "greeting"
             }
 
+            # Update analytics
+            self.analytics["conversation_start_time"] = datetime.now()
+            self.analytics["stage_transitions"].append({
+                "from_stage": "initial",
+                "to_stage": "greeting",
+                "timestamp": datetime.now().isoformat()
+            })
+
             return {
                 **state,
                 "messages": messages + [new_message],
-                "conversation_stage": "understanding_needs"
+                "conversation_stage": "awaiting_user_input",  # Wait for user response
+                "conversation_history": state.get('conversation_history', []) + [{
+                    "stage": "greeting",
+                    "timestamp": datetime.now().isoformat(),
+                    "message": new_message
+                }]
             }
 
         def understand_needs_node(state: ICPWizardState) -> ICPWizardState:
-            """Understand user needs and suggest ICPs"""
+            """Understand user needs and engage in conversation"""
             messages = state.get('messages', [])
             user_input = messages[-1]["content"] if messages else ""
 
+            # Get conversation context
+            conversation_history = [msg for msg in messages if msg.get('role') == 'user']
+            user_profile = state.get('user_profile', {})
+
             analysis_prompt = """
-            Analyze the user's input and suggest relevant ICPs from the available options.
+            You are having a conversation with a user about discovering their Ideal Customer Profile (ICP).
 
-            User input: {user_input}
+            Previous user messages in this conversation:
+            {conversation_history}
 
-            Available ICPs:
-            {icp_details}
+            Latest user input: "{user_input}"
 
-            Based on their response:
-            1. Identify which ICPs might be relevant
-            2. Ask clarifying questions if needed
-            3. Explain why certain ICPs match their needs
-            4. Ask for confirmation or more details
+            User profile context:
+            - Previous conversations: {conversation_count}
+            - Preferred ICPs: {preferred_icps}
+            - Common industries: {industries}
+            - Technical preferences: {tech_preferences}
 
-            Be conversational and help them refine their understanding.
+            Based on the conversation so far, respond naturally and:
+            1. Acknowledge what they've said
+            2. Ask relevant follow-up questions to understand their needs better
+            3. If you have enough information, suggest 2-3 relevant ICPs with brief explanations
+            4. Keep the conversation flowing - don't rush to conclusions
+            5. If they're not specific yet, ask about industry, company size, technology, or location
+
+            Be conversational, helpful, and engaging. Don't overwhelm them with technical details.
             """
 
-            icp_details = "\n".join([
-                f"• {icp['id']}: {icp['name']}\n  {icp.get('description', 'No description available')}"
-                for icp in self.icp_options
-            ])
+            conversation_text = "\n".join([f"- {msg['content']}" for msg in conversation_history[-3:]])  # Last 3 messages
 
             prompt = ChatPromptTemplate.from_template(analysis_prompt)
             chain = prompt | self.llm
 
             response = chain.invoke({
+                "conversation_history": conversation_text,
                 "user_input": user_input,
-                "icp_details": icp_details
+                "conversation_count": user_profile.get('conversation_count', 0),
+                "preferred_icps": ', '.join(user_profile.get('preferred_icps', [])) or 'None yet',
+                "industries": ', '.join(user_profile.get('common_industries', [])) or 'Various',
+                "tech_preferences": ', '.join(user_profile.get('technical_preferences', [])) or 'Mixed'
             })
 
             new_message = {
                 "role": "assistant",
                 "content": response.content,
                 "timestamp": datetime.now().isoformat(),
-                "stage": "analyzing_needs"
+                "stage": "understanding_needs"
             }
 
             return {
                 **state,
                 "messages": messages + [new_message],
-                "conversation_stage": "refining_icp"
+                "conversation_stage": "awaiting_user_input"  # Wait for user response
             }
 
         def refine_icp_node(state: ICPWizardState) -> ICPWizardState:
@@ -388,19 +709,18 @@ class ICPWizard:
         }
 
     async def start_conversation(self) -> Dict[str, Any]:
-        """Start the interactive ICP wizard conversation"""
-        log_header("🎯 Interactive ICP Wizard")
-        beautiful_logger.logger.info("Starting conversational ICP discovery...")
+        """Start the enhanced interactive ICP wizard conversation with memory"""
+        log_header("🎯 Enhanced Interactive ICP Wizard")
+        beautiful_logger.logger.info("Starting conversational ICP discovery with memory...")
 
-        initial_state: ICPWizardState = {
-            "messages": [],
-            "user_profile": {},
-            "current_icp": None,
-            "icp_options": self.icp_options,
-            "conversation_stage": "greeting",
-            "refinement_criteria": {},
-            "final_icp_config": None
-        }
+        # Create enhanced initial state with memory and context
+        initial_state = self._create_enhanced_initial_state()
+
+        # Log memory insights for returning users
+        if initial_state["context_awareness"]["has_previous_conversations"]:
+            beautiful_logger.logger.info(f"Loaded memory for user {self.user_identifier}")
+            beautiful_logger.logger.info(f"Previous conversations: {initial_state['user_profile']['conversation_count']}")
+            beautiful_logger.logger.info(f"Success rate: {initial_state['user_profile']['success_rate']:.1%}")
 
         print("\n🤖 Welcome to the Interactive ICP Wizard!")
         print("=" * 50)
@@ -422,27 +742,109 @@ class ICPWizard:
                 current_state = result
                 break
 
-            # Get user input
-            user_input = input("\n👤 You: ").strip()
+            # Check if we're awaiting user input
+            if result.get('conversation_stage') == 'awaiting_user_input':
+                # Get user input
+                user_input = input("\n👤 You: ").strip()
 
-            if user_input.lower() in ['quit', 'exit', 'q']:
-                print("\n👋 Goodbye! Feel free to restart the conversation anytime.")
-                break
+                if user_input.lower() in ['quit', 'exit', 'q']:
+                    print("\n👋 Goodbye! Feel free to restart the conversation anytime.")
+                    break
 
-            # Add user message to state
-            user_message = {
-                "role": "user",
-                "content": user_input,
-                "timestamp": datetime.now().isoformat(),
-                "stage": result.get('conversation_stage', 'user_input')
-            }
+                # Add user message to state and move to analysis phase
+                user_message = {
+                    "role": "user",
+                    "content": user_input,
+                    "timestamp": datetime.now().isoformat(),
+                    "stage": "user_response"
+                }
 
-            current_state = {
-                **result,
-                "messages": result['messages'] + [user_message]
-            }
+                current_state = {
+                    **result,
+                    "messages": result['messages'] + [user_message],
+                    "conversation_stage": "understanding_needs"  # Now analyze the user input
+                }
+            else:
+                # If not awaiting input, continue with current state
+                current_state = result
+
+        # Update memory with conversation results
+        self._update_conversation_memory(current_state)
 
         return current_state
+
+    def _update_conversation_memory(self, final_state: ICPWizardState):
+        """Update user's memory with conversation results"""
+        try:
+            # Calculate conversation metrics
+            conversation_data = {
+                "messages": final_state.get("messages", []),
+                "final_icp_config": final_state.get("final_icp_config"),
+                "conversation_stage": final_state.get("conversation_stage"),
+                "success_score": self._calculate_success_score(final_state),
+                "conversation_duration": self._calculate_conversation_duration(),
+                "stage_transitions": self.analytics.get("stage_transitions", [])
+            }
+
+            # Update memory system
+            updated_memory = self.memory_system.update_memory(
+                self.user_identifier,
+                conversation_data
+            )
+
+            # Log memory update
+            beautiful_logger.logger.info(f"Updated memory for user {self.user_identifier}")
+            if conversation_data["final_icp_config"]:
+                beautiful_logger.logger.info(f"Successful ICP creation: {conversation_data['final_icp_config']['icp_name']}")
+            else:
+                beautiful_logger.logger.info("Conversation completed without ICP creation")
+
+            # Update analytics
+            self.analytics["completion_status"] = "completed" if conversation_data["final_icp_config"] else "incomplete"
+
+        except Exception as e:
+            beautiful_logger.logger.error(f"Error updating conversation memory: {e}")
+
+    def _calculate_success_score(self, final_state: ICPWizardState) -> float:
+        """Calculate success score for the conversation"""
+        if not final_state.get("final_icp_config"):
+            return 0.0
+
+        # Base score for ICP creation
+        score = 0.5
+
+        # Bonus for quick completion
+        duration = self._calculate_conversation_duration()
+        if duration and duration < timedelta(minutes=10):
+            score += 0.3
+        elif duration and duration < timedelta(minutes=20):
+            score += 0.2
+
+        # Bonus for user profile completeness
+        user_profile = final_state.get("user_profile", {})
+        if user_profile.get("conversation_count", 0) > 1:
+            score += 0.2  # Returning user bonus
+
+        return min(score, 1.0)
+
+    def _calculate_conversation_duration(self) -> Optional[timedelta]:
+        """Calculate total conversation duration"""
+        start_time = self.analytics.get("conversation_start_time")
+        if start_time:
+            return datetime.now() - start_time
+        return None
+
+    def get_memory_insights(self) -> Dict[str, Any]:
+        """Get insights from user's memory for analytics"""
+        memory = self.memory_system.load_user_memory(self.user_identifier)
+        return {
+            "total_conversations": memory.get("conversation_count", 0),
+            "successful_icps": len(memory.get("successful_icps", [])),
+            "preferred_icp_types": memory.get("preferred_icp_types", []),
+            "common_industries": memory.get("common_industries", []),
+            "technical_preferences": memory.get("technical_preferences", []),
+            "success_rate": len(memory.get("successful_icps", [])) / max(memory.get("conversation_count", 1), 1)
+        }
 
     def run_wizard(self) -> Optional[Dict[str, Any]]:
         """Run the ICP wizard synchronously"""

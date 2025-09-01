@@ -33,17 +33,32 @@ def setup_environment():
         sys.exit(1)
 
 
-def run_icp_wizard(api_key: Optional[str] = None, output_file: Optional[str] = None) -> Optional[dict]:
-    """Run the interactive ICP wizard"""
+def run_icp_wizard(api_key: Optional[str] = None, output_file: Optional[str] = None, user_identifier: Optional[str] = None) -> Optional[dict]:
+    """Run the enhanced interactive ICP wizard with memory"""
     try:
-        log_header("🎯 Interactive ICP Wizard")
-        beautiful_logger.logger.info("Initializing ICP wizard...")
+        log_header("🎯 Enhanced Interactive ICP Wizard")
+        beautiful_logger.logger.info("Initializing ICP wizard with memory system...")
 
         # Setup environment
         setup_environment()
 
-        # Create and run wizard
-        wizard = ICPWizard(api_key=api_key)
+        # Create and run enhanced wizard
+        wizard = ICPWizard(api_key=api_key, user_identifier=user_identifier)
+
+        # Show memory insights for returning users
+        memory_insights = wizard.get_memory_insights()
+        if memory_insights["total_conversations"] > 0:
+            print(f"\n📊 Welcome back! You've had {memory_insights['total_conversations']} previous conversations")
+            print(f"   Success rate: {memory_insights['success_rate']:.1%}")
+
+            if memory_insights["preferred_icp_types"]:
+                print(f"   Your preferred ICPs: {', '.join(memory_insights['preferred_icp_types'])}")
+
+            if memory_insights["common_industries"]:
+                print(f"   Common industries: {', '.join(memory_insights['common_industries'])}")
+
+            print("   I'll use this context to provide more personalized recommendations!\n")
+
         result = wizard.run_wizard()
 
         if result and result.get('final_icp_config'):
@@ -56,6 +71,13 @@ def run_icp_wizard(api_key: Optional[str] = None, output_file: Optional[str] = N
             print(f"📊 ICP ID: {config['icp_id']}")
             print(f"🔧 Generated at: {config['generated_at']}")
             print()
+
+            # Show memory learning insights
+            if memory_insights["total_conversations"] > 0:
+                print("🧠 Memory System Update:")
+                print("   ✅ Your preferences have been saved for future conversations")
+                print("   📈 Success rate will improve with more interactions")
+                print()
 
             # Save configuration
             if output_file:
@@ -80,9 +102,14 @@ def run_icp_wizard(api_key: Optional[str] = None, output_file: Optional[str] = N
             print("\n🚀 Ready to run intelligence pipeline with this ICP!")
             print(f"   make intelligence ICP_CONFIG={output_path}")
 
+            # Show next steps
+            print("\n💡 Next time you run the wizard, I'll remember your preferences!")
+            print("   Run 'make wizard' again to see personalized recommendations.")
+
             return config
         else:
             print("\n❌ ICP wizard did not complete successfully")
+            print("💡 Your conversation preferences are still saved for next time!")
             return None
 
     except KeyboardInterrupt:
@@ -272,6 +299,10 @@ Examples:
                        help='Output file for ICP configuration (default: lead_intelligence/data/icp_wizard_config.json)')
     parser.add_argument('--api-key', '-k',
                        help='OpenAI API key (can also be set via OPENAI_API_KEY env var)')
+    parser.add_argument('--user-id', '-u',
+                       help='User identifier for memory system (auto-generated if not provided)')
+    parser.add_argument('--memory-stats', action='store_true',
+                       help='Show memory and conversation statistics')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose logging')
 
@@ -290,11 +321,14 @@ Examples:
         list_available_icps()
     elif args.details:
         show_icp_details(args.details)
+    elif args.memory_stats:
+        show_memory_stats(args.user_id)
     else:
         # Run interactive wizard
         config = run_icp_wizard(
             api_key=args.api_key,
-            output_file=args.output
+            output_file=args.output,
+            user_identifier=args.user_id
         )
 
         if config:
@@ -307,6 +341,57 @@ Examples:
                 print("Integration with intelligence pipeline would go here")
         else:
             print("\n❌ ICP wizard did not complete successfully")
+
+
+def show_memory_stats(user_identifier: Optional[str] = None):
+    """Show memory and conversation statistics"""
+    try:
+        log_header("🧠 Memory System Statistics")
+
+        # Setup environment to access memory system
+        setup_environment()
+
+        # Create wizard instance to access memory
+        wizard = ICPWizard(user_identifier=user_identifier)
+
+        memory_insights = wizard.get_memory_insights()
+
+        print("\n📊 Conversation Memory Overview:")
+        print("=" * 50)
+        print(f"User ID: {wizard.user_identifier}")
+        print(f"Total Conversations: {memory_insights['total_conversations']}")
+        print(f"Successful ICPs Created: {memory_insights['successful_icps']}")
+        print(f"Success Rate: {memory_insights['success_rate']:.1%}")
+
+        if memory_insights['preferred_icp_types']:
+            print(f"\n🎯 Preferred ICP Types:")
+            for icp in memory_insights['preferred_icp_types']:
+                print(f"   • {icp}")
+
+        if memory_insights['common_industries']:
+            print(f"\n🏭 Common Industries:")
+            for industry in memory_insights['common_industries']:
+                print(f"   • {industry}")
+
+        if memory_insights['technical_preferences']:
+            print(f"\n💻 Technical Preferences:")
+            for tech in memory_insights['technical_preferences']:
+                print(f"   • {tech}")
+
+        # Show memory file location
+        memory_dir = Path("lead_intelligence/data/conversation_memory")
+        memory_file = memory_dir / f"{wizard.user_identifier}_memory.pkl"
+        if memory_file.exists():
+            print(f"\n💾 Memory File: {memory_file}")
+            import time
+            print(f"📅 Last Modified: {time.ctime(memory_file.stat().st_mtime)}")
+
+        print("\n💡 The memory system learns from your conversations to provide")
+        print("   more personalized ICP recommendations over time!")
+
+    except Exception as e:
+        beautiful_logger.logger.error(f"Error showing memory stats: {e}")
+        print(f"❌ Error: {e}")
 
 
 if __name__ == "__main__":

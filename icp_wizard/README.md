@@ -15,6 +15,7 @@ A conversational AI-powered wizard for discovering and refining Ideal Customer P
 ### Prerequisites
 
 1. **OpenAI API Key**: Required for the conversational AI
+
    ```bash
    export OPENAI_API_KEY=your_openai_api_key_here
    ```
@@ -27,6 +28,7 @@ A conversational AI-powered wizard for discovering and refining Ideal Customer P
 ### Basic Usage
 
 #### Using Make Commands (Recommended)
+
 ```bash
 # Start the interactive ICP wizard
 make wizard
@@ -39,6 +41,7 @@ make icp-details ICP=icp01_pypi_maintainers
 ```
 
 #### Using Python Directly
+
 ```bash
 # Start the wizard
 python icp_wizard_cli.py
@@ -54,6 +57,7 @@ python icp_wizard_cli.py --output my_icp_config.json
 ```
 
 #### Integration with Intelligence System
+
 ```bash
 # Run wizard and automatically integrate
 python run_intelligence.py wizard
@@ -105,6 +109,7 @@ The wizard generates a comprehensive ICP configuration including:
 - **Disqualifiers**: Signals that rule out this ICP
 
 ### Example Output
+
 ```json
 {
   "icp_id": "icp01_pypi_maintainers",
@@ -124,6 +129,7 @@ The wizard generates a comprehensive ICP configuration including:
 ## Advanced Usage
 
 ### Custom API Keys
+
 ```bash
 # Use custom OpenAI API key
 python icp_wizard_cli.py --api-key sk-your-custom-key-here
@@ -134,6 +140,7 @@ python icp_wizard_cli.py
 ```
 
 ### Integration with Intelligence Pipeline
+
 ```bash
 # 1. Run the wizard
 make wizard
@@ -146,6 +153,7 @@ python run_intelligence.py wizard  # This runs wizard and pipeline together
 ```
 
 ### Batch Processing
+
 ```bash
 # Generate multiple ICP configs
 python icp_wizard_cli.py --output icp1_config.json
@@ -161,6 +169,7 @@ python run_intelligence.py --icp-config icp2_config.json --dry-run
 ### Common Issues
 
 **"OpenAI API key required"**
+
 ```bash
 # Set the environment variable
 export OPENAI_API_KEY=your_actual_openai_key
@@ -170,6 +179,7 @@ python icp_wizard_cli.py --api-key your_actual_openai_key
 ```
 
 **"Could not import ICP wizard"**
+
 ```bash
 # Install dependencies
 pip install -r icp_wizard/requirements.txt
@@ -180,10 +190,12 @@ python icp_wizard_cli.py
 ```
 
 **"No ICP options available"**
+
 - Check that `configs/icp/options.yaml` exists and contains ICP definitions
 - Ensure the YAML file is properly formatted
 
 ### Debug Mode
+
 ```bash
 # Enable verbose logging
 python icp_wizard_cli.py --verbose
