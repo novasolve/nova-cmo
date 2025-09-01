@@ -497,7 +497,9 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
 
         # Print summary
         if result.get('success'):
-            final_state = as_map(result.get('final_state'))
+            raw_final_state = as_map(result.get('final_state'))
+            # Extract the actual agent state data (nested under 'agent' key)
+            final_state = raw_final_state.get('agent', raw_final_state) if 'agent' in raw_final_state else raw_final_state
             report = as_map(result.get('report'))
             summary = as_map(report.get('summary'))
             counters = as_map(final_state.get('counters'))
@@ -571,7 +573,10 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                     return await run_campaign(next_goal, config_path=config_path, dry_run=dry_run, no_emoji=no_emoji, interactive=interactive)
         else:
             # Show summary even for failed campaigns to show what was accomplished
-            final_state = as_map(result.get('final_state'))
+            raw_final_state = as_map(result.get('final_state'))
+            # Extract the actual agent state data (nested under 'agent' key)
+            final_state = raw_final_state.get('agent', raw_final_state) if 'agent' in raw_final_state else raw_final_state
+            
             if final_state:
                 campaign_summary = _generate_campaign_summary(final_state, no_emoji)
                 print(campaign_summary)
