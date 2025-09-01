@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     if (process.env.API_URL) {
       try {
         const smokeJobPayload = {
-          goal: "Find 5 active Python maintainers from the last 30 days for smoke test validation",
+          goal: "Find maintainers of Python repos stars:1000..3000 pushed:>=2025-06-01; prioritize active 90 days; export CSV.",
           dryRun: false, // Make it a REAL run so we can see live progress
           config_path: null, // Use default config for real execution
           metadata: {
@@ -36,16 +36,16 @@ export async function POST(req: Request) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(smokeJobPayload),
         });
-        
+
         if (resp.ok) {
           const jobResult = await resp.json();
-          
+
           // Store the mapping so the events endpoint knows which job to stream
           const actualJobId = jobResult.job_id || jobResult.id;
           console.log(`Smoke test job result:`, jobResult);
           console.log(`Storing smoke test mapping: ${threadId} -> ${actualJobId}`);
           storeThreadJobMapping(threadId, actualJobId);
-          
+
           return new Response(JSON.stringify({
             success: true,
             jobId: actualJobId,
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
         }
       } catch (error) {
         console.error("Backend connection failed:", error);
-        
+
         // Return error response
         return new Response(JSON.stringify({
           success: false,
@@ -93,12 +93,12 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error("Smoke test API error:", error);
     return new Response(
-      JSON.stringify({ 
+      JSON.stringify({
         success: false,
         error: "Internal server error",
         timestamp: new Date().toISOString()
       }),
-      { 
+      {
         status: 500,
         headers: { "Content-Type": "application/json" },
       }

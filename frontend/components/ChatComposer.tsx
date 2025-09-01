@@ -56,7 +56,7 @@ export function ChatComposer({
                   if (onSmokeTest) {
                     onSmokeTest();
                   } else {
-                    const smokeTestGoal = "Find 3 Python maintainers active in the last 30 days for smoke test";
+                    const smokeTestGoal = "Find maintainers of Python repos stars:1000..3000 pushed:>=2025-06-01; prioritize active 90 days; export CSV.";
                     onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
                   }
                 } else if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {

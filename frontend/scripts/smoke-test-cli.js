@@ -11,17 +11,17 @@ const TIMEOUT_MS = 60000; // 60 seconds
 async function runSmokeTest() {
   console.log('🧪 Starting headless smoke test...');
   console.log(`📡 Backend: ${API_URL}`);
-  
+
   const startTime = Date.now();
   const threadId = `smoke-cli-${Date.now()}`;
-  
+
   try {
     // Start smoke test
     const response = await fetch(`${API_URL}/api/jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        goal: "Find 3 OSS Python maintainers active in the last 30 days",
+        goal: "Find maintainers of Python repos stars:1000..3000 pushed:>=2025-06-01; prioritize active 90 days; export CSV.",
         dryRun: true,
         config_path: "cmo_agent/config/smoke.yaml",
         metadata: {
@@ -40,10 +40,10 @@ async function runSmokeTest() {
 
     const job = await response.json();
     console.log(`✅ Job created: ${job.id}`);
-    
+
     // Monitor job events
     const eventSource = new (await import('eventsource')).default(`${API_URL}/api/jobs/${job.id}/events`);
-    
+
     const checks = {
       queue_stream: false,
       brief_rendered: false,
@@ -55,7 +55,7 @@ async function runSmokeTest() {
     };
 
     let eventsReceived = 0;
-    
+
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         eventSource.close();
@@ -64,14 +64,14 @@ async function runSmokeTest() {
 
       eventSource.onmessage = (event) => {
         eventsReceived++;
-        
+
         try {
           const data = JSON.parse(event.data);
-          
+
           // Update checks based on events
           if (data.event === 'job.progress') {
             checks.queue_stream = true;
-            
+
             if (data.data?.cards_rendered) {
               data.data.cards_rendered.forEach(cardType => {
                 if (cardType === 'campaign_brief') checks.brief_rendered = true;
@@ -82,24 +82,24 @@ async function runSmokeTest() {
               });
             }
           }
-          
+
           if (data.event === 'job.completed' || data.event === 'job.finished') {
             clearTimeout(timeout);
             eventSource.close();
-            
+
             const duration = Date.now() - startTime;
             const passedChecks = Object.values(checks).filter(Boolean).length;
             const totalChecks = Object.keys(checks).length;
             const passed = passedChecks === totalChecks;
-            
+
             console.log(`\n🏁 Smoke test completed in ${(duration/1000).toFixed(1)}s`);
             console.log(`📊 Results: ${passedChecks}/${totalChecks} checks passed`);
             console.log(`📈 Events received: ${eventsReceived}`);
-            
+
             Object.entries(checks).forEach(([check, passed]) => {
               console.log(`  ${passed ? '✅' : '❌'} ${check}`);
             });
-            
+
             if (passed) {
               console.log('\n🎉 Smoke test PASSED');
               resolve(0);
@@ -108,7 +108,7 @@ async function runSmokeTest() {
               resolve(1);
             }
           }
-          
+
         } catch (error) {
           console.log(`📡 Raw event: ${event.data}`);
         }
