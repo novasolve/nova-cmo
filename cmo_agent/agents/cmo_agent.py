@@ -2234,18 +2234,16 @@ Available tools: {', '.join(self.tools.keys())}
     async def _export_contactable_emails(self, job_id: str, leads: list, job_status: str):
         """Export contactable emails as CSV excluding noreply addresses"""
         try:
-            # Filter out GitHub noreply emails and duplicates
-            valid_emails = []
+            # Filter out noreply emails using unified function
+            from ..utils.email_utils import filter_contactable_emails
+
+            all_emails = []
             for lead in leads:
                 email = lead.get("email") or lead.get("primary_email")
-                if not email:
-                    continue
-                em = email.strip().lower()
-                if em.endswith("@users.noreply.github.com") or em.endswith("@noreply.github.com"):
-                    continue  # skip GitHub noreply addresses
-                # (Optionally, skip other blocked/bounced emails if flagged in lead data)
-                valid_emails.append(em)
-            valid_emails = sorted(set(valid_emails))
+                if email:
+                    all_emails.append(email)
+
+            valid_emails = filter_contactable_emails(all_emails)
             if not valid_emails:
                 return None
 

@@ -322,12 +322,12 @@ async def api_get_job_summary(job_id: str):
             except Exception:
                 pass
             try:
+                from ..utils.email_utils import is_noreply_email
+
                 for lead in (agent_state.get('leads') or []):
                     email = (lead or {}).get('email')
-                    if isinstance(email, str):
-                        el = email.lower()
-                        if '@' in el and 'noreply' not in el and 'no-reply' not in el:
-                            leads_with_emails_count += 1
+                    if isinstance(email, str) and not is_noreply_email(email):
+                        leads_with_emails_count += 1
             except Exception:
                 pass
 
@@ -408,10 +408,8 @@ async def api_get_job_summary(job_id: str):
                         for lead in leads:
                             if isinstance(lead, dict):
                                 email = (lead.get("email") or lead.get("best_email") or "")
-                                if isinstance(email, str):
-                                    el = email.lower()
-                                    if "@" in el and "noreply" not in el and "no-reply" not in el:
-                                        count_emailable += 1
+                                if isinstance(email, str) and not is_noreply_email(email):
+                                    count_emailable += 1
                         summary["leads_with_emails"] = max(summary.get("leads_with_emails", 0), count_emailable)
     except Exception:
         # Non-fatal enrichment failure
@@ -588,10 +586,11 @@ async def api_job_events(request: Request, job_id: str):
             try:
                 status = await engine.get_job_status(job_id)
                 if status:
-                    # If job already terminal, send terminal frame and exit (late connect)
+                    # If job already terminal, send terminal frame and keep alive briefly before exit (late connect)
                     if status["status"] in ["completed", "failed", "cancelled"]:
-                        # Replay a terminal event with summary/artifacts and close
+                        # Send terminal event with retry hint
                         yield "retry: 30000\n\n"
+                        # Keep connection alive for 10-15 seconds to prevent aggressive browser reconnects
                         # Try to build summary/artifacts snapshot from status/progress
                         summary = None
                         artifacts = status.get("artifacts") or []
@@ -623,7 +622,7 @@ async def api_job_events(request: Request, job_id: str):
                                         email = (lead or {}).get('email')
                                         if isinstance(email, str):
                                             el = email.lower()
-                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                            if not is_noreply_email(email):
                                                 leads_with_emails_count += 1
                                 except Exception:
                                     pass
@@ -655,6 +654,15 @@ async def api_job_events(request: Request, job_id: str):
                         }
                         yield "event: job_finalized\n"
                         yield f"data: {_json.dumps(final_evt)}\n\n"
+
+                        # Keep connection alive for 10-15 seconds before closing to prevent aggressive browser reconnects
+                        keep_alive_start = time.time()
+                        while time.time() - keep_alive_start < 12:  # 12 seconds
+                            if await request.is_disconnected():
+                                break
+                            yield ": keep-alive\n\n"
+                            await asyncio.sleep(3)  # Send keep-alive every 3 seconds
+
                         return
                     initial = {
                         "job_id": status["job_id"],
@@ -815,7 +823,7 @@ async def api_job_events(request: Request, job_id: str):
                                         email = (lead or {}).get('email')
                                         if isinstance(email, str):
                                             el = email.lower()
-                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                            if not is_noreply_email(email):
                                                 leads_with_emails_count += 1
                                 except Exception:
                                     pass

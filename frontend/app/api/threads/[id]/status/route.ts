@@ -17,13 +17,14 @@ export async function GET(
     let jobStatus = null;
 
     // If we have a job ID and backend is available, get real job status
-    if (currentJobId && process.env.API_URL) {
+    if (currentJobId) {
       try {
-        // Try to get job status from backend (this endpoint may not exist yet)
-        const jobResponse = await fetch(`${process.env.API_URL}/api/jobs/${currentJobId}/status`);
+        // Try to get job status from backend via proxy
+        const jobResponse = await fetch(`/api/jobs/${currentJobId}`);
 
         if (jobResponse.ok) {
-          jobStatus = await jobResponse.json();
+          const jobData = await jobResponse.json();
+          jobStatus = { status: jobData.status, current_stage: jobData.current_stage };
         }
       } catch (error) {
         console.warn("Could not fetch job status:", error);

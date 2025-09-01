@@ -61,7 +61,7 @@ export async function POST(req: Request) {
     // Check if this is a conversational message first
     if (isConversationalMessage(messageText)) {
       // Route to conversation endpoint
-      const convResp = await fetch(`${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:3000'}/api/chat-conversation`, {
+      const convResp = await fetch('/api/chat-conversation', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -134,9 +134,20 @@ export async function POST(req: Request) {
         };
 
         console.log(`Creating job for thread: ${threadId}`);
-        console.log(`Job payload:`, JSON.stringify(jobPayload, null, 2));
+        // Redact sensitive information from job payload before logging
+        const redactedPayload = {
+          ...jobPayload,
+          goal: jobPayload.goal.length > 50 ? jobPayload.goal.substring(0, 50) + "..." : jobPayload.goal,
+          metadata: {
+            ...jobPayload.metadata,
+            threadId: "[REDACTED]", // Don't log thread IDs
+            created_by: "[REDACTED]", // Don't log user info
+          }
+        };
+        console.log(`Job payload:`, JSON.stringify(redactedPayload, null, 2));
 
-        const resp = await fetch(`${process.env.API_URL}/api/jobs`, {
+        // Use proxy route instead of direct backend access
+        const resp = await fetch(`/api/jobs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(jobPayload),

@@ -15,31 +15,53 @@ export function Sidebar() {
     setCampaigns(getAllCampaigns());
   }, []);
 
-  // Refresh threads periodically and sync with backend
+  // Refresh threads periodically and sync with backend with exponential backoff
   useEffect(() => {
+    let syncInterval = 3000; // Start with 3 seconds
+    let consecutiveErrors = 0;
+    let timeoutId: NodeJS.Timeout;
+
     const syncWithBackend = async () => {
       try {
         // Sync backend jobs to thread storage
-        await fetch('/api/threads/sync', { method: 'POST' });
+        const response = await fetch('/api/threads/sync', { method: 'POST' });
+
+        if (response.ok) {
+          // Success - reset backoff
+          consecutiveErrors = 0;
+          syncInterval = 3000;
+        } else {
+          // Non-200 response - increase backoff
+          consecutiveErrors++;
+          syncInterval = Math.min(syncInterval * 1.5, 30000); // Max 30 seconds
+        }
 
         // Refresh local state
         setThreads(getAllThreads());
         setCampaigns(getAllCampaigns());
       } catch (error) {
         console.warn('Failed to sync with backend:', error);
+        // Network error - increase backoff
+        consecutiveErrors++;
+        syncInterval = Math.min(syncInterval * 1.5, 30000); // Max 30 seconds
+
         // Still refresh local state
         setThreads(getAllThreads());
         setCampaigns(getAllCampaigns());
       }
+
+      // Schedule next sync with current interval
+      timeoutId = setTimeout(syncWithBackend, syncInterval);
     };
 
     // Initial sync
     syncWithBackend();
 
-    // Periodic sync every 3 seconds
-    const interval = setInterval(syncWithBackend, 3000);
-
-    return () => clearInterval(interval);
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   const handleNewThread = () => {

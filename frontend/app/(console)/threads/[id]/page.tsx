@@ -1,75 +1,13 @@
 "use client";
-import React, { useMemo, useState } from "react";
-import { useJobStream } from "@/app/hooks/useJobStream";
-
-type Summary = {
-  duration_ms: number;
-  repos: number;
-  candidates: number;
-  leads_with_emails: number;
-};
-type Artifact = { kind: string; filename: string; bytes: number; url: string };
-
-export default function ThreadJobPage({ params }: { params: { id: string } }) {
-  const threadId = params.id;
-  const [finalStatus, setFinalStatus] = useState<string | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
-  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [events, setEvents] = useState<any[]>([]);
-  const jobId = useMemo(() => threadId, [threadId]);
-
-  useJobStream(jobId, {
-    onProgress: (evt) => setEvents((prev) => prev.concat(evt)),
-    onFinalized: (status, s, arts) => {
-      setFinalStatus(status);
-      setSummary(s);
-      setArtifacts(arts);
-    },
-  });
-
-  return (
-    <div className="space-y-4 p-4">
-      {summary && (
-        <div className="w-full rounded-2xl border p-4 flex items-center justify-between text-sm">
-          <span><b>{summary.leads_with_emails}</b> emails</span>
-          <span><b>{summary.candidates}</b> candidates</span>
-          <span><b>{summary.repos}</b> repos</span>
-          <span>⏱ {Math.round((summary.duration_ms||0)/1000)}s</span>
-        </div>
-      )}
-      {events.length > 0 && (
-        <pre className="text-xs whitespace-pre-wrap rounded-xl border p-3 max-h-72 overflow-auto">
-          {events.map((e, i) => <div key={i}>{JSON.stringify(e)}</div>)}
-        </pre>
-      )}
-      {artifacts.length > 0 && (
-        <div className="rounded-2xl border p-4">
-          <h3 className="font-semibold mb-2">Artifacts</h3>
-          <ul className="list-disc pl-5 text-sm">
-            {artifacts.map((a, i) => (
-              <li key={i}><a className="underline" href={a.url} target="_blank" rel="noreferrer">{a.filename}</a></li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {finalStatus && <div className="text-sm opacity-80">Job status: {finalStatus}</div>}
-    </div>
-  );
-}
-
-"use client";
-import { useEffect, useRef, useState, useCallback } from "react";
-import { ChatMessage, SSEEvent, LanggraphEvent } from "@/types";
+import { useEffect, useRef, useCallback, useState } from "react";
+import { ChatMessage, SSEEvent } from "@/types";
 import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
 import { useJobStream } from "@/app/hooks/useJobStream";
-import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
+import { autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
 import { getThread, createThread, updateThread } from "@/lib/threadStorage";
 import { useJobState } from "@/lib/jobContext";
-
-
-// Removed smoke test evaluator
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -89,10 +27,9 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
 
     // Check if there's an active job on a different thread and redirect if needed
     const checkForActiveJobs = async () => {
-      if (!process.env.API_URL) return;
-
       try {
-        const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`);
+        // Use proxy route to fetch jobs instead of direct backend access
+        const jobsResp = await fetch('/api/jobs');
         if (jobsResp.ok) {
           const jobs = await jobsResp.json();
 
@@ -127,7 +64,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     };
 
     checkForActiveJobs();
-  }, [id, setActiveThread]);
+  }, [id, setActiveThread, updateJobState]);
 
   // Load initial thread history
   useEffect(() => {
@@ -181,11 +118,12 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     } else if (evt.kind === "event" && evt.event) {
       const prev = jobStateRef.current;
       const e = evt.event;
-      const derivedStatus = e.status === 'error' ? 'failed' : (e.node === 'completion' ? 'completed' : 'running');
+      const derivedStatus = e.status === 'error' ? 'failed' :
+                           (e.node === 'completion' || e.evt === 'job_finalized') ? 'completed' : 'running';
 
       updateJobState({
         status: derivedStatus,
-        currentNode: e.node || prev.currentNode,
+        currentNode: e.node || (e.evt === 'job_finalized' ? 'completion' : prev.currentNode),
         progress: e.msg || prev.progress,
         metrics: {
           ...prev.metrics,
@@ -210,7 +148,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           role: "tool",
           createdAt: new Date().toISOString(),
           event: evt.event,
-        },
+        } as any,
       ]);
     }
     // Auto-scroll to bottom on new events
@@ -306,9 +244,6 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     setMessages((prev) => [...prev, userMessage]);
 
     // No special-casing: always go through chat API
-
-
-
     try {
       const res = await fetch(`/api/chat`, {
         method: "POST",
