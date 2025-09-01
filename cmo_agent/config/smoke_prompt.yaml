@@ -1,0 +1,71 @@
+# Enhanced Smoke Test Configuration with Beautiful Logging and tqdm Progress
+# This config enables the full beautiful logging experience with live progress bars
+
+max_steps: 40
+
+# Enable real execution to see tqdm progress bars
+features:
+  dry_run: false # Real execution for progress visibility
+  enable_auto_progress: true
+  enable_progress_streaming: true
+
+# Enhanced logging with beautiful console output and tqdm progress
+logging:
+  level: INFO
+  console: true
+  file: true
+  json_file: true
+  job_specific_files: true # Create separate log files per job
+  beautiful_console: true # Use beautiful console formatter with emojis
+  stage_logging: true # Enable automatic stage transition logging
+  progress_logging: true # Enable tqdm progress bars
+  correlation_ids: true # Ensure all logs have correlation IDs
+  metrics_snapshots: true # Log periodic metrics snapshots
+  alert_logging: true # Log alerts as they trigger
+  filename: "smoke_test.jsonl" # General log file name
+
+# Directory configuration
+directories:
+  logs: ./logs
+  checkpoints: ./checkpoints
+  artifacts: ./artifacts
+  exports: ./exports
+
+# Job configuration optimized for smoke tests
+job_config:
+  timeouts:
+    job_timeout: 600 # 10 minutes max for smoke test
+    step_timeout: 120 # 2 minutes max per step
+    api_timeout: 30 # 30 seconds max per API call
+  checkpoints:
+    enable_stage: true
+    time_interval: 300 # 5 minutes
+    step_interval: 10 # Every 10 steps for smoke test
+
+# Monitoring for smoke tests
+monitoring:
+  enabled: true
+  metrics_interval: 30 # More frequent metrics for smoke test
+  enable_prometheus: false
+
+# ICP for Python developers
+default_icp:
+  languages: ["python"]
+  stars_range: "300..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]
+  include_topics: ["ci", "testing", "pytest", "devtools"]
+
+# Email discovery configuration for smoke test
+email_search:
+  days: 180 # Look back 6 months for commits
+  batch_size: 10 # Users processed per batch
+  repos_per_user: 12 # Max repos per user to scan
+  commits_per_repo: 50 # Max commits per repo to fetch
+  include_committer_email: true
+  noop_streak_threshold: 2 # Stop after 2 failed attempts
+
+# Smoke test specific limits
+max_repos: 50
+max_people: 100
+max_leads: 25

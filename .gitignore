@@ -134,3 +134,12 @@ lead_intelligence/data/dedup.sqlite3
 *.hdf5
 
 _nova-cmo_mirror.git/
+
+# Logs
+logs/
+
+# Next.js build output
+frontend/.next/
+
+# Frontend dependencies
+frontend/node_modules/
