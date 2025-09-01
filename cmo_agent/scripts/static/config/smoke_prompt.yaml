@@ -3,9 +3,9 @@ version: 1
 # Parameters used to render the smoke-test prompt and display plan
 params:
   language: "Python"
-  stars_range: "1000..3000"
-  activity_days: 30
-  target_leads: 5
+  stars_range: "300..2000"
+  activity_days: 90
+  target_leads: 20
   budget_per_day: 10
 
 # If provided, overrides computed pushed_since; otherwise computed as today - activity_days

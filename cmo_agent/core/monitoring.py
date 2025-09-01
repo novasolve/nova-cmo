@@ -621,3 +621,23 @@ class JsonExtraFormatter(logging.Formatter):
             base["exc_info"] = self.formatException(record.exc_info)
             
         return json.dumps(base, ensure_ascii=False)
+
+
+# ---- Configuration helpers (backward-compatible) ----
+def configure_metrics_from_config(config: Dict[str, Any]) -> None:
+    """Configure metrics/logging from config.
+
+    Backward-compatible shim so callers can safely invoke this even if
+    metrics settings are minimal. Currently a no-op aside from validating
+    structure and optionally adjusting global logger level.
+    """
+    try:
+        log_cfg = (config or {}).get("logging", {})
+        if isinstance(log_cfg, dict):
+            level_name = str(log_cfg.get("level", "INFO")).upper()
+            level = getattr(logging, level_name, logging.INFO)
+            root = logging.getLogger()
+            root.setLevel(level)
+    except Exception:
+        # Be resilient; do not raise from configuration
+        pass

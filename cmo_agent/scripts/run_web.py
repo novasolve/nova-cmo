@@ -14,24 +14,34 @@ from fastapi import FastAPI, Request, Form, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 
 # Ensure project root on sys.path for absolute imports
 project_root = str(Path(__file__).resolve().parents[2])
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from cmo_agent.obs.logging import configure_logging, log, with_job_context
-from cmo_agent.middleware import RequestLogMiddleware
-
-# Configure structured logging early (route uvicorn logs through our handler via root logger)
-configure_logging("INFO")
 import logging as _logging
 for _name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
     _lg = _logging.getLogger(_name)
     _lg.propagate = True
-    # Avoid duplicate handlers; rely on root's structured handler
     _lg.handlers.clear()
+_logging.basicConfig(level=_logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+class RequestLogMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        try:
+            logger.info("http.request", extra={"structured": {"event": "http.request", "method": request.method, "path": request.url.path}})
+        except Exception:
+            pass
+        response = await call_next(request)
+        try:
+            logger.info("http.response", extra={"structured": {"event": "http.response", "status": response.status_code, "path": request.url.path}})
+        except Exception:
+            pass
+        return response
 
 # Load /Users/seb/leads/cmo_agent/.env or nearest .env upward from CWD
 load_dotenv(find_dotenv(usecwd=True))
@@ -373,7 +383,7 @@ async def api_job_events(request: Request, job_id: str):
     async def event_stream() -> AsyncIterator[str]:
         try:
             client = f"{request.client.host}:{request.client.port}" if request.client else "unknown"
-            log.info("sse_open", evt="sse_open", jobId=job_id, client=client)
+            logger.info("sse_open", extra={"structured": {"evt": "sse_open", "jobId": job_id, "client": client}})
         except Exception:
             pass
         import asyncio, json as _json
@@ -649,7 +659,7 @@ async def api_job_events(request: Request, job_id: str):
         finally:
             try:
                 reason = "client_abort" if await request.is_disconnected() else "completed"
-                log.info("sse_close", evt="sse_close", jobId=job_id, reason=reason)
+                logger.info("sse_close", extra={"structured": {"evt": "sse_close", "jobId": job_id, "reason": reason}})
             except Exception:
                 pass
 
@@ -692,7 +702,7 @@ async def api_job_events(request: Request, job_id: str):
 def main():
     import uvicorn
     port = int(os.getenv("CMO_WEB_PORT", "8000"))
-    uvicorn.run("cmo_agent.scripts.run_web:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run(app, host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":
