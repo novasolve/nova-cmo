@@ -234,13 +234,20 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       } catch {}
     },
     onFinalized: (status, summary, artifacts) => {
+      // De-dup terminal by checking last message content
+      let lastIsSame = false;
+      try {
+        const last = messages[messages.length - 1];
+        const base = summary ? `${summary.leads_with_emails}-${summary.repos}-${summary.candidates}` : "";
+        lastIsSame = !!last && typeof last.text === 'string' && !!base && last.text.includes(base);
+      } catch {}
       // Update job state and surface a capsule message
       updateJobState({
         status: status as any,
         progress: `Run ${status}`,
         events: jobStateRef.current.events,
       });
-      if (summary) {
+      if (summary && !lastIsSame) {
         // Find CSV artifact and construct a stable download path if present
         let csvName: string | null = null;
         try {

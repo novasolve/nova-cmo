@@ -320,13 +320,43 @@ class JobWorker:
                 record_job_completed(duration)
                 logger.info(f"Job {job.id} completed in {duration:.1f}s")
 
-            # Populate duration metric after completion
+            # Populate authoritative metrics after completion (repos/candidates/leads_with_emails/duration)
             try:
                 existing_metrics = dict(getattr(job.progress, 'metrics', {}) or {})
-                existing_metrics.update({'duration_ms': int(duration * 1000)})
+                # Recompute from final_state to ensure latest values
+                agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else {}
+                repos_count = 0
+                candidates_count = 0
+                leads_with_emails_count = 0
+                try:
+                    repos_count = len(agent_state.get('repos') or [])
+                except Exception:
+                    pass
+                try:
+                    candidates_count = len(agent_state.get('candidates') or [])
+                except Exception:
+                    pass
+                try:
+                    from ..utils.email_utils import keep_email
+                    seen = set()
+                    for lead in (agent_state.get('leads') or []):
+                        email = (lead or {}).get('email') or (lead or {}).get('primary_email') or (lead or {}).get('best_email')
+                        if isinstance(email, str) and keep_email(email):
+                            el = email.strip().lower()
+                            if el not in seen:
+                                seen.add(el)
+                    leads_with_emails_count = len(seen)
+                except Exception:
+                    pass
+                existing_metrics.update({
+                    'repos': int(repos_count),
+                    'candidates': int(candidates_count),
+                    'leads_with_emails': int(leads_with_emails_count),
+                    'duration_ms': int(duration * 1000),
+                })
                 job.update_progress(metrics=existing_metrics)
             except Exception as e:
-                logger.debug(f"Failed to attach duration metric for job {job.id}: {e}")
+                logger.debug(f"Failed to attach final metrics for job {job.id}: {e}")
 
             # Emit final progress to stream
             if job.id in self.queue._progress_streams:
