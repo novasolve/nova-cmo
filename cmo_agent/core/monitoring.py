@@ -579,7 +579,32 @@ class JsonExtraFormatter(logging.Formatter):
         if record.exc_info:
             base["exc_info"] = self.formatException(record.exc_info)
 
-        return json.dumps(base, ensure_ascii=False)
+        return json.dumps(base, ensure_ascii=False, default=_safe_json_default)
+
+
+def _safe_json_default(obj: Any) -> Any:
+    """Best-effort serializer for objects that aren't JSON serializable.
+
+    - datetime -> ISO string
+    - Exception -> ClassName(message)
+    - Objects with __dict__ -> short type tag
+    - Fallback -> str(obj)
+    """
+    try:
+        from datetime import date, datetime as _dt
+        if isinstance(obj, _dt):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if isinstance(obj, BaseException):
+            return f"{obj.__class__.__name__}({obj})"
+        # Avoid dumping large internal state; just record the type
+        return f"<{obj.__class__.__name__}>"
+    except Exception:
+        try:
+            return str(obj)
+        except Exception:
+            return "<unserializable>"
 
 
 # ---------- Prometheus (optional) ----------

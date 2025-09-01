@@ -441,6 +441,61 @@ class GitHubScraper:
         print("❌ No backup tokens have sufficient rate limit available")
         return False
 
+    def check_rate_limit(self):
+        """Check current GitHub API rate limit status"""
+        url = "https://api.github.com/rate_limit"
+        response = self.session.get(url, headers=self.headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            core = data.get('resources', {}).get('core', {})
+            search = data.get('resources', {}).get('search', {})
+
+            print("\n📊 GitHub API Rate Limit Status:")
+            print(f"   Core API: {core.get('remaining', 0)}/{core.get('limit', 5000)} remaining")
+            print(f"   Search API: {search.get('remaining', 0)}/{search.get('limit', 30)} remaining")
+
+            # Check if we're close to limits
+            if core.get('remaining', 0) < 100:
+                reset_time = core.get('reset', 0)
+                current_time = time.time()
+                minutes_until_reset = max(0, (reset_time - current_time) / 60)
+                print(f"   ⚠️  Warning: Low on API calls! Resets in {minutes_until_reset:.1f} minutes")
+
+            return core.get('remaining', 0), search.get('remaining', 0)
+        return None, None
+
+    def _try_rotate_token(self) -> bool:
+        """Try to rotate to a backup token with available rate limit"""
+        if len(self.tokens) <= 1:
+            return False
+
+        print("🔄 Attempting to rotate to backup token...")
+
+        # Try each token
+        for i, token in enumerate(self.tokens):
+            if token == self.token:
+                continue  # Skip current token
+
+            # Test the token's rate limit
+            test_headers = self._get_headers(token)
+            test_resp = self.session.get('https://api.github.com/rate_limit', headers=test_headers, timeout=10)
+
+            if test_resp.status_code == 200:
+                data = test_resp.json()
+                core_remaining = data.get('resources', {}).get('core', {}).get('remaining', 0)
+
+                if core_remaining > 100:  # Need at least 100 calls
+                    print(f"✅ Switching to backup token {i+1} with {core_remaining} API calls remaining")
+                    self.token = token
+                    self.headers = test_headers
+                    return True
+                else:
+                    print(f"   Token {i+1}: Only {core_remaining} calls remaining (need >100)")
+
+        print("❌ No backup tokens have sufficient rate limit available")
+        return False
+
     def _normalize_domain(self, value: Optional[str]) -> Optional[str]:
         """Extract and normalize a domain from an email or URL string."""
         if not value:

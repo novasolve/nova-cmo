@@ -1419,7 +1419,10 @@ Available tools: {', '.join(self.tools.keys())}
             finalization_result = await self._finalize_job(job_meta.job_id, final_state, job_status)
 
             # Auto-save output files to logs directory
-            await self._save_output_files_to_logs(job_meta.job_id, final_state, finalization_result)
+            try:
+                await self._save_output_files_to_logs(job_meta.job_id, final_state, finalization_result)
+            except Exception as e:
+                logger.warning(f"Failed to save output files: {e}")
 
             return {
                 "success": not job_failed,
