@@ -1,47 +1,103 @@
 export const runtime = "nodejs";
+// prevent any ISR-style caching on this API route
+export const revalidate = 0;
 
 import { storeThreadJobMapping } from "@/lib/threadJobMapping";
 import { autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
 
-// Detect if a message is conversational vs a campaign goal
-function isConversationalMessage(text: string): boolean {
-  const conversationalPatterns = [
-    /^(hi|hello|hey|what's|how are|how's|what are|tell me|explain|why|can you|could you|would you)/i,
-    /\?$/,  // Questions
-    /^(thanks|thank you|ok|okay|cool|nice|great)/i,
-    /(going on|what's up|status|update|progress)/i
-  ];
-
-  const campaignPatterns = [
+// Detect if a message is conversational vs a campaign goal using LLM
+async function isConversationalMessage(text: string): Promise<boolean> {
+  // Quick fallback for obvious cases to avoid LLM calls
+  const quickCampaignPatterns = [
     /find \d+/i,
     /(python|javascript|react|go|rust) (maintainers|developers|contributors)/i,
     /(export|csv|leads|campaign|sequence)/i,
-    /active.*(days?|months?)/i,
   ];
-
-  // If it matches campaign patterns, it's probably a job goal
-  if (campaignPatterns.some(pattern => pattern.test(text))) {
+  
+  if (quickCampaignPatterns.some(pattern => pattern.test(text))) {
     return false;
   }
+  
+  try {
+    // Use OpenAI to classify the message
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a classifier that determines if a user message is:
+1. CONVERSATIONAL: General chat, questions about the system, greetings, thanks, status inquiries
+2. CAMPAIGN: Instructions to find leads, create campaigns, export data, or perform specific business tasks
 
-  // If it matches conversational patterns, it's a chat message
-  return conversationalPatterns.some(pattern => pattern.test(text));
+Respond with exactly "CONVERSATIONAL" or "CAMPAIGN" - nothing else.`
+          },
+          {
+            role: 'user',
+            content: text
+          }
+        ],
+        max_tokens: 10,
+        temperature: 0,
+      }),
+    });
+
+    if (!response.ok) {
+      // Fallback to simple heuristics if LLM fails
+      return text.includes('?') || /^(hi|hello|hey|what's|how|tell me|explain)/i.test(text);
+    }
+
+    const result = await response.json();
+    const classification = result.choices?.[0]?.message?.content?.trim().toUpperCase();
+    
+    return classification === 'CONVERSATIONAL';
+  } catch (error) {
+    console.error('LLM classification failed, using fallback:', error);
+    // Fallback to simple heuristics
+    return text.includes('?') || /^(hi|hello|hey|what's|how|tell me|explain)/i.test(text);
+  }
 }
 import { getThread, createThread, updateThread, generateThreadName } from "@/lib/threadStorage";
 
 export async function GET(req: Request) {
-  // Simply return an empty conversation or a message to prevent 404
+  const url = new URL(req.url);
+  const threadId = url.searchParams.get("threadId");
+
+  const headers = {
+    "Content-Type": "application/json",
+    // ensure browsers & frameworks don't cache this endpoint
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+  } as const;
+
+  if (!threadId) {
+    // Success with empty history stops SWR/React-Query from retrying.
+    return new Response(JSON.stringify({
+      success: true,
+      threadId: null,
+      messages: [],
+    }), { status: 200, headers });
+  }
+
+  const thread = getThread(threadId);
+  const messages = (thread as any)?.messages ?? [];
+
   return new Response(JSON.stringify({
-    success: false,
-    message: "No chat history available."
-  }), {
-    status: 200,
-    headers: { "Content-Type": "application/json" }
-  });
+    success: true,
+    threadId,
+    messages,
+    lastActivity: thread?.lastActivity ?? null,
+    updatedAt: (thread as any)?.updatedAt ?? null,
+  }), { status: 200, headers });
 }
 
 export async function POST(req: Request) {
   try {
+    const url = new URL(req.url); // used to construct absolute URLs for internal fetches
     const body = await req.json();
     const { threadId, text, message, options } = body;
     const messageText = text || message; // Support both 'text' and 'message' parameters
@@ -59,9 +115,9 @@ export async function POST(req: Request) {
     }
 
     // Check if this is a conversational message first
-    if (isConversationalMessage(messageText)) {
+    if (await isConversationalMessage(messageText)) {
       // Route to conversation endpoint
-      const convResp = await fetch('/api/chat-conversation', {
+      const convResp = await fetch(`${url.origin}/api/chat-conversation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -144,7 +200,7 @@ export async function POST(req: Request) {
     };
     console.log(`Job payload:`, JSON.stringify(redactedPayload, null, 2));
 
-    const resp = await fetch(`/api/jobs`, {
+    const resp = await fetch(`${url.origin}/api/jobs`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(jobPayload),

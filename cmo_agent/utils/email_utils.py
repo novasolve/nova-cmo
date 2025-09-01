@@ -9,17 +9,38 @@ from typing import List, Union
 # Unified noreply patterns - comprehensive coverage
 NOREPLY_PATTERNS = [
     # GitHub noreply addresses
-    r'@users\.noreply\.github\.com$',
-    r'@noreply\.github\.com$',
+    r'noreply@github\.com',
+    r'users\.noreply\.github\.com',
     # Generic noreply patterns
-    r'@.*noreply.*\.',
-    r'@.*no-reply.*\.',
+    r'noreply',
+    r'no-reply',
     # Common role-based emails that shouldn't be contacted
-    r'@.*admin@.*\.',
-    r'@.*info@.*\.',
-    r'@.*support@.*\.',
-    r'@.*hello@.*\.',
-    r'@.*contact@.*\.',
+    r'admin@',
+    r'info@',
+    r'support@',
+    r'hello@',
+    r'contact@',
+    r'team@',
+    r'security@',
+    r'legal@',
+    r'compliance@',
+    r'marketing@',
+    r'sales@',
+    # Corporate team emails (like torax-team@google.com)
+    r'-team@',
+    r'\.team@',
+    # Bot/automation emails
+    r'bot@',
+    r'automation@',
+    r'ci@',
+    r'build@',
+    # Generic corporate domains that are typically not personal
+    r'@google\.com$',
+    r'@microsoft\.com$',
+    r'@amazon\.com$',
+    r'@meta\.com$',
+    r'@facebook\.com$',
+    r'@apple\.com$',
 ]
 
 NOREPLY_REGEX = re.compile('|'.join(NOREPLY_PATTERNS), re.IGNORECASE)
@@ -68,6 +89,19 @@ def filter_contactable_emails(emails: Union[List[str], str]) -> List[str]:
 
     return list(set(contactable))  # Remove duplicates
 
+
+def keep_email(email: str) -> bool:
+    """
+    Minimal hygiene check for whether an email should be kept for outreach.
+
+    Returns True for valid, contactable emails; False for noreply/role or invalid.
+    """
+    if not email or not isinstance(email, str):
+        return False
+    email_lower = email.strip().lower()
+    if "@" not in email_lower:
+        return False
+    return not is_noreply_email(email_lower)
 
 def count_noreply_emails(emails: Union[List[str], str]) -> int:
     """

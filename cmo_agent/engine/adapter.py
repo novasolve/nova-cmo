@@ -154,7 +154,7 @@ class CMOAgentAdapter:
             # Collect emails
             all_emails = set()
             contactable_emails = []
-            
+
             for lead in leads:
                 email = lead.get('email')
                 if email and '@' in email and 'noreply' not in email.lower():
@@ -165,6 +165,30 @@ class CMOAgentAdapter:
                         'company': lead.get('company', ''),
                         'followers': lead.get('followers', 0)
                     })
+
+            # Create contactable emails CSV file
+            if contactable_emails:
+                try:
+                    import os
+                    from pathlib import Path
+
+                    # Create exports directory if it doesn't exist
+                    export_dir = Path('./exports')
+                    export_dir.mkdir(exist_ok=True)
+
+                    # Generate job ID from timestamp if not available
+                    job_id = f"cmo-{final_state.get('timestamp', 'unknown')}"[:20]
+
+                    csv_path = export_dir / f"{job_id}_leads_contactable.csv"
+                    csv_content = '\n'.join([contact['email'] for contact in contactable_emails])
+
+                    with open(csv_path, 'w') as f:
+                        f.write(csv_content)
+
+                    print(f"DEBUG: Created contactable emails CSV at {csv_path} with {len(contactable_emails)} emails")
+
+                except Exception as e:
+                    print(f"DEBUG: Failed to create contactable emails CSV: {e}")
             
             # Build summary
             lines = []

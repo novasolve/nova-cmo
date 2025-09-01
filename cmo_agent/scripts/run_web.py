@@ -325,7 +325,8 @@ async def api_get_job_summary(job_id: str):
                 from ..utils.email_utils import is_noreply_email
 
                 for lead in (agent_state.get('leads') or []):
-                    email = (lead or {}).get('email')
+                    # Check both email and primary_email fields to match export logic
+                    email = (lead or {}).get('email') or (lead or {}).get('primary_email')
                     if isinstance(email, str) and not is_noreply_email(email):
                         leads_with_emails_count += 1
             except Exception:
@@ -407,7 +408,8 @@ async def api_get_job_summary(job_id: str):
                         count_emailable = 0
                         for lead in leads:
                             if isinstance(lead, dict):
-                                email = (lead.get("email") or lead.get("best_email") or "")
+                                # Check email, primary_email, and best_email fields to match export logic
+                                email = (lead.get("email") or lead.get("primary_email") or lead.get("best_email") or "")
                                 if isinstance(email, str) and not is_noreply_email(email):
                                     count_emailable += 1
                         summary["leads_with_emails"] = max(summary.get("leads_with_emails", 0), count_emailable)
@@ -415,10 +417,21 @@ async def api_get_job_summary(job_id: str):
         # Non-fatal enrichment failure
         pass
 
+    # Enrich artifacts with download URLs
+    artifacts = status.get("artifacts") or []
+    enriched_artifacts = []
+    for artifact in artifacts:
+        if isinstance(artifact, dict) and artifact.get("artifact_id"):
+            enriched_artifact = dict(artifact)
+            enriched_artifact["download_url"] = f"/api/artifacts/{artifact['artifact_id']}"
+            enriched_artifacts.append(enriched_artifact)
+        else:
+            enriched_artifacts.append(artifact)
+    
     return {
         "status": status.get("status"),
         "summary": summary,
-        "artifacts": status.get("artifacts") or [],
+        "artifacts": enriched_artifacts,
     }
 
 

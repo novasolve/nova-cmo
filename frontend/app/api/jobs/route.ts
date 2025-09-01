@@ -1,4 +1,6 @@
 export const runtime = "nodejs";
+// Disable any ISR-style caching for this API route
+export const revalidate = 0;
 
 // Proxy for jobs list (GET) and job creation (POST)
 export async function GET() {
@@ -25,7 +27,11 @@ export async function GET() {
     const data = await resp.json();
     return new Response(JSON.stringify(data), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // prevent browsers/frameworks from caching this proxy
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      },
     });
   } catch (error) {
     return new Response(JSON.stringify({

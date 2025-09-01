@@ -77,6 +77,17 @@ class SearchGitHubRepos(GitHubTool):
         try:
             raw_q = (q or "").strip()
 
+            # Normalize malformed topics query: topics:a,b,c -> topic:a topic:b topic:c
+            if "topics:" in raw_q:
+                import re
+                # Capture topics:<comma-separated> until whitespace or end
+                topics_match = re.search(r"topics:([^\s]+)", raw_q)
+                if topics_match:
+                    topics_str = topics_match.group(1)
+                    topic_list = [t.strip() for t in topics_str.split(',') if t.strip()]
+                    replacement = " ".join([f"topic:{t}" for t in topic_list])
+                    raw_q = re.sub(r"topics:[^\s]+", replacement, raw_q).strip()
+
             # Optional structured constraints (when ICP was not inlined in q)
             language: str = (kwargs.get("language") or "").strip()
             stars_range: str = (kwargs.get("stars_range") or "").strip()
@@ -177,6 +188,33 @@ class SearchGitHubRepos(GitHubTool):
 
             queries_to_run: List[str] = shard_queries if shard_queries else [raw_q]
 
+            # Helpers for graceful degradation of overly strict or invalid queries
+            import re as _re2
+            def _drop_topics(qtext: str) -> str:
+                return _re2.sub(r"\b-?topic:[^\s]+", "", qtext).strip()
+
+            def _drop_free_keywords(qtext: str) -> str:
+                tokens = qtext.split()
+                keep = []
+                logical = {"OR", "AND", "NOT", "(" , ")"}
+                for t in tokens:
+                    if ":" in t or t in logical or t.startswith("(") or t.endswith(")"):
+                        keep.append(t)
+                return " ".join(keep).strip()
+
+            def _widen_stars(qtext: str) -> str:
+                # Convert stars:X..Y -> stars:>=max(10, X//2); stars:>N -> stars:>=max(10, N//2)
+                m = _re2.search(r"stars:(\d+)\.\.(\d+)", qtext)
+                if m:
+                    low = max(10, int(m.group(1)) // 2 or 1)
+                    return _re2.sub(r"stars:>=" + str(low), qtext)
+                m2 = _re2.search(r"stars:>=?(\d+)", qtext)
+                if m2:
+                    low = max(10, int(m2.group(1)) // 2 or 1)
+                    return _re2.sub(r"stars:>=" + str(low), qtext)
+                # If no stars present, add a permissive lower bound
+                return (qtext + " stars:>=10").strip()
+
             for qtext in queries_to_run:
                 if len(repos) >= max_repos:
                     break
@@ -185,12 +223,63 @@ class SearchGitHubRepos(GitHubTool):
                     params["q"] = qtext
                     params["page"] = page
 
-                    result = await _safe_search(params)
+                    # Try search with graceful degradation on 422 or zero results
+                    try:
+                        result = await _safe_search(params)
+                    except Exception as e:
+                        # Detect GitHub 422 Unprocessable Entity and degrade the query
+                        status = getattr(e, "status", None)
+                        if status == 422 or "422" in str(e):
+                            logger.warning("GitHub returned 422 for query; dropping topics and retrying")
+                            qtext = _drop_topics(qtext)
+                            params["q"] = qtext
+                            try:
+                                result = await _safe_search(params)
+                            except Exception as e2:
+                                status2 = getattr(e2, "status", None)
+                                if status2 == 422 or "422" in str(e2):
+                                    logger.warning("Still 422; dropping free-text keywords and retrying")
+                                    qtext = _drop_free_keywords(qtext)
+                                    params["q"] = qtext
+                                    try:
+                                        result = await _safe_search(params)
+                                    except Exception as e3:
+                                        status3 = getattr(e3, "status", None)
+                                        if status3 == 422 or "422" in str(e3):
+                                            logger.warning("Still 422; widening stars and retrying")
+                                            qtext = _widen_stars(qtext)
+                                            params["q"] = qtext
+                                            result = await _safe_search(params)
+                                        else:
+                                            raise
+                                else:
+                                    raise
+                        else:
+                            raise
 
                     # Track total available results from GitHub
                     if total_available is None and result.get("total_count") is not None:
                         total_available = result["total_count"]
                         logger.info(f"GitHub reports {total_available} total repositories available for query")
+
+                    # If query is too strict (zero results on first page), progressively relax
+                    if page == 1 and result.get("total_count") == 0:
+                        logger.info("Zero results; relaxing query by dropping topics → keywords → widening stars")
+                        relaxed = _drop_topics(qtext)
+                        if relaxed != qtext:
+                            qtext = relaxed
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            relaxed = _drop_free_keywords(qtext)
+                            if relaxed != qtext:
+                                qtext = relaxed
+                                params["q"] = qtext
+                                result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _widen_stars(qtext)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
 
                     items = result.get("items", [])
                     if not items:
@@ -354,7 +443,7 @@ class ExtractPeople(GitHubTool):
             except Exception:
                 repos_sorted = repos
 
-            for repo in repos_sorted[:50]:  # Limit to avoid rate limits
+            for repo in repos_sorted[:200]:  # Limit to prevent rate limiting issues
                 try:
                     # Tolerate minimal/malformed repo inputs
                     repo_full_name = repo.get("full_name") or repo.get("repo_full_name")

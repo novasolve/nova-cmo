@@ -15,16 +15,24 @@ export function Sidebar() {
     setCampaigns(getAllCampaigns());
   }, []);
 
-  // Refresh threads periodically and sync with backend with exponential backoff
+  // Refresh threads periodically and sync with backend with exponential backoff.
+  // Only run while tab is visible to avoid background polling.
   useEffect(() => {
     let syncInterval = 3000; // Start with 3 seconds
     let consecutiveErrors = 0;
     let timeoutId: NodeJS.Timeout;
 
+    const isVisible = () => typeof document !== 'undefined' ? !document.hidden : true;
+
     const syncWithBackend = async () => {
+      if (!isVisible()) {
+        // Skip sync while hidden and try again later
+        timeoutId = setTimeout(syncWithBackend, Math.min(syncInterval * 2, 30000));
+        return;
+      }
       try {
         // Sync backend jobs to thread storage
-        const response = await fetch('/api/threads/sync', { method: 'POST' });
+        const response = await fetch('/api/threads/sync', { method: 'POST', cache: 'no-store' });
 
         if (response.ok) {
           // Success - reset backoff

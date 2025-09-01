@@ -607,6 +607,18 @@ class CMOAgent:
             ) or 60
             try:
                 response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=llm_timeout)
+                
+                # Track token usage if available
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    usage = response.usage_metadata
+                    tokens_used = getattr(usage, 'total_tokens', 0) or (
+                        getattr(usage, 'input_tokens', 0) + getattr(usage, 'output_tokens', 0)
+                    )
+                    if tokens_used > 0:
+                        state.setdefault("counters", {})
+                        state["counters"]["tokens"] = state["counters"].get("tokens", 0) + tokens_used
+                        logger.debug(f"Added {tokens_used} tokens to counter, total: {state['counters']['tokens']}")
+                
             except asyncio.TimeoutError:
                 logger.error(f"LLM timed out after {llm_timeout}s; continuing with auto-progression")
                 state.setdefault("errors", []).append({
@@ -692,6 +704,26 @@ class CMOAgent:
                         if hasattr(self, 'beautiful_logger') and self.beautiful_logger:
                             hydrated_args['beautiful_logger'] = self.beautiful_logger
 
+                        # Update stage before execution for immediate progress updates
+                        stage_map = {
+                            "search_github_repos": "discovery",
+                            "extract_people": "extraction", 
+                            "enrich_github_users": "enrichment",
+                            "enrich_github_user": "enrichment",
+                            "find_commit_emails_batch": "validation",
+                            "find_commit_emails": "validation",
+                            "mx_check": "validation",
+                            "score_icp": "scoring",
+                            "render_copy": "personalization",
+                            "send_instantly": "sending",
+                            "sync_attio": "sync",
+                            "sync_linear": "sync",
+                            "export_csv": "export",
+                            "done": "completed"
+                        }
+                        if tool_name in stage_map:
+                            state["current_stage"] = stage_map[tool_name]
+                        
                         result = await tool.execute(**hydrated_args)
 
                         # Store result
@@ -1263,7 +1295,9 @@ class CMOAgent:
                         
                         # Add topics
                         if icp.get("topics"):
-                            query_parts.extend(icp["topics"][:3])  # Limit to avoid too long query
+                            # Add topics as separate topic: parameters
+                            for topic in icp["topics"][:3]:  # Limit to avoid too long query
+                                query_parts.append(f"topic:{topic}")
                         
                         if query_parts:
                             hydrated["q"] = " ".join(query_parts)
@@ -1876,6 +1910,10 @@ Available tools: {', '.join(self.tools.keys())}
             "failed": "Failed",
         }
 
+        # Ensure we never return "unknown" as a stage
+        if current_stage == "unknown" or not current_stage:
+            current_stage = "initialization"
+        
         progress_info = {
             "stage": stage_names.get(current_stage, current_stage),
             "step": counters.get("steps", 0),
@@ -1887,7 +1925,7 @@ Available tools: {', '.join(self.tools.keys())}
                 "leads_enriched": len(state.get("leads", [])),
                 "emails_to_send": len(state.get("to_send", [])),
             },
-            "current_item": f"Processing {current_stage} phase",
+            "current_item": f"Processing {stage_names.get(current_stage, current_stage)} phase",
         }
 
         # Add estimated completion if we have progress data
@@ -2105,6 +2143,8 @@ Available tools: {', '.join(self.tools.keys())}
         artifacts = []
 
         try:
+            print(f"DEBUG: _collect_artifacts called for job {job_id}")
+            print(f"DEBUG: final_state keys: {list(final_state.keys()) if final_state else 'None'}")
             # Always collect available data regardless of completion status
             if final_state:
                 # Collect repositories data
@@ -2112,14 +2152,28 @@ Available tools: {', '.join(self.tools.keys())}
                 if repos:
                     artifacts.append(await self._export_repos_data(job_id, repos, job_status))
 
-                # Collect leads data
-                leads = final_state.get("leads", [])
+                # Collect leads data - handle nested structure
+                leads_data = final_state.get("leads", {})
+                if isinstance(leads_data, dict) and "leads" in leads_data:
+                    leads = leads_data["leads"]
+                else:
+                    leads = leads_data if isinstance(leads_data, list) else []
+
                 if leads:
+                    print(f"DEBUG: Found {len(leads)} leads for job {job_id}, exporting data")
+                    logger.info(f"Found {len(leads)} leads for job {job_id}, exporting data")
                     artifacts.append(await self._export_leads_data(job_id, leads, job_status))
                     # Also export contactable emails as CSV
+                    print(f"DEBUG: Exporting contactable emails for job {job_id}")
+                    logger.info(f"Exporting contactable emails for job {job_id}")
                     contact_art = await self._export_contactable_emails(job_id, leads, job_status)
                     if contact_art:
+                        print(f"DEBUG: Adding contactable emails artifact to job {job_id}")
+                        logger.info(f"Adding contactable emails artifact to job {job_id}")
                         artifacts.append(contact_art)
+                    else:
+                        print(f"DEBUG: No contactable emails artifact created for job {job_id}")
+                        logger.warning(f"No contactable emails artifact created for job {job_id}")
 
                 # Collect candidates data
                 candidates = final_state.get("candidates", [])
@@ -2234,6 +2288,8 @@ Available tools: {', '.join(self.tools.keys())}
     async def _export_contactable_emails(self, job_id: str, leads: list, job_status: str):
         """Export contactable emails as CSV excluding noreply addresses"""
         try:
+            print(f"DEBUG: Exporting contactable emails for job {job_id}, found {len(leads)} leads")
+            logger.info(f"Exporting contactable emails for job {job_id}, found {len(leads)} leads")
             # Filter out noreply emails using unified function
             from ..utils.email_utils import filter_contactable_emails
 
@@ -2241,18 +2297,24 @@ Available tools: {', '.join(self.tools.keys())}
             for lead in leads:
                 email = lead.get("email") or lead.get("primary_email")
                 if email:
-                    all_emails.append(email)
+                    # Strip quotes that may be present in CSV data
+                    clean_email = email.strip('"').strip("'")
+                    all_emails.append(clean_email)
 
+            logger.info(f"Found {len(all_emails)} total emails for job {job_id}")
             valid_emails = filter_contactable_emails(all_emails)
-            if not valid_emails:
-                return None
+            logger.info(f"Found {len(valid_emails)} valid contactable emails for job {job_id}")
+            # Always attach CSV artifact even if no contactable emails were found
+            # (empty file signals completion with zero emails)
 
             # Write CSV content (one email per line)
             export_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
             job_dir = export_dir / job_id
             job_dir.mkdir(parents=True, exist_ok=True)
             csv_path = job_dir / "leads_contactable.csv"
-            csv_path.write_text("\n".join(valid_emails))
+            csv_content = "\n".join(valid_emails) if valid_emails else ""
+            csv_path.write_text(csv_content)
+            logger.info(f"Wrote {len(valid_emails)} contactable emails to {csv_path}")
 
             # Register artifact in index
             artifact_id = await self.artifact_manager.store_artifact(
@@ -2264,6 +2326,7 @@ Available tools: {', '.join(self.tools.keys())}
                 compress=False,
                 tags=["contactable", job_status]
             )
+            logger.info(f"Stored contactable emails artifact with ID: {artifact_id}")
 
             # Overwrite path to point to the CSV file we wrote (artifact manager stored a JSON, but we want the CSV file for download)
             meta = await self.artifact_manager.get_artifact_metadata(artifact_id)

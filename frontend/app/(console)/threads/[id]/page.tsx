@@ -21,11 +21,27 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const jobStateRef = useRef(jobState);
   useEffect(() => { jobStateRef.current = jobState; }, [jobState]);
 
+  // Stage label mapping and pretty printer
+  const STAGE_LABEL: Record<string, string> = {
+    initialization: "Initializing",
+    discovery: "Searching repositories",
+    enrichment: "Enriching people",
+    outreach: "Preparing outreach",
+    completed: "Completed",
+    failed: "Failed",
+  };
+  const prettyStage = (s: string) => STAGE_LABEL[s] ?? s;
+
+  // Keep last seen progress and tool event to dedupe consecutive repeats
+  const lastProgressRef = useRef<{ stage: string; current_item: string }>({ stage: "", current_item: "" });
+  const lastToolEventRef = useRef<any>(null);
+
   // Set active thread for job context and check for thread mismatches
   useEffect(() => {
     setActiveThread(id);
 
     // Check if there's an active job on a different thread and redirect if needed
+    // Only check once per thread to avoid excessive API calls
     const checkForActiveJobs = async () => {
       try {
         // Use proxy route to fetch jobs instead of direct backend access
@@ -63,8 +79,13 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       }
     };
 
-    checkForActiveJobs();
-  }, [id, setActiveThread, updateJobState]);
+    // Only run once per thread navigation to avoid spamming
+    const hasCheckedForThread = sessionStorage.getItem(`checked_active_jobs_${id}`);
+    if (!hasCheckedForThread) {
+      checkForActiveJobs();
+      sessionStorage.setItem(`checked_active_jobs_${id}`, 'true');
+    }
+  }, [id]); // Only depend on thread ID, not the functions
 
   // Load initial thread history
   useEffect(() => {
@@ -119,11 +140,17 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
       const prev = jobStateRef.current;
       const e = evt.event;
       const derivedStatus = e.status === 'error' ? 'failed' :
-                           (e.node === 'completion' || e.evt === 'job_finalized') ? 'completed' : 'running';
+                           (e.node === 'completion' || e.msg === 'job_finalized') ? 'completed' : 'running';
+
+      // De-duplicate identical consecutive events for cleaner UI (compare stable fields)
+      const prevEvents = prev.events;
+      const last = prevEvents[prevEvents.length - 1];
+      const isRepeat = !!last && last.node === e.node && last.status === e.status && (last.msg || "") === (e.msg || "");
+      const nextEvents = isRepeat ? prevEvents : [...prevEvents, e];
 
       updateJobState({
         status: derivedStatus,
-        currentNode: e.node || (e.evt === 'job_finalized' ? 'completion' : prev.currentNode),
+        currentNode: e.node || (e.msg === 'job_finalized' ? 'completion' : prev.currentNode),
         progress: e.msg || prev.progress,
         metrics: {
           ...prev.metrics,
@@ -131,7 +158,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
           totalCost: (prev.metrics.totalCost || 0) + (e.costUSD || 0),
           avgLatency: e.latencyMs ?? prev.metrics.avgLatency
         },
-        events: [...prev.events, e].slice(-50)
+        events: nextEvents.slice(-50)
       });
 
       // Stop streaming once job completes or fails
@@ -139,17 +166,22 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
         setCurrentJobId(null);
       }
 
-      // Also attach event to messages for chat display
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID(),
-          threadId: id,
-          role: "tool",
-          createdAt: new Date().toISOString(),
-          event: evt.event,
-        } as any,
-      ]);
+      // Also attach event to messages for chat display (dedup consecutive tool events)
+      const lastTool = lastToolEventRef.current;
+      const isSameToolEvent = lastTool && lastTool.node === e.node && lastTool.status === e.status && (lastTool.msg || "") === (e.msg || "");
+      if (!isSameToolEvent) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "tool",
+            createdAt: new Date().toISOString(),
+            event: evt.event,
+          } as any,
+        ]);
+        lastToolEventRef.current = e;
+      }
     }
     // Auto-scroll to bottom on new events
     setTimeout(() => {
@@ -177,8 +209,16 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     onProgress: (evt) => {
       try {
         const data: any = (evt && (evt.data || evt)) || {};
-        const stage = data.stage || data.node || data.event || "working";
+        const rawStage = data.stage || data.node || data.event || "working";
+        const stage = prettyStage(String(rawStage));
         const item = data.current_item || data.message || data.msg || "";
+
+        // Deduplicate identical consecutive progress updates
+        const last = lastProgressRef.current;
+        if (last.stage === stage && (last.current_item || "") === (item || "")) {
+          return;
+        }
+        lastProgressRef.current = { stage, current_item: item || "" };
 
         // Append a compact progress line into chat for visibility
         setMessages((prev) => [
