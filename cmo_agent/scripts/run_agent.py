@@ -223,11 +223,12 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                 'action': '🚀 ' if not no_emoji else '',
             }
             
-            # Extract data
-            repos = final_state.get('repos', [])
-            candidates = final_state.get('candidates', [])
-            leads = final_state.get('leads', [])
-            icp = final_state.get('icp', {})
+            # Extract data - check if data is nested under 'agent' key (from checkpoint structure)
+            agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else final_state
+            repos = agent_state.get('repos', [])
+            candidates = agent_state.get('candidates', [])
+            leads = agent_state.get('leads', [])
+            icp = agent_state.get('icp', {})
             
             # Collect all emails found with detailed analysis
             all_emails = set()
@@ -529,6 +530,13 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             chart = "📊 " if not no_emoji else ""
             email_icon = "📧 " if not no_emoji else ""
             building = "🏢 " if not no_emoji else ""
+            
+            # Debug: Check what data we're getting
+            print(f"\n🔍 DEBUG: final_state keys: {list(final_state.keys())}")
+            if 'repos' in final_state:
+                print(f"🔍 DEBUG: repos count: {len(final_state.get('repos', []))}")
+            if 'icp' in final_state:
+                print(f"🔍 DEBUG: icp data: {final_state.get('icp', {})}")
             
             # Generate detailed campaign summary
             campaign_summary = _generate_campaign_summary(final_state, no_emoji)
