@@ -1,0 +1,30 @@
+max_steps: 40
+features:
+  dry_run: false # Enable real execution to see tqdm progress
+logging:
+  level: INFO
+  console: true
+  file: true
+  json_file: true
+  job_specific_files: true # Create separate log files per job
+  beautiful_console: true # Use beautiful console formatter with emojis
+  stage_logging: true # Enable automatic stage transition logging
+  progress_logging: true # Enable tqdm progress bars
+  correlation_ids: true # Ensure all logs have correlation IDs
+  metrics_snapshots: true # Log periodic metrics snapshots
+  alert_logging: true # Log alerts as they trigger
+directories:
+  logs: ./logs
+  checkpoints: ./checkpoints
+  artifacts: ./artifacts
+  exports: ./exports
+job_config:
+  checkpoints:
+    enable_stage: false
+    time_interval: 900 # 15 minutes for smoke runs to avoid frequent writes
+
+default_icp:
+  languages: ["python"]
+  stars_range: "300..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]
