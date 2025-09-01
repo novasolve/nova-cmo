@@ -184,6 +184,18 @@ export async function POST(req: Request) {
         budget_per_day: options?.budget || 50,
         created_by: "chat_console",
         created_at: new Date().toISOString()
+      },
+      // Plumb prompt params into config for agent ICP
+      config: {
+        prompt_params: {
+          // naive parse: extract first integer in message as target_leads if present
+          target_leads: (() => { try { const m = messageText.match(/\b(\d{1,3})\b/); return m ? parseInt(m[1], 10) : undefined; } catch { return undefined; } })(),
+          language: options?.language,
+          stars_range: options?.stars_range,
+          activity_days: options?.activity_days,
+          pushed_since: options?.pushed_since,
+          topics: options?.topics,
+        }
       }
     };
 
