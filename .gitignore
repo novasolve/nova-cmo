@@ -144,3 +144,4 @@ frontend/.next/
 # Frontend dependencies
 frontend/node_modules/
 cmo_agent/.env
+cmo_agent/checkpoints/

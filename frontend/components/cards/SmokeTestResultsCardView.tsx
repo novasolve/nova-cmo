@@ -1,5 +1,5 @@
 "use client";
-import { ActionButton } from "./ActionButton";
+import { ActionButton } from "../ActionButton";
 import { ActionButton as ActionButtonType } from "@/types";
 
 export interface SmokeTestResultsCard {

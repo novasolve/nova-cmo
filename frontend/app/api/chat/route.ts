@@ -98,7 +98,8 @@ export async function POST(req: Request) {
         const jobPayload = {
           goal: messageText,
           dryRun: autopilot === 0, // L0 = dry run, L1+ = real execution
-          config_path: isSmokeTest ? "cmo_agent/config/smoke.yaml" : null,
+          // Route smoke test chats to the canonical YAML config
+          config_path: isSmokeTest ? "cmo_agent/config/smoke_prompt.yaml" : null,
           metadata: {
             threadId,
             autopilot_level: autopilot,

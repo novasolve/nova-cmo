@@ -1857,12 +1857,31 @@ Available tools: {', '.join(self.tools.keys())}
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             checkpoint_file = checkpoints_dir / f"{job_id}_{checkpoint_type}_{timestamp}.json"
 
-            # Prepare checkpoint data
+            # Prepare checkpoint data - EXCLUDE SENSITIVE CONFIG
+            state_copy = dict(state)
+            
+            # Remove or sanitize sensitive data from config
+            if "config" in state_copy and isinstance(state_copy["config"], dict):
+                config_copy = dict(state_copy["config"])
+                
+                # Remove API keys and tokens
+                sensitive_keys = [
+                    "GITHUB_TOKEN", "OPENAI_API_KEY", "INSTANTLY_API_KEY", 
+                    "ATTIO_API_KEY", "ATTIO_ACCESS_TOKEN", "LINEAR_API_KEY",
+                    "LANGFUSE_SECRET_KEY", "SMTP_PASSWORD", "DATABASE_URL"
+                ]
+                
+                for key in sensitive_keys:
+                    if key in config_copy:
+                        config_copy[key] = "***REDACTED***"
+                
+                state_copy["config"] = config_copy
+            
             checkpoint_data = {
                 "job_id": job_id,
                 "checkpoint_type": checkpoint_type,
                 "timestamp": datetime.now().isoformat(),
-                "state": state,
+                "state": state_copy,
                 "counters": state.get("counters", {}),
                 "progress": state.get("progress", {}),
             }

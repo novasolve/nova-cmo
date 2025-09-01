@@ -35,7 +35,7 @@ async function buildSmokeGoalFromYaml(): Promise<{ goal: string; params: any }> 
     }
 
     const tpl = doc?.goal_template ||
-      "Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>= {{pushed_since}}; prioritize active {{activity_days}} days; export CSV.";
+      "Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>={{pushed_since}}; prioritize active {{activity_days}} days; export CSV.";
     const goal = tpl
       .replace(/{{language}}/g, language)
       .replace(/{{stars_range}}/g, stars)
@@ -61,7 +61,8 @@ export async function POST(req: Request) {
         const smokeJobPayload = {
           goal: built.goal,
           dryRun: false, // Make it a REAL run so we can see live progress
-          config_path: null, // Use default config for real execution
+          // Force backend to use the same YAML config as local runs
+          config_path: "cmo_agent/config/smoke_prompt.yaml",
           metadata: {
             threadId,
             autopilot_level: 0, // L0 for safety but real execution
