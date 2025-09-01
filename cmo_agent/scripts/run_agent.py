@@ -100,6 +100,16 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
         _setup_logging_from_config(config)
         configure_metrics_from_config(config)
 
+        # Validate required credentials early to avoid noisy retries
+        github_token = str(config.get("GITHUB_TOKEN") or "").strip()
+        if not dry_run:
+            if not github_token:
+                logger.error("GITHUB_TOKEN is not set. Set it in your environment or .env, or pass --dry-run to skip external API calls.")
+                return {"success": False, "error": "Missing GITHUB_TOKEN"}
+            # Warn on suspicious token formats (best-effort; tokens may change format)
+            if not (github_token.startswith("ghp_") or github_token.startswith("github_pat_")):
+                logger.warning("GITHUB_TOKEN format doesn't match common patterns (ghp_*, github_pat_*). Continuing, but GitHub may return 401/403.")
+
         # Initialize agent
         agent = CMOAgent(config)
         logger.info("CMO Agent initialized successfully")

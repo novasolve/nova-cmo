@@ -1058,6 +1058,44 @@ class CMOAgent:
             # Shallow copy to avoid mutating original
             hydrated = dict(args or {})
 
+            if tool_name == "search_github_repos":
+                # Auto-fill ICP criteria from state if not provided
+                icp = state.get("icp", {})
+                if icp:
+                    # Add language filter if not specified
+                    if not hydrated.get("language") and icp.get("languages"):
+                        hydrated["language"] = icp["languages"][0]  # Use first language
+                    
+                    # Add stars range if not specified
+                    if not hydrated.get("stars_range") and icp.get("stars_range"):
+                        hydrated["stars_range"] = icp["stars_range"]
+                    
+                    # Add activity days if not specified
+                    if not hydrated.get("activity_days") and icp.get("activity_days"):
+                        hydrated["activity_days"] = icp["activity_days"]
+                    
+                    # Build search query from ICP if not provided
+                    if not hydrated.get("q") or hydrated.get("q").strip() == "":
+                        query_parts = []
+                        
+                        # Add keywords
+                        if icp.get("keywords"):
+                            query_parts.extend(icp["keywords"])
+                        
+                        # Add topics
+                        if icp.get("topics"):
+                            query_parts.extend(icp["topics"][:3])  # Limit to avoid too long query
+                        
+                        if query_parts:
+                            hydrated["q"] = " ".join(query_parts)
+                            note = f"[auto] Built search query from ICP: {hydrated['q']}"
+                        else:
+                            # Fallback to generic search
+                            hydrated["q"] = "python testing"
+                            note = "[auto] Using fallback search query"
+                    
+                return hydrated, note
+
             if tool_name == "enrich_github_users":
                 # Prefer candidates from state over LLM-supplied examples
                 if not hydrated.get("logins"):
@@ -1143,12 +1181,90 @@ class CMOAgent:
         except Exception:
             return args, None
 
+    def _parse_goal_to_icp(self, goal: str) -> Dict[str, Any]:
+        """Parse the goal string to extract ICP criteria"""
+        goal_lower = goal.lower()
+        
+        # Extract language
+        languages = []
+        if "python" in goal_lower:
+            languages.append("python")
+        elif "javascript" in goal_lower or "js" in goal_lower:
+            languages.append("javascript")
+        elif "java" in goal_lower:
+            languages.append("java")
+        elif "go" in goal_lower:
+            languages.append("go")
+        elif "rust" in goal_lower:
+            languages.append("rust")
+        else:
+            languages = ["python"]  # Default to Python
+        
+        # Extract activity window
+        activity_days = 90  # Default
+        if "30 days" in goal_lower:
+            activity_days = 30
+        elif "60 days" in goal_lower:
+            activity_days = 60
+        elif "90 days" in goal_lower:
+            activity_days = 90
+        elif "6 months" in goal_lower:
+            activity_days = 180
+        elif "1 year" in goal_lower:
+            activity_days = 365
+        
+        # Extract keywords and topics
+        keywords = []
+        topics = []
+        
+        if "developer" in goal_lower or "dev" in goal_lower:
+            keywords.append("developer")
+            topics.extend(["development", "coding"])
+        if "maintainer" in goal_lower:
+            keywords.append("maintainer")
+            topics.extend(["maintenance", "open-source"])
+        if "testing" in goal_lower or "test" in goal_lower:
+            topics.extend(["testing", "qa", "pytest"])
+        if "ai" in goal_lower or "ml" in goal_lower or "machine learning" in goal_lower:
+            topics.extend(["ai", "ml", "machine-learning"])
+        if "web" in goal_lower:
+            topics.extend(["web", "frontend", "backend"])
+        
+        # Extract stars range
+        stars_range = "100..2000"  # Default
+        if "popular" in goal_lower or "high star" in goal_lower:
+            stars_range = "500..10000"
+        elif "small" in goal_lower or "new" in goal_lower:
+            stars_range = "10..500"
+        
+        return {
+            "languages": languages,
+            "activity_days": activity_days,
+            "keywords": keywords,
+            "topics": topics,
+            "stars_range": stars_range,
+            "goal": goal  # Keep original goal for reference
+        }
+
     def _build_system_prompt(self, state: RunState) -> str:
         """Build the system prompt for the agent"""
         caps = self.config
+        
+        # Include ICP information in the prompt
+        icp = state.get("icp", {})
+        icp_info = ""
+        if icp:
+            icp_info = f"""
+ICP CRITERIA:
+- Languages: {icp.get('languages', [])}
+- Activity: Last {icp.get('activity_days', 90)} days
+- Keywords: {icp.get('keywords', [])}
+- Topics: {icp.get('topics', [])}
+- Stars range: {icp.get('stars_range', '100..2000')}
+"""
 
         prompt = f"""You are a CMO operator. Your task: {state['goal']}
-
+{icp_info}
 FOLLOW THIS EXACT SEQUENCE:
 1. search_github_repos - Find relevant repositories
 2. extract_people - Get contributors from those repos
@@ -1191,10 +1307,13 @@ Available tools: {', '.join(self.tools.keys())}
                 logger.warning(f"Failed to initialize beautiful logging: {e}")
                 self.beautiful_logger = None
 
+            # Parse goal to create ICP criteria
+            parsed_icp = self._parse_goal_to_icp(goal)
+            
             # Initialize state
             initial_state = RunState(
                 **job_meta.to_dict(),
-                icp=self.config.get("default_icp", {}),
+                icp=parsed_icp,
                 config=self.config,
                 current_stage="initialization",
                 counters={"steps": 0, "api_calls": 0, "tokens": 0, "errors": 0, "tool_errors": 0},

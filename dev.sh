@@ -63,7 +63,7 @@ start_api() {
     cd "$(dirname "$0")"
 
     # Use the direct method that works with environment loaded
-    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python -m uvicorn api.main:app --host 0.0.0.0 --port $API_PORT" > /tmp/cmo_api.log 2>&1 &
+    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     echo $! > "$PIDFILE_API"
 
     # Wait and verify
@@ -87,7 +87,7 @@ start_dev() {
 
     # Start API in background with environment loaded
     log "🚀 Starting API server..."
-    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python -m uvicorn api.main:app --host 0.0.0.0 --port $API_PORT" > /tmp/cmo_api.log 2>&1 &
+    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
     local api_pid=$!
     echo $api_pid > "$PIDFILE_API"
 

@@ -17,6 +17,7 @@ if current_dir not in sys.path:
 
 try:
     from .base import GitHubTool, ToolResult
+    from ..obs.beautiful_logging import LiveProgressTracker
     try:
         from ..core.monitoring import record_api_call, record_error
     except ImportError:
@@ -421,6 +422,14 @@ class EnrichGitHubUsers(GitHubTool):
         try:
             profiles = []
             batch_size = kwargs.get("batch_size", 10)  # Process in smaller batches to avoid rate limits
+            
+            # Initialize progress tracker
+            progress = LiveProgressTracker(
+                description="👤 Enriching user profiles",
+                total=len(logins),
+                show_emails=False,
+                force_tqdm=kwargs.get("force_tqdm", True)
+            )
 
             for i in range(0, len(logins), batch_size):
                 batch_logins = logins[i:i + batch_size]
@@ -459,7 +468,12 @@ class EnrichGitHubUsers(GitHubTool):
                             "error": str(e),
                             "enriched": False
                         })
-                        continue
+                    
+                    # Update progress
+                    progress.update(1)
+
+            # Close progress bar
+            progress.close()
 
             return ToolResult(
                 success=True,
@@ -505,6 +519,15 @@ class FindCommitEmailsBatch(GitHubTool):
 
             # Process users in batches
             logins = list(user_to_repos.keys())
+            
+            # Initialize progress tracker
+            progress = LiveProgressTracker(
+                description="🔍 Finding commit emails",
+                total=len(logins),
+                show_emails=True,
+                force_tqdm=kwargs.get("force_tqdm", True)
+            )
+            
             for i in range(0, len(logins), batch_size):
                 batch_logins = logins[i:i + batch_size]
 
@@ -581,11 +604,18 @@ class FindCommitEmailsBatch(GitHubTool):
                             "repos_searched": len(repos),
                             "stats": stats,
                         }
+                        
+                        # Update progress with email count
+                        progress.update(1, emails_delta=len(emails))
 
                     except Exception as e:
                         logger.warning(f"Failed to find emails for {login}: {e}")
                         user_emails[login] = {"emails": [], "count": 0, "error": str(e)}
-                        continue
+                        # Still update progress even if failed
+                        progress.update(1)
+
+            # Close progress bar
+            progress.close()
 
             return ToolResult(
                 success=True,
