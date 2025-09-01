@@ -263,8 +263,33 @@ class SendInstantly(InstantlyTool):
 
             # Create campaign
             create_url = f"{base}/campaigns"
+<<<<<<< Updated upstream
             # Minimal required fields – some accounts require schedule; default to draft
             payload = {"name": seq_id, "campaign_schedule": {"status": "paused"}}
+=======
+            # Per Instantly API, campaign_schedule.schedules is required and must be non-empty
+            payload = {
+                "name": seq_id,
+                "campaign_schedule": {
+                    "schedules": [
+                        {
+                            "name": "Default Schedule",
+                            "timing": {"from": "09:00", "to": "17:00"},
+                            "days": {
+                                "0": True,
+                                "1": True,
+                                "2": True,
+                                "3": True,
+                                "4": True,
+                                "5": False,
+                                "6": False,
+                            },
+                            "timezone": os.getenv("INSTANTLY_TZ", "America/Chicago"),
+                        }
+                    ]
+                },
+            }
+>>>>>>> Stashed changes
             async with aiohttp.ClientSession() as session:
                 async with session.post(create_url, headers=headers, json=payload) as resp:
                     data = await resp.json()

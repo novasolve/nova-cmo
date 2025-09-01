@@ -4,6 +4,8 @@ Monitoring and metrics system for CMO Agent
 import time
 import psutil
 import asyncio
+import logging
+import json
 from typing import Dict, Any, List
 from datetime import datetime
 from dataclasses import dataclass, field
@@ -589,3 +591,33 @@ def log_performance_metric(metric: str, value: float, **kwargs):
 def log_business_event(event: str, **kwargs):
     """Log a business-related event"""
     _global_logger.log_business_event(event, **kwargs)
+
+
+# ---------- JSON Formatter for file logging ----------
+class JsonExtraFormatter(logging.Formatter):
+    """JSON formatter that includes structured extras such as 'structured', 'metrics', and 'alert'.
+    
+    Produces JSON Lines suitable for ingestion.
+    """
+    
+    def format(self, record: logging.LogRecord) -> str:
+        base: Dict[str, Any] = {
+            "ts": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+        
+        # Include common extras when present
+        if hasattr(record, "structured") and isinstance(record.structured, dict):
+            base.update(record.structured)
+        if hasattr(record, "metrics") and isinstance(record.metrics, dict):
+            base["metrics"] = record.metrics
+        if hasattr(record, "alert") and record.alert:
+            base["alert"] = record.alert
+            
+        # Attach exception info if present
+        if record.exc_info:
+            base["exc_info"] = self.formatException(record.exc_info)
+            
+        return json.dumps(base, ensure_ascii=False)
