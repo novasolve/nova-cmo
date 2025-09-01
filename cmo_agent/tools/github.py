@@ -163,10 +163,28 @@ class SearchGitHubRepos(GitHubTool):
 
                 result = await _safe_search(params)
 
-                if not result.get("items"):
-                    break
+                # Track total available results from GitHub
+                if total_available is None and result.get("total_count") is not None:
+                    total_available = result["total_count"]
+                    logger.info(f"GitHub reports {total_available} total repositories available for query")
 
-                for item in result["items"]:
+                items = result.get("items", [])
+                if not items:
+                    low_yield_pages_in_a_row += 1
+                    logger.info(f"No results on page {page}, low yield streak: {low_yield_pages_in_a_row}")
+                    
+                    # Break early if we've had multiple low-yield pages and met minimum
+                    if low_yield_pages_in_a_row >= 2 and page >= min_pages:
+                        logger.info("Stopping: low yield across multiple pages")
+                        break
+                    
+                    page += 1
+                    continue
+                else:
+                    low_yield_pages_in_a_row = 0  # Reset on successful page
+
+                repos_added_this_page = 0
+                for item in items:
                     if len(repos) >= max_repos:
                         break
 
@@ -195,21 +213,45 @@ class SearchGitHubRepos(GitHubTool):
                     if str(repo_data.get("name") or "").lower() == ".github":
                         continue
                     repos.append(repo_data)
+                    repos_added_this_page += 1
+
+                # Check if we should continue to next page
+                if repos_added_this_page == 0:
+                    low_yield_pages_in_a_row += 1
+                    logger.info(f"No useful repos added from page {page}, low yield streak: {low_yield_pages_in_a_row}")
+                else:
+                    low_yield_pages_in_a_row = 0
+                    logger.info(f"Added {repos_added_this_page} repos from page {page}")
 
                 page += 1
+                
+                # Adaptive stopping conditions
+                if low_yield_pages_in_a_row >= 2 and page > min_pages:
+                    logger.info(f"Stopping: {low_yield_pages_in_a_row} consecutive low-yield pages")
+                    break
+                
                 # Small pause between pages to avoid secondary rate limits
                 try:
                     import asyncio
                     await asyncio.sleep(0.2)
                 except Exception:
                     pass
-                if page > 10:  # Safety limit
-                    break
+
+            # Log final search statistics
+            if total_available is not None:
+                logger.info(f"Search completed: found {len(repos)} repos from {page-1} pages (GitHub total: {total_available})")
+            else:
+                logger.info(f"Search completed: found {len(repos)} repos from {page-1} pages")
 
             return ToolResult(
                 success=True,
                 data={"repos": repos, "count": len(repos), "query": q},
-                metadata={"pages_searched": page - 1, "max_requested": max_repos}
+                metadata={
+                    "pages_searched": page - 1, 
+                    "max_requested": max_repos,
+                    "total_available": total_available,
+                    "low_yield_pages": low_yield_pages_in_a_row
+                }
             )
 
         except Exception as e:
