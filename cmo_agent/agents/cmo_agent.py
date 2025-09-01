@@ -1178,6 +1178,14 @@ Available tools: {', '.join(self.tools.keys())}
         try:
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
+            
+            # Initialize beautiful logging for this job
+            try:
+                self.beautiful_logger = setup_beautiful_logging(self.config, job_meta.job_id)
+                self.beautiful_logger.start_stage("initialization", f"Starting campaign: {goal}")
+            except Exception as e:
+                logger.warning(f"Failed to initialize beautiful logging: {e}")
+                self.beautiful_logger = None
 
             # Initialize state
             initial_state = RunState(
