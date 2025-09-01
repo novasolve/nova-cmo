@@ -21,3 +21,6 @@ assistant_intro_template: |
   Running live campaign validation with real GitHub data...
   Mode: 🤝 Co‑pilot (Real Run)  Daily Cap: ${{budget_per_day}}  Target: {{target_leads}} {{language}} maintainers  Scope: Last {{activity_days}} days
   This will make real GitHub API calls and show live progress in the Inspector →
+
+# Optional: pass prompt params down to agent config for early-stop
+propagate_params_to_config: true

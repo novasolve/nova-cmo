@@ -2239,6 +2239,44 @@ Available tools: {', '.join(self.tools.keys())}
 
         # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
         leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
+        target_leads = 0
+        try:
+            # Check YAML-driven prompt params (e.g., target_leads) under config or metadata
+            cfg_params = (
+                (state.get("config", {}) or {}).get("prompt_params")
+                or (state.get("metadata", {}) or {}).get("prompt_params")
+                or {}
+            )
+            target_leads = int(cfg_params.get("target_leads") or cfg_params.get("target") or 0)
+        except Exception:
+            target_leads = 0
+
+        # Finish early if we met/exceeded the target (when provided)
+        if not state.get("ended") and target_leads > 0 and len(leads_with_email) >= target_leads:
+            try:
+                # Export leads
+                if "export_csv" in self.tools:
+                    export_tool = self.tools["export_csv"]
+                    job_id = state.get("job_id", "job")
+                    export_path = f"{job_id}_leads.csv"
+                    export_rows = leads_with_email
+                    export_result = await self.error_handler.execute_with_retry(export_tool.execute, rows=export_rows, path=export_path)
+                    state = self._reduce_tool_result(state, "export_csv", export_result)
+                # Done summary
+                if "done" in self.tools:
+                    done_tool = self.tools["done"]
+                    repos = state.get("repos", [])
+                    candidates = state.get("candidates", [])
+                    summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails (target {target_leads}), repos={len(repos)}, candidates={len(candidates)}."
+                    done_result = await self.error_handler.execute_with_retry(done_tool.execute, summary=summary_text)
+                    state = self._reduce_tool_result(state, "done", done_result)
+                state["ended"] = True
+                state["end_reason"] = "target_leads_met"
+                logger.info("Auto-progress: finalized early after meeting target leads")
+                return state
+            except Exception as e:
+                logger.warning(f"Auto-finalization (target) failed: {e}")
+
         if leads_with_email and not state.get("ended"):
             try:
                 # Export leads with email

@@ -72,7 +72,16 @@ export async function POST(req: Request) {
             campaign_type: "smoke_test",
             max_leads: (built.params?.target ?? 5), // Limit scope for quick test
             created_at: new Date().toISOString()
-          }
+          },
+          // Pass prompt params to config so agent can early-stop when target met
+          config: built.params ? { prompt_params: {
+            target_leads: built.params.target,
+            language: built.params.language,
+            stars_range: built.params.stars,
+            activity_days: built.params.activity,
+            budget_per_day: built.params.budget,
+            pushed_since: built.params.pushedSince,
+          }} : undefined
         };
 
         console.log(`Creating smoke test job for thread: ${threadId}`);
