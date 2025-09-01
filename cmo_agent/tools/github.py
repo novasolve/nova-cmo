@@ -114,6 +114,10 @@ class SearchGitHubRepos(GitHubTool):
 
             repos = []
             page = 1
+            total_available = None
+            max_pages = int(os.getenv("GITHUB_MAX_PAGES", "10"))
+            min_pages = 2
+            low_yield_pages_in_a_row = 0
 
             # Simple retry/backoff wrapper for GitHub requests
             async def _safe_search(params: Dict[str, Any]):
@@ -130,7 +134,7 @@ class SearchGitHubRepos(GitHubTool):
                 record_error("github_search")
                 raise last_err
 
-            while len(repos) < max_repos:
+            while len(repos) < max_repos and page <= max_pages:
                 params["page"] = page
                 # Log the exact search URL (human + structured)
                 try:

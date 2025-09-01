@@ -887,19 +887,28 @@ class CMOAgent:
                         should_continue_searching = True
                         logger.info(f"Target: {target_leads} leads, found: {len(leads_with_email)} - continuing search")
                     
-                    # If we should continue searching, try to find more repositories or people
+                    # If we should continue searching, prioritize finding emails for existing leads first
                     if should_continue_searching and not state.get("email_search_exhausted"):
-                        # Try to search for more repositories with different criteria
+                        # PRIORITY 1: Find emails for existing leads without emails
+                        leads_without_email = [l for l in state.get("leads", []) if not l.get("email")]
+                        
+                        if leads_without_email:
+                            logger.info(f"Priority: Finding emails for {len(leads_without_email)} existing leads before searching more repos")
+                            # Let the agent continue with email finding for existing leads
+                            return state
+                        
+                        # PRIORITY 2: Only search for more repos if we've exhausted email finding
                         repos = state.get("repos", [])
-                        if len(repos) < 50:  # Limit to prevent infinite expansion
-                            logger.info("Attempting to find more repositories to reach target...")
+                        max_repos = int(os.getenv("GITHUB_MAX_REPOS", "200"))  # Configurable limit
+                        
+                        if len(repos) < max_repos:
+                            logger.info(f"Searching for more repositories to reach target... (current: {len(repos)}/{max_repos})")
                             # Let the agent continue with more repository searches
-                            # Don't end the campaign yet
                             return state
                         else:
-                            # Mark search as exhausted if we've already found many repos
+                            # Mark search as exhausted if we've hit the repo limit
                             state["email_search_exhausted"] = True
-                            logger.info(f"Search exhausted: found {len(repos)} repos, proceeding with {current_email_count} emails")
+                            logger.info(f"Search exhausted: reached repo limit {len(repos)}/{max_repos}, proceeding with {current_email_count} emails")
                     
                     # Proceed with finalization if target is reached or search is exhausted
                     if leads_with_email and not state.get("ended"):
