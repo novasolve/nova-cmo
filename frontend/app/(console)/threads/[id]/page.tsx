@@ -355,7 +355,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             <div className="flex items-center gap-4">
               <button
                 onClick={() => {
-                  const smokeTestGoal = "python developers with activity in the last 90 days";
+                  const smokeTestGoal = "🧪 smoke test with beautiful logging and tqdm progress bars";
                   onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
                 }}
                 className="text-sm px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors font-medium"
