@@ -290,9 +290,16 @@ class JobWorker:
                 record_job_completed(duration)
                 logger.info(f"Job {job.id} completed in {duration:.1f}s")
 
-            # Emit final progress to stream
+            # Emit final progress to stream with leads_with_emails metric if available
             if job.id in self.queue._progress_streams:
                 try:
+                    try:
+                        final_state_dict = final_state if isinstance(final_state, dict) else {}
+                        leads_list = final_state_dict.get('leads') or []
+                        leads_with_emails = sum(1 for l in leads_list if isinstance(l, dict) and l.get('email'))
+                        job.progress.metrics = {**(job.progress.metrics or {}), "leads_with_emails": leads_with_emails}
+                    except Exception:
+                        pass
                     await self.queue._progress_streams[job.id].put(job.progress)
                 except Exception as e:
                     logger.debug(f"Failed to emit final progress for job {job.id}: {e}")

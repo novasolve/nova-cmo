@@ -155,10 +155,20 @@ DEFAULT_CONFIG = {
     },
     "logging": {
         "level": "INFO",
+        "console": True,
+        "file": True,
         "json_file": True,
+        "job_specific_files": True,  # Create separate log files per job
+        "beautiful_console": True,  # Use beautiful console formatter
         "console_format": "%(asctime)s %(levelname)-4s %(message)s",
+        "filename": "cmo_agent.jsonl",  # General log file when not job-specific
         "execution_log_file": "execution_engine.jsonl",
         "agent_log_file": "cmo_agent.jsonl",
+        "stage_logging": True,  # Enable automatic stage transition logging
+        "progress_logging": True,  # Enable progress logging within stages
+        "correlation_ids": True,  # Ensure all logs have correlation IDs
+        "metrics_snapshots": True,  # Log periodic metrics snapshots
+        "alert_logging": True,  # Log alerts as they trigger
     },
 }
 

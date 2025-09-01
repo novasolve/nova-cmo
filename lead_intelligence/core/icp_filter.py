@@ -6,7 +6,7 @@ Filters prospects based on Ideal Customer Profile matching
 
 import re
 from typing import Dict, List, Any, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import logging
 
@@ -142,14 +142,14 @@ class ICPRelevanceFilter:
             match_reasons.extend(engagement_reasons)
 
         # Determine if relevant based on threshold
-        relevance_threshold = self.icp_config.get('relevance_threshold', 0.6)
+        relevance_threshold = float(self.icp_config.get('relevance_threshold', 0.6))
         is_relevant = relevance_score >= relevance_threshold
 
-        # Add overall assessment
+        # Add overall assessment message
         if is_relevant:
-            match_reasons.insert(0, ".2f")
+            match_reasons.insert(0, f"ICP relevant (score: {relevance_score:.2f})")
         else:
-            match_reasons.insert(0, ".2f")
+            match_reasons.insert(0, f"ICP not relevant (score: {relevance_score:.2f} < threshold {relevance_threshold:.2f})")
 
         return ICPMatchResult(
             is_relevant=is_relevant,
@@ -296,7 +296,12 @@ class ICPRelevanceFilter:
         if signal_at:
             try:
                 signal_date = parse_utc_datetime(signal_at)
-                days_since = (datetime.now() - signal_date).days
+                # Use UTC-aware now for consistent comparison
+                now_utc = datetime.now(timezone.utc)
+                # If parsed date is naive, treat as UTC
+                if signal_date.tzinfo is None:
+                    signal_date = signal_date.replace(tzinfo=timezone.utc)
+                days_since = (now_utc - signal_date).days
 
                 # Very recent activity (last 30 days)
                 if days_since <= 30:

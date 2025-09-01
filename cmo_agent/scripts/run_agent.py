@@ -26,35 +26,16 @@ load_dotenv()
 
 from cmo_agent.core.monitoring import JsonExtraFormatter, configure_metrics_from_config
 from cmo_agent.core.state import DEFAULT_CONFIG as _DEF
+from cmo_agent.obs.beautiful_logging import setup_beautiful_logging
 
 def _setup_logging_from_config(cfg: dict):
-    log_cfg = cfg.get("logging", {}) if isinstance(cfg.get("logging"), dict) else {}
-    log_level = getattr(logging, str(log_cfg.get("level", "INFO")).upper(), logging.INFO)
-    logs_dir = Path(cfg.get("directories", _DEF.get("directories", {})).get("logs", "./logs"))
-    logs_dir.mkdir(parents=True, exist_ok=True)
+    """Setup beautiful logging system for the agent script"""
+    # Use beautiful logging setup instead of manual configuration
+    beautiful_logger = setup_beautiful_logging(cfg)
+    return beautiful_logger
 
-    root = logging.getLogger()
-    root.setLevel(log_level)
-
-    # Clear existing handlers to avoid duplicates
-    for h in root.handlers[:]:
-        root.removeHandler(h)
-
-    # Console handler
-    ch = logging.StreamHandler()
-    ch.setLevel(log_level)
-    ch.setFormatter(logging.Formatter(log_cfg.get("console_format", "%(asctime)s %(levelname)-4s %(message)s")))
-    root.addHandler(ch)
-
-    # File handler (JSONL)
-    if log_cfg.get("json_file", True):
-        fh_path = logs_dir / log_cfg.get("agent_log_file", "cmo_agent.jsonl")
-        fh = logging.FileHandler(str(fh_path), encoding="utf-8")
-        fh.setLevel(log_level)
-        fh.setFormatter(JsonExtraFormatter())
-        root.addHandler(fh)
-
-_setup_logging_from_config(_DEF)
+# Setup beautiful logging
+beautiful_logger = _setup_logging_from_config(_DEF)
 logger = logging.getLogger(__name__)
 
 
@@ -102,7 +83,13 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
 
         # Initialize agent
         agent = CMOAgent(config)
-        logger.info("CMO Agent initialized successfully")
+
+        # Use beautiful logging for initialization
+        if hasattr(beautiful_logger, 'log_stage_event'):
+            beautiful_logger.log_stage_event("initialization", "CMO Agent initialized successfully")
+        else:
+            logger.info("CMO Agent initialized successfully")
+
         print(("🔧 Initializing agent…" if not no_emoji else "Initializing agent…"))
 
         # Run the job
@@ -112,9 +99,15 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             cfg_features = {**cfg_features, 'dry_run': True}
             config['features'] = cfg_features
             agent.config = config
-        print(("🔍 Discovering repositories…" if not no_emoji else "Discovering repositories…"))
+
+        print(("🚀 Starting campaign…" if not no_emoji else "Starting campaign…"))
         result = await agent.run_job(goal)
-        logger.info(f"Campaign completed: {result['success']}")
+
+        # Log completion with beautiful logging
+        if hasattr(beautiful_logger, 'log_stage_event'):
+            beautiful_logger.log_stage_event("completed", f"Campaign completed: {result['success']}")
+        else:
+            logger.info(f"Campaign completed: {result['success']}")
 
         # Print summary
         if result.get('success'):

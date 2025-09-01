@@ -12,3 +12,9 @@ job_config:
   checkpoints:
     enable_stage: false
     time_interval: 900 # 15 minutes for smoke runs to avoid frequent writes
+
+default_icp:
+  languages: ["python"]
+  stars_range: "300..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]

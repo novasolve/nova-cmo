@@ -3,7 +3,7 @@ version: 1
 # Parameters used to render the smoke-test prompt and display plan
 params:
   language: "Python"
-  stars_range: "200..1500"
+  stars_range: "300..2000"
   activity_days: 90
   target_leads: 10
   budget_per_day: 10
@@ -24,3 +24,24 @@ assistant_intro_template: |
 
 # Optional: pass prompt params down to agent config for early-stop
 propagate_params_to_config: true
+
+max_steps: 40
+features:
+  dry_run: true
+logging:
+  level: INFO
+directories:
+  logs: ./logs
+  checkpoints: ./checkpoints
+  artifacts: ./artifacts
+  exports: ./exports
+job_config:
+  checkpoints:
+    enable_stage: false
+    time_interval: 900 # 15 minutes for smoke runs to avoid frequent writes
+
+default_icp:
+  languages: ["python"]
+  stars_range: "300..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]

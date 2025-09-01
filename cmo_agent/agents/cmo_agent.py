@@ -13,6 +13,7 @@ from pathlib import Path
 
 try:
     from ..core.state import RunState, JobMetadata, DEFAULT_CONFIG
+    from ..obs.beautiful_logging import setup_beautiful_logging, StageAwareLogger
     from ..tools.github import SearchGitHubRepos, ExtractPeople, EnrichGitHubUser, FindCommitEmails, EnrichGitHubUsers, FindCommitEmailsBatch
     from ..tools.hygiene import MXCheck, ICPScores
     from ..tools.personalization import RenderCopy, SendInstantly
@@ -143,6 +144,26 @@ class CMOAgent:
                 else:
                     base_config[key] = value
         self.config = base_config
+        # Ensure default_icp is populated so state.icp is never empty
+        try:
+            if not isinstance(self.config.get("default_icp"), dict):
+                self.config["default_icp"] = {}
+            icp = self.config["default_icp"]
+            # Populate from top-level fallbacks if missing
+            if not icp.get("languages"):
+                langs = self.config.get("languages") or []
+                icp["languages"] = langs if isinstance(langs, list) else [langs]
+            if not icp.get("topics"):
+                topics = self.config.get("include_topics") or []
+                icp["topics"] = topics if isinstance(topics, list) else [topics]
+            if not icp.get("stars_range"):
+                icp["stars_range"] = self.config.get("stars_range", "50..1000")
+            if not icp.get("activity_days"):
+                icp["activity_days"] = int(self.config.get("activity_days", 90))
+            self.config["default_icp"] = icp
+        except Exception:
+            # Non-fatal; leave as-is if anything goes wrong
+            pass
         # Initialize all tools first
         self.tools = self._initialize_tools()
 
@@ -193,6 +214,10 @@ class CMOAgent:
         # Artifact management
         from ..core.artifacts import get_artifact_manager
         self.artifact_manager = get_artifact_manager(self.config)
+
+        # Initialize beautiful logging system
+        self.beautiful_logger = None  # Will be set per job
+
         # Configure logger level
         try:
             level_name = str(self.config.get("log_level", "INFO")).upper()
@@ -274,14 +299,14 @@ class CMOAgent:
             },
             {
                 "name": "enrich_github_users",
-                "description": "Get detailed GitHub user profiles for multiple users. Use this for batch enrichment.",
+                "description": "Get detailed GitHub user profiles for multiple users. Use this for batch enrichment. Keep batches small (<= 20 users) to avoid large payloads and rate limits.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "logins": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of GitHub usernames to enrich"
+                            "description": "List of GitHub usernames to enrich (max ~20 per call)"
                         }
                     },
                     "required": ["logins"]
@@ -472,7 +497,7 @@ class CMOAgent:
 
         # GitHub tools
         if self.config.get("GITHUB_TOKEN"):
-            tools["search_github_repos"] = SearchGitHubRepos(self.config["GITHUB_TOKEN"])
+            tools["search_github_repos"] = SearchGitHubRepos(self.config["GITHUB_TOKEN"], default_icp=self.config.get("default_icp", {}))
             tools["extract_people"] = ExtractPeople(self.config["GITHUB_TOKEN"])
             tools["enrich_github_user"] = EnrichGitHubUser(self.config["GITHUB_TOKEN"])
             tools["find_commit_emails"] = FindCommitEmails(self.config["GITHUB_TOKEN"])
@@ -669,6 +694,8 @@ class CMOAgent:
                         hydrated_args = dict(hydrated_args)
                         hydrated_args.setdefault("job_id", state.get("job_id"))
                         hydrated_args.setdefault("dry_run", bool(self.config.get("features", {}).get("dry_run", False)))
+                        # Add beautiful_logger to all tool executions
+                        hydrated_args['beautiful_logger'] = self.beautiful_logger
 
                         if getattr(self, "toolbelt", None):
                             result = await self.toolbelt.execute(
@@ -794,70 +821,130 @@ class CMOAgent:
             state["current_stage"] = "extraction"
 
         elif tool_name == "enrich_github_user" and result.success:
-            # Add enriched profile to leads and use profile email when available
+            # Only treat as a lead if an email is present; otherwise keep as candidate
             profile = result.data.get("profile", {})
             state.setdefault("leads", [])
-            # Find and update existing lead or add new one
-            index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
+            state.setdefault("candidates", [])
+
+            def _valid_email(addr: str) -> bool:
+                return bool(addr) and "@" in addr and not str(addr).endswith("@users.noreply.github.com")
+
             login = profile.get("login")
-            if login in index:
-                i = index[login]
-                state["leads"][i] = {**state["leads"][i], **profile}
-            else:
-                state["leads"].append(profile)
-                i = len(state["leads"]) - 1
-            # Normalize profile email if present
             email = profile.get("email")
-            if email and "@" in email and not str(email).endswith("@users.noreply.github.com"):
-                state["leads"][i]["email"] = email
+            leads_index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
+            cand_index = {cand.get("login"): idx for idx, cand in enumerate(state["candidates"]) if isinstance(cand, dict) and cand.get("login")}
+
+            if _valid_email(email):
+                if login in leads_index:
+                    i = leads_index[login]
+                    state["leads"][i] = {**state["leads"][i], **profile, "email": email}
+                else:
+                    state["leads"].append({**profile, "email": email})
+                # Remove from candidates if present
+                if login in cand_index:
+                    try:
+                        state["candidates"].pop(cand_index[login])
+                    except Exception:
+                        pass
+            else:
+                # Keep/update under candidates; do not add to leads yet
+                if login in cand_index:
+                    j = cand_index[login]
+                    state["candidates"][j] = {**state["candidates"][j], **profile}
+                else:
+                    state["candidates"].append({**profile, "enriched": True})
 
         elif tool_name == "enrich_github_users" and result.success:
-            # Handle batched user enrichment
+            # Handle batched user enrichment; only add to leads if email present
             profiles = result.data.get("profiles", [])
             state.setdefault("leads", [])
+            state.setdefault("candidates", [])
 
-            # Build index for faster merging
-            index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
+            def _valid_email(addr: str) -> bool:
+                return bool(addr) and "@" in addr and not str(addr).endswith("@users.noreply.github.com")
+
+            leads_index = {lead.get("login"): idx for idx, lead in enumerate(state["leads"]) if lead.get("login")}
+            cand_index = {cand.get("login"): idx for idx, cand in enumerate(state["candidates"]) if isinstance(cand, dict) and cand.get("login")}
 
             for profile in profiles:
                 if profile.get("enriched") == False:
-                    # Skip failed enrichments but log them
                     logger.warning(f"Failed to enrich user {profile.get('login')}: {profile.get('error')}")
                     continue
-
-                # Find and update existing lead or add new one
                 login = profile.get("login")
-                if login in index:
-                    i = index[login]
-                    state["leads"][i] = {**state["leads"][i], **profile}
-                else:
-                    state["leads"].append(profile)
-                    i = len(state["leads"]) - 1
-                    index[login] = i
-                # Normalize profile email if present
                 email = profile.get("email")
-                if email and "@" in email and not str(email).endswith("@users.noreply.github.com"):
-                    state["leads"][i]["email"] = email
+                if _valid_email(email):
+                    if login in leads_index:
+                        i = leads_index[login]
+                        state["leads"][i] = {**state["leads"][i], **profile, "email": email}
+                    else:
+                        state["leads"].append({**profile, "email": email})
+                        leads_index[login] = len(state["leads"]) - 1
+                    # Remove from candidates if present
+                    if login in cand_index:
+                        try:
+                            state["candidates"].pop(cand_index[login])
+                        except Exception:
+                            pass
+                else:
+                    # Keep/update as candidate until we find an email
+                    if login in cand_index:
+                        j = cand_index[login]
+                        state["candidates"][j] = {**state["candidates"][j], **profile}
+                    else:
+                        state["candidates"].append({**profile, "enriched": True})
+                        cand_index[login] = len(state["candidates"]) - 1
             state["current_stage"] = "enrichment"
 
         elif tool_name == "find_commit_emails" and result.success:
-            # Add email to the corresponding lead
+            # Move profile to leads when an email is discovered
             login = result.data.get("login")
             emails = result.data.get("emails", [])
             if login and emails:
-                index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
-                if login in index:
-                    state["leads"][index[login]]["email"] = emails[0]
+                email = emails[0]
+                leads_index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
+                if login in leads_index:
+                    state["leads"][leads_index[login]]["email"] = email
+                else:
+                    # Try to find in candidates and move it over
+                    cand_list = state.get("candidates", [])
+                    cand_index = {cand.get("login"): idx for idx, cand in enumerate(cand_list) if isinstance(cand, dict) and cand.get("login")}
+                    if login in cand_index:
+                        profile = {**cand_list[cand_index[login]], "email": email}
+                        try:
+                            cand_list.pop(cand_index[login])
+                        except Exception:
+                            pass
+                        state.setdefault("leads", []).append(profile)
+                    else:
+                        # As a fallback, create a minimal lead with login/email
+                        state.setdefault("leads", []).append({"login": login, "email": email})
             state["current_stage"] = "validation"
 
         elif tool_name == "find_commit_emails_batch" and result.success:
-            # Handle batched email lookup
+            # Handle batched email lookup; move from candidates into leads as emails are found
             user_emails = result.data.get("user_emails", {})
-            index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
+            state.setdefault("leads", [])
+            leads_index = {lead.get("login"): idx for idx, lead in enumerate(state.get("leads", [])) if lead.get("login")}
+            cand_list = state.get("candidates", [])
+            cand_index = {cand.get("login"): idx for idx, cand in enumerate(cand_list) if isinstance(cand, dict) and cand.get("login")}
             for login, email_data in user_emails.items():
-                emails = email_data.get("emails", [])
-                if emails and login in index:
-                    state["leads"][index[login]]["email"] = emails[0]
+                emails = (email_data or {}).get("emails", [])
+                if not emails:
+                    continue
+                email = emails[0]
+                if login in leads_index:
+                    state["leads"][leads_index[login]]["email"] = email
+                elif login in cand_index:
+                    profile = {**cand_list[cand_index[login]], "email": email}
+                    try:
+                        cand_list.pop(cand_index[login])
+                    except Exception:
+                        pass
+                    state["leads"].append(profile)
+                    leads_index[login] = len(state["leads"]) - 1
+                else:
+                    state["leads"].append({"login": login, "email": email})
+                    leads_index[login] = len(state["leads"]) - 1
             state["current_stage"] = "validation"
 
         elif tool_name == "mx_check" and result.success:
@@ -1037,6 +1124,24 @@ class CMOAgent:
                     return None, "[auto] enrich_github_users skipped: no candidates available."
                 return hydrated, note
 
+            if tool_name == "search_github_repos":
+                # search_github_repos requires q (query) minimally; hydrate from goal if missing
+                if not hydrated.get("q"):
+                    hydrated["q"] = state.get("goal", "")
+                # Pass ICP to guide search if available
+                icp = state.get("icp") or {}
+                if icp:
+                    hydrated["icp"] = icp
+                    # Also surface common qualifiers explicitly if not already present
+                    if icp.get("languages") and not hydrated.get("language"):
+                        langs = icp.get("languages")
+                        hydrated["language"] = langs[0] if isinstance(langs, list) and langs else icp.get("language")
+                    if icp.get("stars_range") and not hydrated.get("stars_range"):
+                        hydrated["stars_range"] = icp.get("stars_range")
+                    if icp.get("activity_days") and not hydrated.get("activity_days"):
+                        hydrated["activity_days"] = icp.get("activity_days")
+                return hydrated, None
+
             if tool_name == "find_commit_emails_batch":
                 # Build pairs from candidates if not provided
                 if not hydrated.get("user_repo_pairs"):
@@ -1106,6 +1211,10 @@ class CMOAgent:
                         return None, "[auto] score_icp skipped: no lead profile available."
                     hydrated["profile"] = lead
                     note = f"[auto] Filled score_icp profile for {lead.get('login', 'unknown')}"
+                # Provide ICP to scoring tool for dynamic criteria
+                icp = state.get("icp") or {}
+                if icp:
+                    hydrated["icp"] = icp
                 return hydrated, note
 
             if tool_name == "extract_people":
@@ -1138,7 +1247,37 @@ class CMOAgent:
         """Build the system prompt for the agent"""
         caps = self.config
 
+        # Include a compact ICP summary to guide the model
+        icp = state.get("icp") or {}
+        icp_parts = []
+        try:
+            langs = icp.get("languages") or icp.get("language")
+            if isinstance(langs, list):
+                icp_parts.append(f"languages={', '.join(map(str, langs))}")
+            elif isinstance(langs, str):
+                icp_parts.append(f"language={langs}")
+            if icp.get("stars_range"):
+                icp_parts.append(f"stars={icp['stars_range']}")
+            else:
+                if icp.get("stars_min") is not None:
+                    icp_parts.append(f"stars_min={icp['stars_min']}")
+                if icp.get("stars_max") is not None:
+                    icp_parts.append(f"stars_max={icp['stars_max']}")
+            if icp.get("activity_days") is not None:
+                icp_parts.append(f"active_within_days={icp['activity_days']}")
+            incl = icp.get("include_topics") or icp.get("topics")
+            if incl:
+                icp_parts.append(f"include_topics={', '.join(map(str, incl))}")
+            excl = icp.get("exclude_topics")
+            if excl:
+                icp_parts.append(f"exclude_topics={', '.join(map(str, excl))}")
+        except Exception:
+            pass
+        icp_summary = ("; ".join(icp_parts)) if icp_parts else "unspecified"
+
         prompt = f"""You are a CMO operator. Your task: {state['goal']}
+
+ICP CONTEXT: {icp_summary}
 
 FOLLOW THIS EXACT SEQUENCE:
 1. search_github_repos - Find relevant repositories
@@ -1173,6 +1312,10 @@ Available tools: {', '.join(self.tools.keys())}
         try:
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
+
+            # Initialize beautiful logging for this job
+            self.beautiful_logger = setup_beautiful_logging(self.config, job_meta.job_id)
+            self.beautiful_logger.start_stage("initialization", f"Starting campaign: {goal}")
 
             # Initialize state
             initial_state = RunState(
@@ -1254,8 +1397,29 @@ Available tools: {', '.join(self.tools.keys())}
             job_failed = self._is_failure_state(final_state)
             job_status = "failed" if job_failed else "completed"
 
+            # Log completion with beautiful logging
+            if self.beautiful_logger:
+                if job_failed:
+                    self.beautiful_logger.end_stage(f"Campaign failed", status="failed")
+                else:
+                    # Extract summary stats for completion log
+                    leads_count = len(final_state.get("leads", []))
+                    emails_sent = len(final_state.get("to_send", []))
+                    repos_found = len(final_state.get("repos", []))
+
+                    self.beautiful_logger.end_stage(
+                        f"Campaign completed successfully",
+                        status="completed",
+                        leads=leads_count,
+                        emails=emails_sent,
+                        repos=repos_found
+                    )
+
             # Finalize job with comprehensive artifact collection
             finalization_result = await self._finalize_job(job_meta.job_id, final_state, job_status)
+
+            # Auto-save output files to logs directory
+            await self._save_output_files_to_logs(job_meta.job_id, final_state, finalization_result)
 
             return {
                 "success": not job_failed,
@@ -1268,6 +1432,10 @@ Available tools: {', '.join(self.tools.keys())}
             # Outer run_job failure handler
             logger.error(f"Job execution failed: {e}")
             job_id = job_meta.job_id if job_meta else "unknown"
+
+            # Log error with beautiful logging
+            if self.beautiful_logger:
+                self.beautiful_logger.log_error(e, "job_execution")
 
             # Attach error to state if available
             if 'final_state' in locals() and final_state and hasattr(final_state, 'setdefault'):
@@ -1474,14 +1642,65 @@ Available tools: {', '.join(self.tools.keys())}
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             checkpoint_file = checkpoints_dir / f"{job_id}_{checkpoint_type}_{timestamp}.json"
 
+            # Sanitize state to avoid oversized checkpoints (e.g., huge tool arg arrays)
+            def _sanitize_for_checkpoint(obj, depth: int = 0):
+                try:
+                    # Limit recursion depth for safety
+                    if depth > 4:
+                        return "__truncated__"
+                    if isinstance(obj, dict):
+                        sanitized = {}
+                        for k, v in obj.items():
+                            # Special handling: trim large args lists in tool calls
+                            if k == "tool_calls" and isinstance(v, list):
+                                trimmed_calls = []
+                                for call in v[:5]:  # cap number of calls per message
+                                    if isinstance(call, dict):
+                                        call_copy = dict(call)
+                                        args = call_copy.get("args")
+                                        if isinstance(args, dict):
+                                            # Truncate known large fields like 'logins'
+                                            if isinstance(args.get("logins"), list) and len(args["logins"]) > 50:
+                                                total = len(args["logins"])
+                                                sample = args["logins"][:10]
+                                                call_copy["args"] = {**args, "logins": sample + [f"__omitted_{total-10}_items__"]}
+                                        trimmed_calls.append(call_copy)
+                                    else:
+                                        trimmed_calls.append(call)
+                                sanitized[k] = trimmed_calls
+                            elif k == "history" and isinstance(v, list):
+                                # Keep only last N messages
+                                sanitized[k] = [
+                                    _sanitize_for_checkpoint(m, depth + 1)
+                                    for m in v[-50:]
+                                ]
+                            elif k in ("repos", "candidates", "leads") and isinstance(v, list) and len(v) > 1000:
+                                # Cap extremely large top-level collections
+                                sanitized[k] = v[:1000] + [f"__omitted_{len(v)-1000}_items__"]
+                            else:
+                                sanitized[k] = _sanitize_for_checkpoint(v, depth + 1)
+                        return sanitized
+                    elif isinstance(obj, list):
+                        # Cap list length to a reasonable maximum for checkpoints
+                        max_len = 2000 if depth == 0 else 500
+                        if len(obj) > max_len:
+                            return obj[:max_len] + [f"__omitted_{len(obj)-max_len}_items__"]
+                        return [ _sanitize_for_checkpoint(i, depth + 1) for i in obj ]
+                    else:
+                        return obj
+                except Exception:
+                    return obj
+
+            sanitized_state = _sanitize_for_checkpoint(state)
+
             # Prepare checkpoint data
             checkpoint_data = {
                 "job_id": job_id,
                 "checkpoint_type": checkpoint_type,
                 "timestamp": datetime.now().isoformat(),
-                "state": state,
-                "counters": state.get("counters", {}),
-                "progress": state.get("progress", {}),
+                "state": sanitized_state,
+                "counters": sanitized_state.get("counters", {}),
+                "progress": sanitized_state.get("progress", {}),
             }
 
             # Save to file (UTF-8, preserve Unicode characters)
@@ -1773,12 +1992,42 @@ Available tools: {', '.join(self.tools.keys())}
     async def _export_leads_data(self, job_id: str, leads: list, job_status: str):
         """Export leads data to artifact using artifact manager"""
         try:
+            # Build summary with unique emails and counts
+            def _normalize_email(em: str) -> str:
+                return (em or "").strip().lower()
+
+            unique_emails_set = set()
+            leads_with_email = 0
+            for lead in leads or []:
+                try:
+                    email = lead.get("email") if isinstance(lead, dict) else None
+                    if isinstance(email, str) and email.strip():
+                        leads_with_email += 1
+                        unique_emails_set.add(_normalize_email(email))
+                    # Also consider optional multi-email fields
+                    emails_list = lead.get("emails") if isinstance(lead, dict) else None
+                    if isinstance(emails_list, list):
+                        # Do not double count leads_with_email for additional addresses
+                        for em in emails_list:
+                            if isinstance(em, str) and em.strip():
+                                unique_emails_set.add(_normalize_email(em))
+                except Exception:
+                    continue
+
+            summary = {
+                "total_leads": len(leads or []),
+                "leads_with_email": leads_with_email,
+                "unique_email_count": len(unique_emails_set),
+                "unique_emails": sorted(unique_emails_set),
+            }
+
             data = {
                 "job_id": job_id,
                 "job_status": job_status,
                 "export_timestamp": datetime.now().isoformat(),
                 "data_type": "leads",
                 "count": len(leads),
+                "summary": summary,
                 "leads": leads,
             }
 
@@ -2094,6 +2343,100 @@ Available tools: {', '.join(self.tools.keys())}
             # Keep the most recent entries
             state["history"] = history[-limit:]
 
+    async def _save_output_files_to_logs(self, job_id: str, final_state: RunState, finalization_result: Dict[str, Any]):
+        """Save campaign output files to logs directory for easy access"""
+        try:
+            import csv
+            import shutil
+            from pathlib import Path
+
+            logs_dir = Path(self.config.get("directories", {}).get("logs", "./logs"))
+            logs_dir.mkdir(parents=True, exist_ok=True)
+
+            # Get leads with emails
+            leads_with_emails = [l for l in final_state.get("leads", []) if l.get("email") and "@" in str(l.get("email", ""))]
+
+            if leads_with_emails:
+                # Create CSV file in logs directory
+                csv_filename = f"{job_id}_leads_with_emails.csv"
+                csv_path = logs_dir / csv_filename
+
+                with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+                    fieldnames = ['login', 'name', 'email', 'company', 'location', 'bio', 'public_repos', 'followers', 'html_url', 'blog', 'twitter_username']
+                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                    writer.writeheader()
+
+                    for lead in leads_with_emails:
+                        writer.writerow({
+                            'login': lead.get('login', ''),
+                            'name': lead.get('name', ''),
+                            'email': lead.get('email', ''),
+                            'company': lead.get('company', ''),
+                            'location': lead.get('location', ''),
+                            'bio': lead.get('bio', ''),
+                            'public_repos': lead.get('public_repos', ''),
+                            'followers': lead.get('followers', ''),
+                            'html_url': lead.get('html_url', ''),
+                            'blog': lead.get('blog', ''),
+                            'twitter_username': lead.get('twitter_username', '')
+                        })
+
+                # Create campaign summary report
+                report_filename = f"{job_id}_campaign_summary.md"
+                report_path = logs_dir / report_filename
+
+                # Generate summary report
+                repos_count = len(final_state.get("repos", []))
+                candidates_count = len(final_state.get("candidates", []))
+                leads_count = len(leads_with_emails)
+
+                report_content = f"""# Campaign Summary - {job_id}
+
+## 📊 Results Overview
+- **Repositories Found:** {repos_count}
+- **Contributors Extracted:** {candidates_count}
+- **Qualified Leads with Emails:** {leads_count}
+- **Email Discovery Rate:** {(leads_count/candidates_count*100) if candidates_count > 0 else 0:.1f}%
+
+## 📁 Output Files
+- **Lead List:** {csv_filename}
+- **Full Checkpoint:** {job_id}_completed.json
+- **Campaign Log:** {job_id}.log
+
+## 🎯 Top Leads Found
+"""
+
+                # Add top leads to summary
+                for i, lead in enumerate(leads_with_emails[:5], 1):
+                    name = lead.get('name') or lead.get('login', 'Unknown')
+                    email = lead.get('email', '')
+                    company = lead.get('company', 'Independent')
+                    followers = lead.get('followers', 0)
+
+                    report_content += f"{i}. **{name}** - {email}\n"
+                    report_content += f"   - Company: {company}\n"
+                    report_content += f"   - GitHub: {followers} followers\n\n"
+
+                report_content += f"\n_Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}_"
+
+                with open(report_path, 'w', encoding='utf-8') as f:
+                    f.write(report_content)
+
+                # Log the file creation with beautiful logging
+                if self.beautiful_logger:
+                    self.beautiful_logger.log_stage_event(
+                        "output_saved",
+                        f"Output files saved to logs: {csv_filename}, {report_filename}",
+                        csv_file=str(csv_path),
+                        report_file=str(report_path),
+                        leads_count=leads_count
+                    )
+                else:
+                    logger.info(f"Output files saved to logs: {csv_filename}, {report_filename}")
+
+        except Exception as e:
+            logger.warning(f"Failed to save output files to logs: {e}")
+
     async def _auto_progress(self, state: RunState) -> RunState:
         """Auto-progress through pipeline stages when LLM omits obvious next steps."""
         repos = state.get("repos", [])
@@ -2103,6 +2446,11 @@ Available tools: {', '.join(self.tools.keys())}
         # If we already have repos but no candidates, extract people
         if repos and not candidates and "extract_people" in self.tools:
             logger.info("Auto-progress: executing extract_people based on repos present")
+
+            # Log stage transition with beautiful logging
+            if self.beautiful_logger:
+                self.beautiful_logger.start_stage("extraction", f"Extracting contributors from {len(repos)} repositories")
+
             try:
                 tool = self.tools["extract_people"]
                 result = await self.error_handler.execute_with_retry(tool.execute, repos=repos, top_authors_per_repo=5)
@@ -2120,6 +2468,12 @@ Available tools: {', '.join(self.tools.keys())}
                         self._trim_history(state)
                 except Exception:
                     pass
+
+                # Log stage completion with beautiful logging
+                if self.beautiful_logger:
+                    candidates_found = len(state.get("candidates", []))
+                    self.beautiful_logger.end_stage(f"Extracted {candidates_found} contributors", found=candidates_found)
+
                 logger.info("Auto-progress: extract_people completed, yielding control")
                 return state
             except Exception as e:
@@ -2138,7 +2492,7 @@ Available tools: {', '.join(self.tools.keys())}
                 logger.info("Auto-progress: executing enrich_github_users based on candidates present")
                 try:
                     tool = self.tools["enrich_github_users"]
-                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25])
+                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25], beautiful_logger=self.beautiful_logger)
                     state = self._reduce_tool_result(state, "enrich_github_users", result)
                     self.stats["tools_executed"] += 1
                     # Inform LLM about auto-progress result
@@ -2191,6 +2545,7 @@ Available tools: {', '.join(self.tools.keys())}
                             repos_per_user=repos_per_user,
                             commits_per_repo=commits_per_repo,
                             include_committer_email=include_committer_email,
+                            beautiful_logger=self.beautiful_logger,
                         )
                         state = self._reduce_tool_result(state, "find_commit_emails_batch", result)
                         after_with_email = len([l for l in state.get("leads", []) if l.get("email")])
@@ -2302,9 +2657,32 @@ Available tools: {', '.join(self.tools.keys())}
                 # Signal completion
                 if "done" in self.tools:
                     done_tool = self.tools["done"]
-                    summary_text = f"Campaign completed: {len(leads_with_email)} leads with emails, repos={len(repos)}, candidates={len(candidates)}."
+                    # Build unique email list
+                    unique_emails = []
+                    seen_emails = set()
+                    for l in leads_with_email:
+                        em = (l.get("email") or "").strip().lower()
+                        if em and em not in seen_emails:
+                            unique_emails.append(em)
+                            seen_emails.add(em)
+                    summary_text = (
+                        f"Campaign completed: {len(leads_with_email)} leads with emails, "
+                        f"unique_emails={len(unique_emails)}, repos={len(repos)}, candidates={len(candidates)}."
+                    )
                     done_result = await self.error_handler.execute_with_retry(done_tool.execute, summary=summary_text)
                     state = self._reduce_tool_result(state, "done", done_result)
+                    # Write summary header at top of job log, if available
+                    try:
+                        if self.beautiful_logger and hasattr(self.beautiful_logger, "write_summary_header"):
+                            header_lines = [
+                                f"Leads with emails: {len(leads_with_email)}",
+                                f"Unique emails: {len(unique_emails)}",
+                                "",
+                                "Emails:",
+                            ] + [f"- {e}" for e in unique_emails]
+                            self.beautiful_logger.write_summary_header("Campaign Summary", header_lines)
+                    except Exception:
+                        pass
                     try:
                         summary_msg = self._summarize_tool_result("done", done_result, state, auto_progress=True)
                         if summary_msg:
@@ -2395,7 +2773,7 @@ Available tools: {', '.join(self.tools.keys())}
                 logger.info("Auto-progress: executing enrich_github_users based on candidates present")
                 try:
                     tool = self.tools["enrich_github_users"]
-                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25])
+                    result = await self.error_handler.execute_with_retry(tool.execute, logins=unique_logins[:25], beautiful_logger=self.beautiful_logger)
                     state = self._reduce_tool_result(state, "enrich_github_users", result)
                     self.stats["tools_executed"] += 1
                     try:

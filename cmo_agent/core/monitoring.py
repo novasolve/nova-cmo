@@ -467,6 +467,13 @@ class MetricsLogger:
         self.structured_logger = StructuredLogger(collector)
         self._prom_exporter: Optional[_PrometheusExporter] = None
 
+        # Try to use beautiful logging if available
+        try:
+            from ..obs.beautiful_logging import get_beautiful_logger
+            self.beautiful_logger = get_beautiful_logger()
+        except ImportError:
+            self.beautiful_logger = None
+
     async def start_logging(self):
         """Start periodic metrics logging with structured output"""
         self.is_running = True
@@ -476,11 +483,19 @@ class MetricsLogger:
                 snapshot = self.collector.collect_snapshot()
                 metrics_dict = snapshot.to_dict()
 
-                # Log structured metrics snapshot
-                self.structured_logger.logger.info(
-                    "Metrics snapshot collected",
-                    extra={"metrics": metrics_dict}
-                )
+                # Log structured metrics snapshot with beautiful logging
+                if self.beautiful_logger:
+                    # Use beautiful logger for metrics
+                    self.beautiful_logger.logger.info(
+                        "Metrics snapshot collected",
+                        extra={"metrics": metrics_dict}
+                    )
+                else:
+                    # Fallback to structured logger
+                    self.structured_logger.logger.info(
+                        "Metrics snapshot collected",
+                        extra={"metrics": metrics_dict}
+                    )
 
                 # Export to Prometheus if enabled
                 if self._prom_exporter:
@@ -489,13 +504,19 @@ class MetricsLogger:
                     except Exception as e:
                         self.structured_logger.logger.debug(f"Prometheus export error: {e}")
 
-                # Log any active alerts
+                # Log any active alerts with beautiful formatting
                 if snapshot.alerts_active:
                     for alert in snapshot.alerts_active:
-                        self.structured_logger.logger.warning(
-                            f"Alert triggered: {alert}",
-                            extra={"alert": alert, "metrics": metrics_dict}
-                        )
+                        if self.beautiful_logger:
+                            self.beautiful_logger.logger.warning(
+                                f"Alert triggered: {alert}",
+                                extra={"alert": alert, "metrics": metrics_dict}
+                            )
+                        else:
+                            self.structured_logger.logger.warning(
+                                f"Alert triggered: {alert}",
+                                extra={"alert": alert, "metrics": metrics_dict}
+                            )
 
                 await asyncio.sleep(self.log_interval)
 
