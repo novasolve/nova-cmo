@@ -222,9 +222,35 @@ class JobWorker:
             # Run the CMO Agent with progress callback
             result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'), progress_callback)
 
-            # On normal completion, generate beautiful campaign summary like CLI
+            # Compute core metrics early so downstream emits include them
             try:
                 final_state = result.get('final_state') if isinstance(result, dict) else None
+                agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else {}
+                repos_count = len(agent_state.get('repos') or [])
+                candidates_count = len(agent_state.get('candidates') or [])
+                leads_list = agent_state.get('leads') or []
+                leads_with_emails_count = 0
+                try:
+                    from ..utils.email_utils import keep_email
+                    for lead in leads_list:
+                        email = (lead or {}).get('email') or (lead or {}).get('primary_email') or (lead or {}).get('best_email')
+                        if keep_email(email):
+                            leads_with_emails_count += 1
+                except Exception:
+                    pass
+
+                existing_metrics = dict(getattr(job.progress, 'metrics', {}) or {})
+                existing_metrics.update({
+                    'repos': int(repos_count),
+                    'candidates': int(candidates_count),
+                    'leads_with_emails': int(leads_with_emails_count),
+                })
+                job.update_progress(metrics=existing_metrics)
+            except Exception as e:
+                logger.debug(f"Failed to compute early metrics for job {job.id}: {e}")
+
+            # On normal completion, generate beautiful campaign summary like CLI
+            try:
                 if isinstance(final_state, dict):
                     # Generate beautiful campaign summary using the same function as CLI
                     try:
@@ -294,31 +320,43 @@ class JobWorker:
                 record_job_completed(duration)
                 logger.info(f"Job {job.id} completed in {duration:.1f}s")
 
-            # Populate metrics snapshot for summary consumers (repos/candidates/emails/duration)
+            # Populate authoritative metrics after completion (repos/candidates/leads_with_emails/duration)
             try:
-                agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else {}
-                repos_count = len(agent_state.get('repos') or [])
-                candidates_count = len(agent_state.get('candidates') or [])
-                leads_list = agent_state.get('leads') or []
-                leads_with_emails_count = 0
-                for lead in leads_list:
-                    email = (lead or {}).get('email')
-                    if isinstance(email, str):
-                        email_lower = email.lower()
-                        if '@' in email_lower and 'noreply' not in email_lower and 'no-reply' not in email_lower:
-                            leads_with_emails_count += 1
-
-                # Merge with any existing metrics rather than overwrite
                 existing_metrics = dict(getattr(job.progress, 'metrics', {}) or {})
+                # Recompute from final_state to ensure latest values
+                agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else {}
+                repos_count = 0
+                candidates_count = 0
+                leads_with_emails_count = 0
+                try:
+                    repos_count = len(agent_state.get('repos') or [])
+                except Exception:
+                    pass
+                try:
+                    candidates_count = len(agent_state.get('candidates') or [])
+                except Exception:
+                    pass
+                try:
+                    from ..utils.email_utils import keep_email
+                    seen = set()
+                    for lead in (agent_state.get('leads') or []):
+                        email = (lead or {}).get('email') or (lead or {}).get('primary_email') or (lead or {}).get('best_email')
+                        if isinstance(email, str) and keep_email(email):
+                            el = email.strip().lower()
+                            if el not in seen:
+                                seen.add(el)
+                    leads_with_emails_count = len(seen)
+                except Exception:
+                    pass
                 existing_metrics.update({
-                    'duration_ms': int(duration * 1000),
                     'repos': int(repos_count),
                     'candidates': int(candidates_count),
                     'leads_with_emails': int(leads_with_emails_count),
+                    'duration_ms': int(duration * 1000),
                 })
                 job.update_progress(metrics=existing_metrics)
             except Exception as e:
-                logger.debug(f"Failed to compute final metrics for job {job.id}: {e}")
+                logger.debug(f"Failed to attach final metrics for job {job.id}: {e}")
 
             # Emit final progress to stream
             if job.id in self.queue._progress_streams:
@@ -398,17 +436,17 @@ class JobWorker:
         email_sources = {'profile': 0, 'commit': 0, 'public': 0, 'bio': 0, 'noreply': 0}
         email_quality_scores = []
         contactable_emails = []
-        
+
         for lead in leads:
             email = lead.get('email')
             if email and '@' in email:
                 email_lower = email.lower()
-                
+
                 # Skip noreply emails but count them
                 if 'noreply' in email_lower or 'no-reply' in email_lower:
                     email_sources['noreply'] += 1
                     continue
-                
+
                 all_emails.add(email_lower)
                 contactable_emails.append({
                     'email': email,
@@ -418,7 +456,7 @@ class JobWorker:
                     'followers': lead.get('followers', 0),
                     'bio': lead.get('bio', '')
                 })
-                
+
                 # Track email source and quality
                 quality_score = 0
                 if lead.get('email_profile'):
@@ -441,12 +479,56 @@ class JobWorker:
                     quality_score += 1
                 
                 email_quality_scores.append(quality_score)
-        
+
+        # Create contactable emails CSV file
+        if contactable_emails:
+            try:
+                from pathlib import Path
+                import time
+
+                # Create exports directory if it doesn't exist
+                export_dir = Path('./exports')
+                export_dir.mkdir(exist_ok=True)
+
+                # Generate job ID from current time
+                timestamp = str(int(time.time()))
+                csv_path = export_dir / f"cmo-{timestamp}_leads_contactable.csv"
+                csv_content = '\n'.join([contact['email'] for contact in contactable_emails])
+
+                with open(csv_path, 'w') as f:
+                    f.write(csv_content)
+
+                print(f"DEBUG: Created contactable emails CSV at {csv_path} with {len(contactable_emails)} emails")
+
+            except Exception as e:
+                print(f"DEBUG: Failed to create contactable emails CSV: {e}")
+
         # Build summary
         lines = []
         lines.append(f"\n{'='*60}")
         lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
         lines.append(f"{'='*60}")
+
+        # Goal & ICP overview
+        try:
+            if icp:
+                goal_text = icp.get('goal')
+                if goal_text:
+                    lines.append(f"\n🎯 GOAL:")
+                    lines.append(f"   {goal_text}")
+                lines.append(f"\n🧭 ICP:")
+                if icp.get('languages'):
+                    lines.append(f"   Languages: {', '.join(icp['languages'])}")
+                if icp.get('stars_range'):
+                    lines.append(f"   Stars: {icp['stars_range']}")
+                if icp.get('activity_days'):
+                    lines.append(f"   Activity: last {icp['activity_days']} days")
+                if icp.get('keywords'):
+                    lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
+                if icp.get('topics'):
+                    lines.append(f"   Topics: {', '.join(icp['topics'][:5])}")
+        except Exception:
+            pass
         
         # Repository Summary
         lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")

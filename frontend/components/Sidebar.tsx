@@ -15,31 +15,61 @@ export function Sidebar() {
     setCampaigns(getAllCampaigns());
   }, []);
 
-  // Refresh threads periodically and sync with backend
+  // Refresh threads periodically and sync with backend with exponential backoff.
+  // Only run while tab is visible to avoid background polling.
   useEffect(() => {
+    let syncInterval = 3000; // Start with 3 seconds
+    let consecutiveErrors = 0;
+    let timeoutId: NodeJS.Timeout;
+
+    const isVisible = () => typeof document !== 'undefined' ? !document.hidden : true;
+
     const syncWithBackend = async () => {
+      if (!isVisible()) {
+        // Skip sync while hidden and try again later
+        timeoutId = setTimeout(syncWithBackend, Math.min(syncInterval * 2, 30000));
+        return;
+      }
       try {
         // Sync backend jobs to thread storage
-        await fetch('/api/threads/sync', { method: 'POST' });
+        const response = await fetch('/api/threads/sync', { method: 'POST', cache: 'no-store' });
+
+        if (response.ok) {
+          // Success - reset backoff
+          consecutiveErrors = 0;
+          syncInterval = 3000;
+        } else {
+          // Non-200 response - increase backoff
+          consecutiveErrors++;
+          syncInterval = Math.min(syncInterval * 1.5, 30000); // Max 30 seconds
+        }
 
         // Refresh local state
         setThreads(getAllThreads());
         setCampaigns(getAllCampaigns());
       } catch (error) {
         console.warn('Failed to sync with backend:', error);
+        // Network error - increase backoff
+        consecutiveErrors++;
+        syncInterval = Math.min(syncInterval * 1.5, 30000); // Max 30 seconds
+
         // Still refresh local state
         setThreads(getAllThreads());
         setCampaigns(getAllCampaigns());
       }
+
+      // Schedule next sync with current interval
+      timeoutId = setTimeout(syncWithBackend, syncInterval);
     };
 
     // Initial sync
     syncWithBackend();
 
-    // Periodic sync every 3 seconds
-    const interval = setInterval(syncWithBackend, 3000);
-
-    return () => clearInterval(interval);
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
   }, []);
 
   const handleNewThread = () => {

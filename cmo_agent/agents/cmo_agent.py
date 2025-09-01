@@ -607,6 +607,18 @@ class CMOAgent:
             ) or 60
             try:
                 response = await asyncio.wait_for(self.llm.ainvoke(messages), timeout=llm_timeout)
+                
+                # Track token usage if available
+                if hasattr(response, 'usage_metadata') and response.usage_metadata:
+                    usage = response.usage_metadata
+                    tokens_used = getattr(usage, 'total_tokens', 0) or (
+                        getattr(usage, 'input_tokens', 0) + getattr(usage, 'output_tokens', 0)
+                    )
+                    if tokens_used > 0:
+                        state.setdefault("counters", {})
+                        state["counters"]["tokens"] = state["counters"].get("tokens", 0) + tokens_used
+                        logger.debug(f"Added {tokens_used} tokens to counter, total: {state['counters']['tokens']}")
+                
             except asyncio.TimeoutError:
                 logger.error(f"LLM timed out after {llm_timeout}s; continuing with auto-progression")
                 state.setdefault("errors", []).append({
@@ -637,8 +649,9 @@ class CMOAgent:
                 state.setdefault("counters", {})
                 state["counters"]["no_tool_call_streak"] = state["counters"].get("no_tool_call_streak", 0) + 1
                 limit = self.config.get("no_tool_call_limit", 3)
+
                 if state["counters"]["no_tool_call_streak"] >= limit:
-                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} consecutive steps; marking job failed.")
+                    logger.warning(f"No tool calls for {state['counters']['no_tool_call_streak']} steps; marking job failed.")
                     state.setdefault("errors", []).append({
                         "stage": "agent_step",
                         "error": "No tool calls from LLM for consecutive iterations",
@@ -649,8 +662,10 @@ class CMOAgent:
                     })
                     state["ended"] = True
                     state["current_stage"] = "failed"
+                    state["end_reason"] = "no_tool_calls_limit"
+                    return state  # stop further processing immediately
                 else:
-                    logger.info("No tool calls, continuing to agent")
+                    logger.info("No tool calls, continuing (auto-progress if enabled)")
 
                 # Update step counter and return early
                 state.setdefault("counters", {})
@@ -689,6 +704,26 @@ class CMOAgent:
                         if hasattr(self, 'beautiful_logger') and self.beautiful_logger:
                             hydrated_args['beautiful_logger'] = self.beautiful_logger
 
+                        # Update stage before execution for immediate progress updates
+                        stage_map = {
+                            "search_github_repos": "discovery",
+                            "extract_people": "extraction", 
+                            "enrich_github_users": "enrichment",
+                            "enrich_github_user": "enrichment",
+                            "find_commit_emails_batch": "validation",
+                            "find_commit_emails": "validation",
+                            "mx_check": "validation",
+                            "score_icp": "scoring",
+                            "render_copy": "personalization",
+                            "send_instantly": "sending",
+                            "sync_attio": "sync",
+                            "sync_linear": "sync",
+                            "export_csv": "export",
+                            "done": "completed"
+                        }
+                        if tool_name in stage_map:
+                            state["current_stage"] = stage_map[tool_name]
+                        
                         result = await tool.execute(**hydrated_args)
 
                         # Store result
@@ -747,6 +782,7 @@ class CMOAgent:
                     # If we already have repos but no candidates, extract people
                     if repos and not candidates and "extract_people" in self.tools:
                         logger.info("Auto-progress: executing extract_people based on repos present")
+                        state["current_stage"] = "extraction"
                         try:
                             tool = self.tools["extract_people"]
                             result = await tool.execute(repos=repos, top_authors_per_repo=5)
@@ -782,6 +818,7 @@ class CMOAgent:
                                 seen.add(login)
                         if unique_logins:
                             logger.info("Auto-progress: executing enrich_github_users based on candidates present")
+                            state["current_stage"] = "enrichment"
                             try:
                                 tool = self.tools["enrich_github_users"]
                                 result = await tool.execute(logins=unique_logins[:25])
@@ -818,6 +855,7 @@ class CMOAgent:
                                     user_repo_pairs.append({"login": login, "repo_full_name": repo_full_name})
                             if user_repo_pairs:
                                 logger.info("Auto-progress: executing find_commit_emails_batch for leads without email")
+                                state["current_stage"] = "validation"
                                 try:
                                     # Track before/after counts to detect progress
                                     before_with_email = len([l for l in state.get("leads", []) if l.get("email")])
@@ -1063,10 +1101,32 @@ class CMOAgent:
             }
             state.setdefault("errors", []).append(error_info)
 
+        # Capture ad-hoc artifacts provided by tools
+        try:
+            if result.success and hasattr(result, 'data') and isinstance(result.data, dict):
+                art = result.data.get("artifact")
+                if art:
+                    state.setdefault("artifacts", []).append(art)
+        except Exception:
+            pass
+
         # Handle different tool types
         if tool_name == "search_github_repos" and result.success:
             state["repos"] = result.data.get("repos", [])
             state["current_stage"] = "discovery"
+            # Collect drift flags from search tool
+            try:
+                drift = []
+                if isinstance(result.data, dict):
+                    drift = list(result.data.get("drift_flags") or [])
+                if drift:
+                    state.setdefault("plan_diffs", [])
+                    for q in drift:
+                        msg = f"Used default filter '{q}'"
+                        if msg not in state["plan_diffs"]:
+                            state["plan_diffs"].append(msg)
+            except Exception:
+                pass
 
         elif tool_name == "extract_people" and result.success:
             state["candidates"] = result.data.get("candidates", [])
@@ -1257,7 +1317,9 @@ class CMOAgent:
                         
                         # Add topics
                         if icp.get("topics"):
-                            query_parts.extend(icp["topics"][:3])  # Limit to avoid too long query
+                            # Add topics as separate topic: parameters
+                            for topic in icp["topics"][:3]:  # Limit to avoid too long query
+                                query_parts.append(f"topic:{topic}")
                         
                         if query_parts:
                             hydrated["q"] = " ".join(query_parts)
@@ -1448,6 +1510,14 @@ class CMOAgent:
         
         # Extract target numbers (emails, leads, contacts, etc.)
         import re
+
+        # If goal explicitly specifies stars range, prefer it over defaults/heuristics
+        try:
+            m = re.search(r"stars:(\d+)\.\.(\d+)", goal_lower)
+            if m:
+                stars_range = f"{m.group(1)}..{m.group(2)}"
+        except Exception:
+            pass
         target_emails = None
         target_leads = None
         
@@ -1573,8 +1643,43 @@ Available tools: {', '.join(self.tools.keys())}
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
             
-            # Parse goal to create ICP criteria and print at start for visibility
-            parsed_icp = self._parse_goal_to_icp(goal)
+            # Parse goal to create ICP criteria (AI YAMLizer path with validation)
+            try:
+                from ..yamlizer.yamlizer import make_yaml_config, to_yaml
+                from ..yamlizer.planner import build_plan
+                cfg = make_yaml_config(goal)
+                parsed_icp = {
+                    "languages": [cfg.params.language],
+                    "activity_days": cfg.params.activity_days,
+                    "stars_range": cfg.params.stars_range,
+                    "topics": cfg.params.topics or [],
+                    "target_leads": cfg.params.target_leads,
+                }
+                # Emit config snapshot
+                try:
+                    if progress_callback:
+                        await progress_callback({
+                            "stage": "initialization",
+                            "current_item": "config_snapshot",
+                            "config": cfg.model_dump(),
+                            "config_yaml": to_yaml(cfg),
+                        })
+                except Exception:
+                    pass
+                # Build a plan (for observability)
+                try:
+                    plan = build_plan(cfg)
+                    if progress_callback:
+                        await progress_callback({
+                            "stage": "initialization",
+                            "current_item": "plan_snapshot",
+                            "plan": plan,
+                        })
+                except Exception:
+                    pass
+            except Exception:
+                # Fallback to legacy ICP parser
+                parsed_icp = self._parse_goal_to_icp(goal)
             try:
                 icp_summary = {
                     "languages": parsed_icp.get("languages"),
@@ -1625,6 +1730,28 @@ Available tools: {', '.join(self.tools.keys())}
                 self.beautiful_logger = None
 
             # (parsed_icp already computed above)
+            # Compute plan_diffs vs user goal to surface defaults
+            try:
+                goal_text = (goal or "").lower()
+                plan_diffs: list[str] = []
+                di = (self.config.get("default_icp") or {}) if isinstance(self.config, dict) else {}
+                langs = di.get("languages") or []
+                if langs and not any((str(l).lower() in goal_text) for l in langs):
+                    plan_diffs.append(f"Language not specified; defaulted to {', '.join(langs)}")
+                sr = di.get("stars_range")
+                if sr and ("star" not in goal_text):
+                    plan_diffs.append(f"Stars range not specified; using default {sr}")
+                ad = di.get("activity_days")
+                if ad and all(k not in goal_text for k in ["day", "week", "month"]):
+                    plan_diffs.append(f"No activity window given; assumed last {ad} days")
+                topics = di.get("topics") or []
+                if topics and all(str(t).lower() not in goal_text for t in topics):
+                    # Only add if we will actually filter by topics later
+                    pass
+                if plan_diffs:
+                    initial_state["plan_diffs"] = plan_diffs
+            except Exception:
+                pass
             
             # Initialize state
             initial_state = RunState(
@@ -1659,6 +1786,13 @@ Available tools: {', '.join(self.tools.keys())}
 
                     # Extract progress information
                     progress_info = self._extract_progress_info(step_result)
+                    # Enforce valid stage values (avoid 'unknown' in UI)
+                    try:
+                        st = progress_info.get("stage")
+                        if not isinstance(st, str) or st.strip().lower() in {"", "unknown"}:
+                            progress_info["stage"] = step_result.get("current_stage") or "initialization"
+                    except Exception:
+                        pass
                     if progress_callback:
                         await progress_callback(progress_info)
 
@@ -1855,6 +1989,10 @@ Available tools: {', '.join(self.tools.keys())}
             "failed": "Failed",
         }
 
+        # Ensure we never return "unknown" as a stage
+        if current_stage == "unknown" or not current_stage:
+            current_stage = "initialization"
+        
         progress_info = {
             "stage": stage_names.get(current_stage, current_stage),
             "step": counters.get("steps", 0),
@@ -1866,7 +2004,7 @@ Available tools: {', '.join(self.tools.keys())}
                 "leads_enriched": len(state.get("leads", [])),
                 "emails_to_send": len(state.get("to_send", [])),
             },
-            "current_item": f"Processing {current_stage} phase",
+            "current_item": f"Processing {stage_names.get(current_stage, current_stage)} phase",
         }
 
         # Add estimated completion if we have progress data
@@ -2084,17 +2222,45 @@ Available tools: {', '.join(self.tools.keys())}
         artifacts = []
 
         try:
+            print(f"DEBUG: _collect_artifacts called for job {job_id}")
+            print(f"DEBUG: final_state keys: {list(final_state.keys()) if final_state else 'None'}")
             # Always collect available data regardless of completion status
             if final_state:
+                # Include any tool-provided artifacts present in state
+                try:
+                    extra_arts = final_state.get("artifacts") or []
+                    if isinstance(extra_arts, list) and extra_arts:
+                        artifacts.extend(extra_arts)
+                except Exception:
+                    pass
+
                 # Collect repositories data
                 repos = final_state.get("repos", [])
                 if repos:
                     artifacts.append(await self._export_repos_data(job_id, repos, job_status))
 
-                # Collect leads data
-                leads = final_state.get("leads", [])
+                # Collect leads data - handle nested structure
+                leads_data = final_state.get("leads", {})
+                if isinstance(leads_data, dict) and "leads" in leads_data:
+                    leads = leads_data["leads"]
+                else:
+                    leads = leads_data if isinstance(leads_data, list) else []
+
                 if leads:
+                    print(f"DEBUG: Found {len(leads)} leads for job {job_id}, exporting data")
+                    logger.info(f"Found {len(leads)} leads for job {job_id}, exporting data")
                     artifacts.append(await self._export_leads_data(job_id, leads, job_status))
+                    # Also export contactable emails as CSV
+                    print(f"DEBUG: Exporting contactable emails for job {job_id}")
+                    logger.info(f"Exporting contactable emails for job {job_id}")
+                    contact_art = await self._export_contactable_emails(job_id, leads, job_status)
+                    if contact_art:
+                        print(f"DEBUG: Adding contactable emails artifact to job {job_id}")
+                        logger.info(f"Adding contactable emails artifact to job {job_id}")
+                        artifacts.append(contact_art)
+                    else:
+                        print(f"DEBUG: No contactable emails artifact created for job {job_id}")
+                        logger.warning(f"No contactable emails artifact created for job {job_id}")
 
                 # Collect candidates data
                 candidates = final_state.get("candidates", [])
@@ -2204,6 +2370,69 @@ Available tools: {', '.join(self.tools.keys())}
 
         except Exception as e:
             logger.error(f"Failed to export leads data: {e}")
+            return None
+
+    async def _export_contactable_emails(self, job_id: str, leads: list, job_status: str):
+        """Export contactable emails as CSV excluding noreply addresses"""
+        try:
+            print(f"DEBUG: Exporting contactable emails for job {job_id}, found {len(leads)} leads")
+            logger.info(f"Exporting contactable emails for job {job_id}, found {len(leads)} leads")
+            # Filter out noreply emails using unified function
+            from ..utils.email_utils import filter_contactable_emails
+
+            all_emails = []
+            for lead in leads:
+                email = lead.get("email") or lead.get("primary_email")
+                if email:
+                    # Strip quotes that may be present in CSV data
+                    clean_email = email.strip('"').strip("'")
+                    all_emails.append(clean_email)
+
+            logger.info(f"Found {len(all_emails)} total emails for job {job_id}")
+            valid_emails = filter_contactable_emails(all_emails)
+            logger.info(f"Found {len(valid_emails)} valid contactable emails for job {job_id}")
+            # Always attach CSV artifact even if no contactable emails were found
+            # (empty file signals completion with zero emails)
+
+            # Write CSV content (one email per line)
+            export_dir = Path(self.config.get("directories", {}).get("exports", "./exports"))
+            job_dir = export_dir / job_id
+            job_dir.mkdir(parents=True, exist_ok=True)
+            csv_path = job_dir / "leads_contactable.csv"
+            csv_content = "\n".join(valid_emails) if valid_emails else ""
+            csv_path.write_text(csv_content)
+            logger.info(f"Wrote {len(valid_emails)} contactable emails to {csv_path}")
+
+            # Register artifact in index
+            artifact_id = await self.artifact_manager.store_artifact(
+                job_id=job_id,
+                filename="leads_contactable.csv",
+                data={"emails": valid_emails},        # store list as JSON for index (content already written as CSV)
+                artifact_type="contacts",
+                retention_policy="default",
+                compress=False,
+                tags=["contactable", job_status]
+            )
+            logger.info(f"Stored contactable emails artifact with ID: {artifact_id}")
+
+            # Overwrite path to point to the CSV file we wrote (artifact manager stored a JSON, but we want the CSV file for download)
+            meta = await self.artifact_manager.get_artifact_metadata(artifact_id)
+            if meta:
+                meta.path = str(csv_path)  # update to actual CSV file path
+                meta.filename = "leads_contactable.csv"
+                # Update internal index as well
+                self.artifact_manager._index[artifact_id]["path"] = str(csv_path)
+                self.artifact_manager._index[artifact_id]["filename"] = "leads_contactable.csv"
+
+            return {
+                "type": "contacts",
+                "artifact_id": artifact_id,
+                "filename": "leads_contactable.csv",
+                "count": len(valid_emails)
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to export contactable emails: {e}")
             return None
 
     async def _export_candidates_data(self, job_id: str, candidates: list, job_status: str):

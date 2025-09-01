@@ -12,7 +12,8 @@ export async function POST(req: Request) {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json'
-      }
+      },
+      cache: 'no-store'
     });
 
     if (!jobsResp.ok) {

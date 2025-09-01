@@ -76,6 +76,18 @@ class SearchGitHubRepos(GitHubTool):
         """
         try:
             raw_q = (q or "").strip()
+            drift_flags: List[str] = []
+
+            # Normalize malformed topics query: topics:a,b,c -> topic:a topic:b topic:c
+            if "topics:" in raw_q:
+                import re
+                # Capture topics:<comma-separated> until whitespace or end
+                topics_match = re.search(r"topics:([^\s]+)", raw_q)
+                if topics_match:
+                    topics_str = topics_match.group(1)
+                    topic_list = [t.strip() for t in topics_str.split(',') if t.strip()]
+                    replacement = " ".join([f"topic:{t}" for t in topic_list])
+                    raw_q = re.sub(r"topics:[^\s]+", replacement, raw_q).strip()
 
             # Optional structured constraints (when ICP was not inlined in q)
             language: str = (kwargs.get("language") or "").strip()
@@ -87,6 +99,11 @@ class SearchGitHubRepos(GitHubTool):
                 nonlocal raw_q
                 if qualifier not in raw_q:
                     raw_q += (" " if raw_q else "") + qualifier
+                    try:
+                        drift_flags.append(qualifier)
+                        logger.info(f"Added default qualifier: {qualifier}")
+                    except Exception:
+                        pass
 
             # Defaults: public, not archived, not forks
             _ensure("is:public")
@@ -96,22 +113,44 @@ class SearchGitHubRepos(GitHubTool):
             # Apply structured qualifiers only if caller didn't provide them
             if language and ("language:" not in raw_q):
                 raw_q += (" " if raw_q else "") + f"language:{language}"
+                try:
+                    drift_flags.append(f"language:{language}")
+                except Exception:
+                    pass
             if stars_range and ("stars:" not in raw_q):
                 raw_q += (" " if raw_q else "") + f"stars:{stars_range}"
+                try:
+                    drift_flags.append(f"stars:{stars_range}")
+                except Exception:
+                    pass
             if ("pushed:" not in raw_q) and ("created:" not in raw_q):
                 try:
                     # Use same calculation as CLI (date.today() not datetime.now(UTC)) for consistency
                     from datetime import date
                     cutoff = (date.today() - timedelta(days=max(1, activity_days))).isoformat()
                     raw_q += (" " if raw_q else "") + f"pushed:>={cutoff}"
+                    try:
+                        drift_flags.append(f"pushed:>={cutoff}")
+                    except Exception:
+                        pass
                 except Exception:
                     pass
 
+            # Page size and sorting (tunable via kwargs or env)
+            try:
+                per_page_cfg = int(kwargs.get("per_page") or os.getenv("GITHUB_SEARCH_PER_PAGE", "100"))
+            except Exception:
+                per_page_cfg = 100
+            per_page_cfg = max(1, min(per_page_cfg, 100))
+
+            sort_by = (kwargs.get("sort") or os.getenv("GITHUB_SEARCH_SORT", "updated")).strip() or "updated"
+            order_by = (kwargs.get("order") or os.getenv("GITHUB_SEARCH_ORDER", "desc")).strip() or "desc"
+
             params = {
                 "q": raw_q,
-                "sort": "stars",
-                "order": "desc",
-                "per_page": min(max_repos, 100),  # GitHub API limit
+                "sort": sort_by,
+                "order": order_by,
+                "per_page": per_page_cfg,
             }
 
             repos = []
@@ -136,124 +175,263 @@ class SearchGitHubRepos(GitHubTool):
                 record_error("github_search")
                 raise last_err
 
-            while len(repos) < max_repos and page <= max_pages:
-                params["page"] = page
+            # Optional sharding to avoid 1k-per-query cap
+            enable_sharding = (str(kwargs.get("enable_sharding") or os.getenv("GITHUB_ENABLE_SHARDING", "1")).strip() == "1")
+            shard_queries: List[str] = []
+            if enable_sharding:
+                try:
+                    import re as _re
+                    # Determine stars range
+                    sr_low, sr_high = None, None
+                    if "stars:" in raw_q:
+                        m = _re.search(r"stars:(\d+)\.\.(\d+)", raw_q)
+                        if m:
+                            sr_low, sr_high = int(m.group(1)), int(m.group(2))
+                    elif stars_range:
+                        m = _re.match(r"(\d+)\.\.(\d+)", stars_range)
+                        if m:
+                            sr_low, sr_high = int(m.group(1)), int(m.group(2))
+                    if sr_low is not None and sr_high is not None and sr_low < sr_high:
+                        bands = int(kwargs.get("star_shards") or int(os.getenv("GITHUB_STAR_SHARDS", "5")))
+                        step = max(1, (sr_high - sr_low + 1) // bands)
+                        base_no_stars = _re.sub(r"\s*stars:[^\s]+", "", raw_q).strip()
+                        cur = sr_low
+                        while cur <= sr_high:
+                            upper = min(sr_high, cur + step - 1)
+                            shard_q = (base_no_stars + (" " if base_no_stars else "") + f"stars:{cur}..{upper}").strip()
+                            shard_queries.append(shard_q)
+                            cur = upper + 1
+                except Exception:
+                    shard_queries = []
 
-                result = await _safe_search(params)
+            queries_to_run: List[str] = shard_queries if shard_queries else [raw_q]
 
-                # Track total available results from GitHub
-                if total_available is None and result.get("total_count") is not None:
-                    total_available = result["total_count"]
-                    logger.info(f"GitHub reports {total_available} total repositories available for query")
+            # Helpers for graceful degradation of overly strict or invalid queries
+            import re as _re2
+            def _drop_topics(qtext: str) -> str:
+                return _re2.sub(r"\b-?topic:[^\s]+", "", qtext).strip()
 
-                items = result.get("items", [])
-                if not items:
-                    low_yield_pages_in_a_row += 1
-                    # concise page log (no raw URL)
+            def _drop_free_keywords(qtext: str) -> str:
+                tokens = qtext.split()
+                keep = []
+                logical = {"OR", "AND", "NOT", "(" , ")"}
+                for t in tokens:
+                    if ":" in t or t in logical or t.startswith("(") or t.endswith(")"):
+                        keep.append(t)
+                return " ".join(keep).strip()
+
+            def _widen_stars(qtext: str) -> str:
+                # Prefer a broad, sane range if stars present or missing
+                # Target: 50..5000 for discovery breadth
+                m = _re2.search(r"stars:(\d+)\.\.(\d+)", qtext)
+                if m:
+                    return _re2.sub(r"stars:50..5000", qtext)
+                m2 = _re2.search(r"stars:>=?(\d+)", qtext)
+                if m2:
+                    return _re2.sub(r"stars:50..5000", qtext)
+                # If no stars present, add a permissive range
+                return (qtext + " stars:50..5000").strip()
+
+            def _add_in_readme(qtext: str) -> str:
+                return qtext if "in:readme" in qtext else (qtext + " in:readme").strip()
+
+            def _relax_activity_window(qtext: str, days_now: int = 90) -> str:
+                # If pushed:>=YYYY-MM-DD present, extend window older by factor 2 (cap at 365)
+                try:
+                    import datetime as _dt
+                    m = _re2.search(r"pushed:>=(\d{4}-\d{2}-\d{2})", qtext)
+                    if m:
+                        # compute an older date by doubling days_now (bounded to 365)
+                        widen_days = min(365, max(30, days_now * 2))
+                        new_cutoff = (_dt.date.today() - _dt.timedelta(days=widen_days)).isoformat()
+                        return _re2.sub(r"pushed:>=(\d{4}-\d{2}-\d{2})", f"pushed:>={new_cutoff}", qtext)
+                    # If no pushed qualifier, keep as-is
+                except Exception:
+                    pass
+                return qtext
+
+            for qtext in queries_to_run:
+                if len(repos) >= max_repos:
+                    break
+                page = 1
+                while len(repos) < max_repos and page <= max_pages:
+                    params["q"] = qtext
+                    params["page"] = page
+
+                    # Try search with graceful degradation on 422 or zero results
+                    try:
+                        result = await _safe_search(params)
+                    except Exception as e:
+                        # Detect GitHub 422 Unprocessable Entity and degrade the query
+                        status = getattr(e, "status", None)
+                        if status == 422 or "422" in str(e):
+                            logger.warning("GitHub returned 422 for query; dropping topics and retrying")
+                            qtext = _drop_topics(qtext)
+                            params["q"] = qtext
+                            try:
+                                result = await _safe_search(params)
+                            except Exception as e2:
+                                status2 = getattr(e2, "status", None)
+                                if status2 == 422 or "422" in str(e2):
+                                    logger.warning("Still 422; dropping free-text keywords and retrying")
+                                    qtext = _drop_free_keywords(qtext)
+                                    params["q"] = qtext
+                                    try:
+                                        result = await _safe_search(params)
+                                    except Exception as e3:
+                                        status3 = getattr(e3, "status", None)
+                                        if status3 == 422 or "422" in str(e3):
+                                            logger.warning("Still 422; widening stars and retrying")
+                                            qtext = _widen_stars(qtext)
+                                            params["q"] = qtext
+                                            result = await _safe_search(params)
+                                        else:
+                                            raise
+                                else:
+                                    raise
+                        else:
+                            raise
+
+                    # Track total available results from GitHub
+                    if total_available is None and result.get("total_count") is not None:
+                        total_available = result["total_count"]
+                        logger.info(f"GitHub reports {total_available} total repositories available for query")
+
+                    # If query is too strict (zero results on first page), progressively relax
+                    if page == 1 and result.get("total_count") == 0:
+                        logger.info("Zero results; relaxing query by dropping topics → keywords → widening stars → in:readme → older pushed")
+                        relaxed = _drop_topics(qtext)
+                        if relaxed != qtext:
+                            qtext = relaxed
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            relaxed = _drop_free_keywords(qtext)
+                            if relaxed != qtext:
+                                qtext = relaxed
+                                params["q"] = qtext
+                                result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _widen_stars(qtext)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _add_in_readme(qtext)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+                        if result.get("total_count") == 0:
+                            qtext = _relax_activity_window(qtext, activity_days)
+                            params["q"] = qtext
+                            result = await _safe_search(params)
+
+                    items = result.get("items", [])
+                    if not items:
+                        low_yield_pages_in_a_row += 1
+                        # concise page log (no raw URL)
+                        try:
+                            logger.info(
+                                "🔎 GitHub search page=%d per_page=%d -> repos=%d (low_yield=%d)",
+                                page,
+                                params.get("per_page", 0),
+                                0,
+                                low_yield_pages_in_a_row,
+                                extra={
+                                    "structured": {
+                                        "event": "github_search",
+                                        "page": page,
+                                        "per_page": params.get("per_page", 0),
+                                        "repos": 0,
+                                        "q": qtext,
+                                        "low_yield": low_yield_pages_in_a_row,
+                                    }
+                                },
+                            )
+                        except Exception:
+                            pass
+                        # Break early if we've had multiple low-yield pages and met minimum
+                        if low_yield_pages_in_a_row >= 2 and page >= min_pages:
+                            logger.info("Stopping: low yield across multiple pages")
+                            break
+                        page += 1
+                        continue
+                    else:
+                        low_yield_pages_in_a_row = 0  # Reset on successful page
+
+                    repos_added_this_page = 0
+                    # concise page log with counts
                     try:
                         logger.info(
-                            "🔎 GitHub search page=%d per_page=%d -> repos=%d (low_yield=%d)",
+                            "🔎 GitHub search page=%d per_page=%d -> repos=%d",
                             page,
                             params.get("per_page", 0),
-                            0,
-                            low_yield_pages_in_a_row,
+                            len(items),
                             extra={
                                 "structured": {
                                     "event": "github_search",
                                     "page": page,
                                     "per_page": params.get("per_page", 0),
-                                    "repos": 0,
-                                    "q": raw_q,
-                                    "low_yield": low_yield_pages_in_a_row,
+                                    "repos": len(items),
+                                    "q": qtext,
                                 }
                             },
                         )
                     except Exception:
                         pass
-                    
-                    # Break early if we've had multiple low-yield pages and met minimum
-                    if low_yield_pages_in_a_row >= 2 and page >= min_pages:
-                        logger.info("Stopping: low yield across multiple pages")
-                        break
-                    
+
+                    for item in items:
+                        if len(repos) >= max_repos:
+                            break
+                        repo_data = {
+                            "id": item["id"],
+                            "full_name": item["full_name"],
+                            "name": item["name"],
+                            "owner_login": item["owner"]["login"],
+                            "description": item.get("description", ""),
+                            "topics": item.get("topics", []),
+                            "language": item.get("language"),
+                            "stars": item["stargazers_count"],
+                            "forks": item["forks_count"],
+                            "open_issues": item["open_issues_count"],
+                            "pushed_at": item["pushed_at"],
+                            "created_at": item["created_at"],
+                            "updated_at": item["updated_at"],
+                            "html_url": item["html_url"],
+                            "api_url": item["url"],
+                            "is_archived": item["archived"],
+                            "is_fork": item["fork"],
+                        }
+                        # Post-filter obvious non-target/meta repos
+                        if language and repo_data.get("language") and str(repo_data.get("language")).lower() != language.lower():
+                            continue
+                        if str(repo_data.get("name") or "").lower() == ".github":
+                            continue
+                        # De-duplicate by id
+                        if any(r.get("id") == repo_data["id"] for r in repos):
+                            continue
+                        repos.append(repo_data)
+                        repos_added_this_page += 1
+
+                    # Check if we should continue to next page
+                    if repos_added_this_page == 0:
+                        low_yield_pages_in_a_row += 1
+                        logger.info(f"No useful repos added from page {page}, low yield streak: {low_yield_pages_in_a_row}")
+                    else:
+                        low_yield_pages_in_a_row = 0
+                        logger.info(f"Added {repos_added_this_page} repos from page {page}")
+
                     page += 1
-                    continue
-                else:
-                    low_yield_pages_in_a_row = 0  # Reset on successful page
 
-                repos_added_this_page = 0
-                # concise page log with counts
-                try:
-                    logger.info(
-                        "🔎 GitHub search page=%d per_page=%d -> repos=%d",
-                        page,
-                        params.get("per_page", 0),
-                        len(items),
-                        extra={
-                            "structured": {
-                                "event": "github_search",
-                                "page": page,
-                                "per_page": params.get("per_page", 0),
-                                "repos": len(items),
-                                "q": raw_q,
-                            }
-                        },
-                    )
-                except Exception:
-                    pass
-
-                for item in items:
-                    if len(repos) >= max_repos:
+                    # Adaptive stopping conditions
+                    if low_yield_pages_in_a_row >= 2 and page > min_pages:
+                        logger.info(f"Stopping: {low_yield_pages_in_a_row} consecutive low-yield pages")
                         break
 
-                    repo_data = {
-                        "id": item["id"],
-                        "full_name": item["full_name"],
-                        "name": item["name"],
-                        "owner_login": item["owner"]["login"],
-                        "description": item.get("description", ""),
-                        "topics": item.get("topics", []),
-                        "language": item.get("language"),
-                        "stars": item["stargazers_count"],
-                        "forks": item["forks_count"],
-                        "open_issues": item["open_issues_count"],
-                        "pushed_at": item["pushed_at"],
-                        "created_at": item["created_at"],
-                        "updated_at": item["updated_at"],
-                        "html_url": item["html_url"],
-                        "api_url": item["url"],
-                        "is_archived": item["archived"],
-                        "is_fork": item["fork"],
-                    }
-                    # Post-filter obvious non-target/meta repos
-                    if language and repo_data.get("language") and str(repo_data.get("language")).lower() != language.lower():
-                        continue
-                    if str(repo_data.get("name") or "").lower() == ".github":
-                        continue
-                    repos.append(repo_data)
-                    repos_added_this_page += 1
-
-                # Check if we should continue to next page
-                if repos_added_this_page == 0:
-                    low_yield_pages_in_a_row += 1
-                    logger.info(f"No useful repos added from page {page}, low yield streak: {low_yield_pages_in_a_row}")
-                else:
-                    low_yield_pages_in_a_row = 0
-                    logger.info(f"Added {repos_added_this_page} repos from page {page}")
-
-                page += 1
-                
-                # Adaptive stopping conditions
-                if low_yield_pages_in_a_row >= 2 and page > min_pages:
-                    logger.info(f"Stopping: {low_yield_pages_in_a_row} consecutive low-yield pages")
-                    break
-                
-                # Small pause between pages to avoid secondary rate limits
-                try:
-                    import asyncio
-                    await asyncio.sleep(0.2)
-                except Exception:
-                    pass
+                    # Small pause between pages to avoid secondary rate limits
+                    try:
+                        import asyncio
+                        await asyncio.sleep(0.2)
+                    except Exception:
+                        pass
 
             # Log final search statistics
             if total_available is not None:
@@ -263,12 +441,13 @@ class SearchGitHubRepos(GitHubTool):
 
             return ToolResult(
                 success=True,
-                data={"repos": repos, "count": len(repos), "query": q},
+                data={"repos": repos, "count": len(repos), "query": raw_q, "drift_flags": drift_flags},
                 metadata={
-                    "pages_searched": page - 1, 
+                    "pages_searched": page - 1,
                     "max_requested": max_repos,
                     "total_available": total_available,
-                    "low_yield_pages": low_yield_pages_in_a_row
+                    "low_yield_pages": low_yield_pages_in_a_row,
+                    "drift_flags": drift_flags
                 }
             )
 
@@ -298,7 +477,17 @@ class ExtractPeople(GitHubTool):
                 activity_days = 90
             cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=max(1, activity_days))).isoformat().replace("+00:00", "Z")
 
-            for repo in repos[:50]:  # Limit to avoid rate limits
+            # Prioritize repos by recent activity (pushed_at) before processing
+            try:
+                repos_sorted = sorted(
+                    repos,
+                    key=lambda r: (r.get("pushed_at") or r.get("updated_at") or ""),
+                    reverse=True,
+                )
+            except Exception:
+                repos_sorted = repos
+
+            for repo in repos_sorted[:200]:  # Limit to prevent rate limiting issues
                 try:
                     # Tolerate minimal/malformed repo inputs
                     repo_full_name = repo.get("full_name") or repo.get("repo_full_name")

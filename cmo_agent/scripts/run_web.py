@@ -11,7 +11,7 @@ from datetime import datetime
 
 from dotenv import load_dotenv, find_dotenv
 from fastapi import FastAPI, Request, Form, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -48,7 +48,11 @@ load_dotenv(find_dotenv(usecwd=True))
 
 from cmo_agent.scripts.run_agent import run_campaign  # reuse async entrypoint
 from cmo_agent.scripts.run_execution import ExecutionEngine
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST, Counter, Gauge
+from cmo_agent.obs.logging import configure_logging
+from cmo_agent.core.artifacts import get_artifact_manager
 
+configure_logging(os.getenv("LOG_LEVEL", "INFO"))
 app = FastAPI(title="CMO Agent - Minimal UI")
 app.add_middleware(RequestLogMiddleware)
 
@@ -89,6 +93,43 @@ async def on_startup():
     except Exception as e:
         # If engine fails, API endpoints will raise 503s
         print(f"[startup] ExecutionEngine error: {e}")
+
+
+# -----------------------
+# Prometheus Metrics
+# -----------------------
+from prometheus_client import Gauge, Counter, Histogram
+
+_jobs_total = Gauge("cmo_jobs_total", "Total jobs processed")
+_jobs_running = Gauge("cmo_jobs_running", "Jobs currently running")
+_jobs_failed = Gauge("cmo_jobs_failed", "Jobs that failed")
+_jobs_completed = Gauge("cmo_jobs_completed", "Jobs that completed successfully")
+_sse_errors = Counter("cmo_sse_errors_total", "SSE errors")
+_api_requests = Counter("cmo_api_requests_total", "API requests", ["method", "endpoint"])
+_request_duration = Histogram("cmo_request_duration_seconds", "Request duration in seconds", ["method", "endpoint"])
+
+
+@app.get("/metrics")
+async def metrics():
+    try:
+        # Update metrics from engine stats if available
+        if engine:
+            try:
+                # Get basic stats from engine
+                stats = await engine.get_stats_async() if hasattr(engine, 'get_stats_async') else {}
+                jobs_stats = stats.get("jobs", {})
+
+                _jobs_total.set(jobs_stats.get("total", 0))
+                _jobs_running.set(jobs_stats.get("running", 0))
+                _jobs_failed.set(jobs_stats.get("failed", 0))
+                _jobs_completed.set(jobs_stats.get("completed", 0))
+            except Exception:
+                # If engine stats fail, just return current metrics
+                pass
+
+        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        return Response(f"metrics unavailable: {e}", status_code=503)
 
 
 @app.on_event("shutdown")
@@ -282,12 +323,13 @@ async def api_get_job_summary(job_id: str):
             except Exception:
                 pass
             try:
+                from ..utils.email_utils import is_noreply_email
+
                 for lead in (agent_state.get('leads') or []):
-                    email = (lead or {}).get('email')
-                    if isinstance(email, str):
-                        el = email.lower()
-                        if '@' in el and 'noreply' not in el and 'no-reply' not in el:
-                            leads_with_emails_count += 1
+                    # Check both email and primary_email fields to match export logic
+                    email = (lead or {}).get('email') or (lead or {}).get('primary_email')
+                    if isinstance(email, str) and not is_noreply_email(email):
+                        leads_with_emails_count += 1
             except Exception:
                 pass
 
@@ -367,21 +409,145 @@ async def api_get_job_summary(job_id: str):
                         count_emailable = 0
                         for lead in leads:
                             if isinstance(lead, dict):
-                                email = (lead.get("email") or lead.get("best_email") or "")
-                                if isinstance(email, str):
-                                    el = email.lower()
-                                    if "@" in el and "noreply" not in el and "no-reply" not in el:
-                                        count_emailable += 1
+                                # Check email, primary_email, and best_email fields to match export logic
+                                email = (lead.get("email") or lead.get("primary_email") or lead.get("best_email") or "")
+                                if isinstance(email, str) and not is_noreply_email(email):
+                                    count_emailable += 1
                         summary["leads_with_emails"] = max(summary.get("leads_with_emails", 0), count_emailable)
     except Exception:
         # Non-fatal enrichment failure
         pass
 
+    # Enrich artifacts with download URLs
+    artifacts = status.get("artifacts") or []
+    enriched_artifacts = []
+    for artifact in artifacts:
+        if isinstance(artifact, dict) and artifact.get("artifact_id"):
+            enriched_artifact = dict(artifact)
+            enriched_artifact["download_url"] = f"/api/artifacts/{artifact['artifact_id']}"
+            enriched_artifacts.append(enriched_artifact)
+        else:
+            enriched_artifacts.append(artifact)
+    
     return {
         "status": status.get("status"),
         "summary": summary,
+        "artifacts": enriched_artifacts,
+    }
+
+
+@app.get("/api/jobs/{job_id}/artifacts")
+async def api_get_job_artifacts(job_id: str):
+    """Return the artifacts metadata for a job (paths, filenames, counts).
+    Mirrors the artifacts portion of the summary endpoint but as a dedicated route.
+    """
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id": job_id,
+        "status": status.get("status"),
         "artifacts": status.get("artifacts") or [],
     }
+
+
+@app.get("/api/jobs/{job_id}/artifacts/{name}")
+async def api_download_job_artifact_by_name(job_id: str, name: str):
+    """Download an artifact for a job by filename or name field.
+    Works for simple file artifacts that include a direct path (e.g., ExportCSV output).
+    """
+    from fastapi.responses import FileResponse
+    import mimetypes
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    artifacts = status.get("artifacts") or []
+    # Find matching artifact by 'name' or 'filename'
+    target = None
+    for a in artifacts:
+        if not isinstance(a, dict):
+            continue
+        if a.get("name") == name or a.get("filename") == name:
+            target = a
+            break
+    if not target:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    path = target.get("path")
+    if not path or not Path(path).exists():
+        raise HTTPException(status_code=410, detail="Artifact file not available")
+    mime = target.get("mime") or mimetypes.guess_type(name)[0] or "application/octet-stream"
+    return FileResponse(path=path, media_type=mime, filename=name)
+
+
+@app.api_route("/api/chat", methods=["GET", "POST"])
+async def api_chat_stub():
+    """Stub chat endpoint to avoid 404s when UI posts to /api/chat.
+    Returns 200 with a simple note; real chat is handled client-side.
+    """
+    return JSONResponse({"ok": True, "note": "Chat is not implemented in API."}, status_code=200)
+
+
+@app.delete("/api/jobs/{job_id}/artifacts")
+async def api_delete_job_artifacts(job_id: str):
+    """Best-effort delete of files listed in job artifacts for this job.
+    Useful for PII retention/cleanup without depending on registry internals.
+    """
+    import os
+    import json as _json
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    deleted = 0
+    errors = 0
+    artifacts = status.get("artifacts") or []
+    for a in artifacts:
+        try:
+            path = (a or {}).get("path")
+            if path and os.path.isfile(path):
+                os.remove(path)
+                deleted += 1
+        except Exception:
+            errors += 1
+            continue
+    return {"ok": True, "deleted": deleted, "errors": errors}
+
+
+@app.get("/api/artifacts/{artifact_id}")
+async def api_download_artifact(artifact_id: str):
+    """Download an artifact by ID"""
+    eng = _require_engine()
+    # Fetch artifact metadata to get file path and name
+    meta = await eng.get_artifact_metadata(artifact_id)
+    if not meta:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+    file_path = Path(meta.path)
+    if not file_path.exists():
+        raise HTTPException(status_code=410, detail="Artifact file not available")
+    # Set appropriate content type
+    filename = meta.filename
+    content_type = "text/csv" if filename.endswith(".csv") else "application/json"
+    # Return file directly (streaming file response)
+    return FileResponse(path=file_path, media_type=content_type, filename=filename)
+
+
+@app.delete("/api/jobs/{job_id}/artifacts/{artifact_id}")
+async def api_delete_artifact(job_id: str, artifact_id: str):
+    eng = _require_engine()
+    status = await eng.get_job_status(job_id)
+    if not status:
+        raise HTTPException(status_code=404, detail="Job not found")
+    # Best-effort deletion using artifact manager
+    try:
+        manager = get_artifact_manager(eng.agent.config if eng and eng.agent else None)
+        ok = await manager.delete_artifact(artifact_id)
+        if not ok:
+            raise HTTPException(status_code=404, detail="Artifact not found")
+        return {"status": "deleted", "artifact_id": artifact_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/jobs/{job_id}/pause")
@@ -480,10 +646,11 @@ async def api_job_events(request: Request, job_id: str):
             try:
                 status = await engine.get_job_status(job_id)
                 if status:
-                    # If job already terminal, send terminal frame and exit (late connect)
+                    # If job already terminal, send terminal frame and keep alive briefly before exit (late connect)
                     if status["status"] in ["completed", "failed", "cancelled"]:
-                        # Replay a terminal event with summary/artifacts and close
+                        # Send terminal event with retry hint
                         yield "retry: 30000\n\n"
+                        # Keep connection alive for 10-15 seconds to prevent aggressive browser reconnects
                         # Try to build summary/artifacts snapshot from status/progress
                         summary = None
                         artifacts = status.get("artifacts") or []
@@ -515,7 +682,7 @@ async def api_job_events(request: Request, job_id: str):
                                         email = (lead or {}).get('email')
                                         if isinstance(email, str):
                                             el = email.lower()
-                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                            if not is_noreply_email(email):
                                                 leads_with_emails_count += 1
                                 except Exception:
                                     pass
@@ -544,9 +711,29 @@ async def api_job_events(request: Request, job_id: str):
                             "status": status["status"],
                             "summary": summary,
                             "artifacts": artifacts,
+                            "actions": []
                         }
+                        try:
+                            if status.get("status") in ["completed", "failed"] and status.get("goal"):
+                                final_evt["actions"].append({
+                                    "id": "rerun",
+                                    "label": "Rerun Campaign",
+                                    "style": "primary",
+                                    "payload": {"goal": status["goal"]}
+                                })
+                        except Exception:
+                            pass
                         yield "event: job_finalized\n"
                         yield f"data: {_json.dumps(final_evt)}\n\n"
+
+                        # Keep connection alive for 10-15 seconds before closing to prevent aggressive browser reconnects
+                        keep_alive_start = time.time()
+                        while time.time() - keep_alive_start < 12:  # 12 seconds
+                            if await request.is_disconnected():
+                                break
+                            yield ": keep-alive\n\n"
+                            await asyncio.sleep(3)  # Send keep-alive every 3 seconds
+
                         return
                     initial = {
                         "job_id": status["job_id"],
@@ -707,7 +894,7 @@ async def api_job_events(request: Request, job_id: str):
                                         email = (lead or {}).get('email')
                                         if isinstance(email, str):
                                             el = email.lower()
-                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                            if not is_noreply_email(email):
                                                 leads_with_emails_count += 1
                                 except Exception:
                                     pass
@@ -735,7 +922,19 @@ async def api_job_events(request: Request, job_id: str):
                         "status": state_status,
                         "summary": summary,
                         "artifacts": artifacts,
+                        "actions": []
                     }
+                    try:
+                        st = await engine.get_job_status(job_id)
+                        if st and st.get("status") in ["completed", "failed"] and st.get("goal"):
+                            final_evt["actions"].append({
+                                "id": "rerun",
+                                "label": "Rerun Campaign",
+                                "style": "primary",
+                                "payload": {"goal": st["goal"]}
+                            })
+                    except Exception:
+                        pass
                     yield "event: job_finalized\n"
                     yield f"data: {_json.dumps(final_evt)}\n\n"
                     return
@@ -759,16 +958,20 @@ async def api_job_events(request: Request, job_id: str):
                     continue
 
         except Exception as e:
-            # Send error and continue with keep-alives
+            # Send a stream error event then keep alive
+            try:
+                _sse_errors.inc()
+            except Exception:
+                pass
             error_msg = {
                 "job_id": job_id,
                 "timestamp": datetime.now().isoformat(),
                 "event": "job.stream_error",
-                "data": {"error": str(e)},
+                "data": {"error": str(e)}
             }
+            yield "event: error\n"
             yield f"data: {_json.dumps(error_msg)}\n\n"
-
-            # Keep connection alive even on errors
+            # Continue sending keep-alives so client can catch the error event
             while True:
                 if await request.is_disconnected():
                     break

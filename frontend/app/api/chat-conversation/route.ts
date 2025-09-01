@@ -10,40 +10,7 @@ export async function POST(req: Request) {
     const isConversational = isConversationalMessage(text);
 
     if (isConversational) {
-      // Handle as conversation, not job creation
-      if (process.env.API_URL) {
-        try {
-          // Try to send to a conversational endpoint if it exists
-          const resp = await fetch(`${process.env.API_URL}/api/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: text,
-              threadId,
-              type: "conversation",
-              context: "cmo_agent_console"
-            }),
-          });
-
-          if (resp.ok) {
-            const result = await resp.json();
-            return new Response(JSON.stringify({
-              success: true,
-              response: result.response || result.message,
-              type: "conversation",
-              threadId,
-              timestamp: new Date().toISOString()
-            }), {
-              status: 200,
-              headers: { "Content-Type": "application/json" },
-            });
-          }
-        } catch (error) {
-          console.warn("Conversational endpoint not available:", error);
-        }
-      }
-
-      // Fallback: Generate a helpful response about the CMO Agent
+      // Generate a helpful response about the CMO Agent (no circular API calls)
       const response = generateConversationalResponse(text);
 
       return new Response(JSON.stringify({

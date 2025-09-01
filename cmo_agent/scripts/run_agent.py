@@ -103,6 +103,34 @@ def load_config(config_path: Optional[str] = None) -> Dict[str, Any]:
             file_config = yaml.safe_load(f)
             config.update(file_config)
 
+    # Propagate YAML params to avoid drift - ensure params override defaults
+    if config.get("propagate_params_to_config"):
+        params = config.get("params", {}) or {}
+        # Apply param overrides to top-level config and default_icp
+        for key, val in params.items():
+            # Map singular keys to internal config keys
+            if key in ["language", "languages"]:
+                # Overwrite languages list
+                langs = [val] if isinstance(val, str) else list(val)
+                config["languages"] = langs
+                # Also reflect in default_icp
+                config.setdefault("default_icp", {})["languages"] = langs
+            elif key == "stars_range":
+                config["stars_range"] = str(val)
+                config.setdefault("default_icp", {})["stars_range"] = str(val)
+            elif key == "activity_days":
+                config["activity_days"] = int(val)
+                config.setdefault("default_icp", {})["activity_days"] = int(val)
+            elif key == "target_leads":
+                config["target_leads"] = int(val)
+                config.setdefault("default_icp", {})["target_leads"] = int(val)
+            elif key == "target_emails":
+                config["target_emails"] = int(val)
+                config.setdefault("default_icp", {})["target_emails"] = int(val)
+            elif key == "budget_per_day":
+                config["budget_per_day"] = float(val)
+                config.setdefault("default_icp", {})["budget_per_day"] = float(val)
+
     # Override with environment variables
     env_mapping = {
         'GITHUB_TOKEN': 'GITHUB_TOKEN',

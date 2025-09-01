@@ -14,11 +14,17 @@ export function useJobStream(
     onProgress?: (evt: any) => void;
     onFinalized?: (status: string, summary: Summary | null, artifacts: Artifact[]) => void;
     onStreamEnd?: () => void;
+    onConnectionChange?: (state: "connecting" | "connected" | "error" | "disconnected") => void;
   }
 ) {
   useEffect(() => {
     if (!jobId) return;
+    handlers.onConnectionChange?.("connecting");
     const es = new EventSource(`/api/jobs/${jobId}/events`);
+
+    es.onopen = () => {
+      handlers.onConnectionChange?.("connected");
+    };
 
     const finalSync = async () => {
       try {
@@ -54,6 +60,7 @@ export function useJobStream(
 
     // Detect close via error callback
     es.onerror = () => {
+      handlers.onConnectionChange?.("error");
       if (es.readyState === EventSource.CLOSED) {
         handlers.onStreamEnd?.();
         finalSync();
@@ -62,6 +69,7 @@ export function useJobStream(
 
     return () => {
       try { es.close(); } catch {}
+      handlers.onConnectionChange?.("disconnected");
     };
   }, [jobId]);
 }
