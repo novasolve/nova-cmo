@@ -46,6 +46,10 @@ NOREPLY_PATTERNS = [
 NOREPLY_REGEX = re.compile('|'.join(NOREPLY_PATTERNS), re.IGNORECASE)
 
 
+def normalize_email(email: str) -> str:
+    return (email or "").strip().lower()
+
+
 def is_noreply_email(email: str) -> bool:
     """
     Check if an email address is a noreply or role-based address that shouldn't be contacted.
@@ -85,9 +89,24 @@ def filter_contactable_emails(emails: Union[List[str], str]) -> List[str]:
     contactable = []
     for email in emails:
         if email and isinstance(email, str) and not is_noreply_email(email):
-            contactable.append(email.strip())
+            contactable.append(normalize_email(email))
 
     return list(set(contactable))  # Remove duplicates
+
+
+# Centralized dedup + contactable extractor for consistency across exporter/summary
+
+def dedup_contactable(emails: Union[List[str], str]) -> List[str]:
+    if isinstance(emails, str):
+        emails = [emails]
+    seen: set[str] = set()
+    out: List[str] = []
+    for e in emails:
+        ne = normalize_email(e)
+        if ne and ("@" in ne) and (not is_noreply_email(ne)) and ne not in seen:
+            seen.add(ne)
+            out.append(ne)
+    return out
 
 
 def keep_email(email: str) -> bool:
