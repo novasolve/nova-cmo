@@ -19,11 +19,11 @@ help: ## Show this help message
 run: ## Run CMO Agent campaign (from repo root, pass GOAL="...")
 	@$(MAKE) -C cmo_agent run GOAL="$(GOAL)"
 
-run-config: ## Run CMO Agent with custom config (CONFIG=path, GOAL="...")
-	@$(MAKE) -C cmo_agent run-config CONFIG="$(CONFIG)" GOAL="$(GOAL)"
+run-config: ## Run CMO Agent with YAML config (CONFIG=path). Optional overrides: SET="k=v k2=v2"
+	@$(MAKE) -C cmo_agent run-config CONFIG="$(CONFIG)" SET="$(SET)"
 
-dry-run: ## Run CMO Agent in dry-run mode (no sending)
-	@$(MAKE) -C cmo_agent dry-run GOAL="$(GOAL)"
+dry-run: ## Run CMO Agent in dry-run mode from YAML (CONFIG=path). Optional: SET="k=v k2=v2"
+	@$(MAKE) -C cmo_agent dry-run CONFIG="$(CONFIG)" SET="$(SET)"
 
 # Toolbelt smoke tests
 smoke-tools: ## Run CMO Agent toolbelt smoke tests

@@ -61,9 +61,14 @@ kill_service() {
 start_api() {
     log "Starting API server on port $API_PORT..."
     cd "$(dirname "$0")"
+    
+    # Load environment if not already loaded
+    if [[ -z "$GITHUB_TOKEN" && -z "$OPENAI_API_KEY" ]]; then
+        load_env
+    fi
 
-    # Use the direct method that works with environment loaded
-    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
+    # Start API server (environment already loaded)
+    python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
     echo $! > "$PIDFILE_API"
 
     # Wait and verify
@@ -78,11 +83,43 @@ start_api() {
     fi
 }
 
+# Load environment variables from .env files
+load_env() {
+    local script_dir="$(cd "$(dirname "$0")" && pwd)"
+    
+    # Try multiple .env locations in order of preference
+    local env_files=(
+        "$script_dir/.env"                    # Root .env
+        "$script_dir/cmo_agent/.env"          # CMO agent .env  
+        "$HOME/.cmo_agent.env"               # User global .env
+    )
+    
+    local env_loaded=false
+    for env_file in "${env_files[@]}"; do
+        if [[ -f "$env_file" ]]; then
+            log "📄 Loading environment from: $env_file"
+            set -a  # Export all variables
+            source "$env_file"
+            set +a  # Stop exporting
+            env_loaded=true
+            break
+        fi
+    done
+    
+    if [[ "$env_loaded" = false ]]; then
+        warn "No .env file found. Create one from .env.example for full functionality."
+        warn "Locations checked: ${env_files[*]}"
+    fi
+}
+
 # Start everything in foreground with live logs
 start_dev() {
     log "Starting development environment..."
     
-    # Validate environment first
+    # Load environment variables first
+    load_env
+    
+    # Validate environment
     log "🔍 Checking environment..."
     if [[ -f "tools/check_env.py" ]]; then
         if ! python tools/check_env.py --dry-run; then
@@ -97,9 +134,9 @@ start_dev() {
 
     cd "$(dirname "$0")"
 
-    # Start API in background with environment loaded
+    # Start API in background (environment already loaded)
     log "🚀 Starting API server..."
-    bash -c "source cmo_agent/.env 2>/dev/null || true; exec python cmo_agent/scripts/run_web.py" > /tmp/cmo_api.log 2>&1 &
+    python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
     local api_pid=$!
     echo $api_pid > "$PIDFILE_API"
 
@@ -229,6 +266,7 @@ case "${1:-dev}" in
         start_dev
         ;;
     bg|background)
+        load_env
         stop_all
         start_api
         start_frontend
@@ -250,9 +288,9 @@ case "${1:-dev}" in
         ;;
     api)
         case "${2:-start}" in
-            start) stop_all; start_api ;;
+            start) load_env; stop_all; start_api ;;
             stop) kill_service "API" "$API_PORT" "$PIDFILE_API" ;;
-            restart) kill_service "API" "$API_PORT" "$PIDFILE_API"; start_api ;;
+            restart) load_env; kill_service "API" "$API_PORT" "$PIDFILE_API"; start_api ;;
             logs) logs api ;;
         esac
         ;;

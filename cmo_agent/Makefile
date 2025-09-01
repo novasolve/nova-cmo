@@ -15,13 +15,13 @@ dev-setup: install
 run:
 	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent "$(GOAL)"
 
-# Run with custom config
+# Run with custom config (YAML-driven, no GOAL required). Optional: SET="k=v k2=v2"
 run-config:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent --config $(CONFIG) "$(GOAL)"
+	PYTHONPATH=.. python -m cmo_agent.scripts.run_from_yaml --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
 
-# Dry run
+# Dry run with YAML (requires CONFIG). Optional: SET="k=v k2=v2"
 dry-run:
-	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent --dry-run "$(GOAL)"
+	PYTHONPATH=.. python -m cmo_agent.scripts.run_from_yaml --dry-run --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
 
 # Test campaign (small scale)
 test-campaign: dev-setup

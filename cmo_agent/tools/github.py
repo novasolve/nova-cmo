@@ -136,30 +136,6 @@ class SearchGitHubRepos(GitHubTool):
 
             while len(repos) < max_repos and page <= max_pages:
                 params["page"] = page
-                # Log the exact search URL (human + structured)
-                try:
-                    from urllib.parse import urlencode
-                    query_url = f"https://api.github.com/search/repositories?{urlencode(params)}"
-                    logger.info(f"GitHub search URL: {query_url}")
-                    try:
-                        logger.info(
-                            "github_search",
-                            extra={
-                                "structured": {
-                                    "event": "github_search",
-                                    "url": query_url,
-                                    "q": raw_q,
-                                    "page": page,
-                                    "per_page": params.get("per_page"),
-                                    "sort": params.get("sort"),
-                                    "order": params.get("order"),
-                                }
-                            },
-                        )
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
 
                 result = await _safe_search(params)
 
@@ -171,7 +147,27 @@ class SearchGitHubRepos(GitHubTool):
                 items = result.get("items", [])
                 if not items:
                     low_yield_pages_in_a_row += 1
-                    logger.info(f"No results on page {page}, low yield streak: {low_yield_pages_in_a_row}")
+                    # concise page log (no raw URL)
+                    try:
+                        logger.info(
+                            "🔎 GitHub search page=%d per_page=%d -> repos=%d (low_yield=%d)",
+                            page,
+                            params.get("per_page", 0),
+                            0,
+                            low_yield_pages_in_a_row,
+                            extra={
+                                "structured": {
+                                    "event": "github_search",
+                                    "page": page,
+                                    "per_page": params.get("per_page", 0),
+                                    "repos": 0,
+                                    "q": raw_q,
+                                    "low_yield": low_yield_pages_in_a_row,
+                                }
+                            },
+                        )
+                    except Exception:
+                        pass
                     
                     # Break early if we've had multiple low-yield pages and met minimum
                     if low_yield_pages_in_a_row >= 2 and page >= min_pages:
@@ -184,6 +180,26 @@ class SearchGitHubRepos(GitHubTool):
                     low_yield_pages_in_a_row = 0  # Reset on successful page
 
                 repos_added_this_page = 0
+                # concise page log with counts
+                try:
+                    logger.info(
+                        "🔎 GitHub search page=%d per_page=%d -> repos=%d",
+                        page,
+                        params.get("per_page", 0),
+                        len(items),
+                        extra={
+                            "structured": {
+                                "event": "github_search",
+                                "page": page,
+                                "per_page": params.get("per_page", 0),
+                                "repos": len(items),
+                                "q": raw_q,
+                            }
+                        },
+                    )
+                except Exception:
+                    pass
+
                 for item in items:
                     if len(repos) >= max_repos:
                         break
