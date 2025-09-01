@@ -14,6 +14,7 @@ class RunState(TypedDict, total=False):
     goal: str
     created_at: str
     created_by: str
+    state_version: int
 
     # ICP (Ideal Customer Profile) criteria
     icp: Dict[str, Any]  # keywords, languages, stars, activity window
@@ -43,18 +44,24 @@ class RunState(TypedDict, total=False):
 
     # Control flow
     ended: bool
+    end_reason: str
     current_stage: str
     history: List[Dict[str, Any]]  # conversation history
     tool_results: Dict[str, Any]  # last results per tool
     completed_at: str
     progress: Dict[str, Any]
+    email_search_exhausted: bool
 
 
 class JobMetadata:
     """Job metadata and configuration"""
 
     def __init__(self, goal: str, created_by: str = "user"):
-        self.job_id = f"cmo-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+        # Include microseconds and a short random suffix to avoid collisions across concurrent jobs
+        import uuid
+        ts = datetime.now().strftime('%Y%m%d-%H%M%S-%f')
+        short = uuid.uuid4().hex[:6]
+        self.job_id = f"cmo-{ts}-{short}"
         self.goal = goal
         self.created_at = datetime.now().isoformat()
         self.created_by = created_by
@@ -73,6 +80,7 @@ DEFAULT_CONFIG = {
     "max_steps": 40,
     "max_repos": 600,
     "max_people": 3000,
+    "history_limit": 120,
     "per_inbox_daily": 50,
     "activity_days": 90,
     "stars_range": "100..2000",
@@ -132,6 +140,36 @@ DEFAULT_CONFIG = {
     },
     # Safeguards
     "no_tool_call_limit": 3,
+    # Monitoring/Observability
+    "monitoring": {
+        "enabled": True,
+        "metrics_interval": 60,
+        "enable_prometheus": False,
+        "prometheus_port": 8000,
+        "alert_thresholds": {
+            "error_rate_threshold": 0.1,
+            "queue_depth_threshold": 100,
+            "memory_usage_threshold": 0.9,
+            "worker_crash_threshold": 3,
+        },
+    },
+    "logging": {
+        "level": "INFO",
+        "console": True,
+        "file": True,
+        "json_file": True,
+        "job_specific_files": True,  # Create separate log files per job
+        "beautiful_console": True,  # Use beautiful console formatter
+        "console_format": "%(asctime)s %(levelname)-4s %(message)s",
+        "filename": "cmo_agent.jsonl",  # General log file when not job-specific
+        "execution_log_file": "execution_engine.jsonl",
+        "agent_log_file": "cmo_agent.jsonl",
+        "stage_logging": True,  # Enable automatic stage transition logging
+        "progress_logging": True,  # Enable progress logging within stages
+        "correlation_ids": True,  # Ensure all logs have correlation IDs
+        "metrics_snapshots": True,  # Log periodic metrics snapshots
+        "alert_logging": True,  # Log alerts as they trigger
+    },
 }
 
 

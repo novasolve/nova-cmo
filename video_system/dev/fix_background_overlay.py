@@ -11,7 +11,7 @@ import sys
 def create_proper_background_overlay(base_video_path, background_video_path, output_path, overlay_duration=36):
     """
     Create proper background overlay by replacing background but keeping audio and text.
-    
+
     The approach:
     1. Use background video as the base layer
     2. Keep audio from the original base video

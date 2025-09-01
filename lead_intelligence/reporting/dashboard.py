@@ -312,6 +312,11 @@ class IntelligenceDashboard:
 
                 <div class="dashboard-section">
                     <h2>📊 Overview</h2>
+                    <p>
+                        This overview shows how intelligence scores are distributed, the split of engagement potential,
+                        which companies appear most among leads, and the most common quality signals. Use it to quickly
+                        assess overall lead quality and concentration.
+                    </p>
                     <div class="chart-container">
                         {overview_chart}
                     </div>
@@ -319,6 +324,11 @@ class IntelligenceDashboard:
 
                 <div class="dashboard-section">
                     <h2>✅ Quality Analysis</h2>
+                    <p>
+                        The quality analysis summarizes the presence of key attributes (email, company, location, bio)
+                        and activity indicators (followers, repositories). Higher percentages indicate richer, more
+                        contactable leads.
+                    </p>
                     <div class="chart-container">
                         {quality_chart}
                     </div>
@@ -326,6 +336,10 @@ class IntelligenceDashboard:
 
                 <div class="dashboard-section">
                     <h2>🎯 Opportunity Analysis</h2>
+                    <p>
+                        Opportunity analysis highlights top technologies and company clusters represented in your lead set.
+                        Use this to align messaging and potential cohort campaigns.
+                    </p>
                     <div class="chart-container">
                         {opportunity_chart}
                     </div>
@@ -333,6 +347,9 @@ class IntelligenceDashboard:
 
                 <div class="dashboard-section">
                     <h2>🏆 Top Performers</h2>
+                    <p>
+                        The table lists the top-scoring leads with key attributes for quick outreach prioritization.
+                    </p>
                     <div class="chart-container">
                         {detail_view}
                     </div>

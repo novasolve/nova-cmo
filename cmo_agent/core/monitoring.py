@@ -4,9 +4,11 @@ Monitoring and metrics system for CMO Agent
 import time
 import psutil
 import asyncio
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 from dataclasses import dataclass, field
+import logging
+import json
 
 from .job import JobStatus
 
@@ -463,6 +465,14 @@ class MetricsLogger:
         self.log_interval = log_interval
         self.is_running = False
         self.structured_logger = StructuredLogger(collector)
+        self._prom_exporter: Optional[_PrometheusExporter] = None
+
+        # Try to use beautiful logging if available
+        try:
+            from ..obs.beautiful_logging import get_beautiful_logger
+            self.beautiful_logger = get_beautiful_logger()
+        except ImportError:
+            self.beautiful_logger = None
 
     async def start_logging(self):
         """Start periodic metrics logging with structured output"""
@@ -473,19 +483,40 @@ class MetricsLogger:
                 snapshot = self.collector.collect_snapshot()
                 metrics_dict = snapshot.to_dict()
 
-                # Log structured metrics snapshot
-                self.structured_logger.logger.info(
-                    "Metrics snapshot collected",
-                    extra={"metrics": metrics_dict}
-                )
+                # Log structured metrics snapshot with beautiful logging
+                if self.beautiful_logger:
+                    # Use beautiful logger for metrics
+                    self.beautiful_logger.logger.info(
+                        "Metrics snapshot collected",
+                        extra={"metrics": metrics_dict}
+                    )
+                else:
+                    # Fallback to structured logger
+                    self.structured_logger.logger.info(
+                        "Metrics snapshot collected",
+                        extra={"metrics": metrics_dict}
+                    )
 
-                # Log any active alerts
+                # Export to Prometheus if enabled
+                if self._prom_exporter:
+                    try:
+                        self._prom_exporter.update(metrics_dict)
+                    except Exception as e:
+                        self.structured_logger.logger.debug(f"Prometheus export error: {e}")
+
+                # Log any active alerts with beautiful formatting
                 if snapshot.alerts_active:
                     for alert in snapshot.alerts_active:
-                        self.structured_logger.logger.warning(
-                            f"Alert triggered: {alert}",
-                            extra={"alert": alert, "metrics": metrics_dict}
-                        )
+                        if self.beautiful_logger:
+                            self.beautiful_logger.logger.warning(
+                                f"Alert triggered: {alert}",
+                                extra={"alert": alert, "metrics": metrics_dict}
+                            )
+                        else:
+                            self.structured_logger.logger.warning(
+                                f"Alert triggered: {alert}",
+                                extra={"alert": alert, "metrics": metrics_dict}
+                            )
 
                 await asyncio.sleep(self.log_interval)
 
@@ -496,6 +527,17 @@ class MetricsLogger:
     def stop_logging(self):
         """Stop metrics logging"""
         self.is_running = False
+
+    # ---------- Optional exporters ----------
+    def enable_prometheus(self, port: int = 8000):
+        """Enable Prometheus exporter on the given port (noop if library missing)."""
+        try:
+            exporter = _PrometheusExporter(port)
+            exporter.start()
+            self._prom_exporter = exporter
+            self.structured_logger.logger.info(f"Prometheus metrics exporter started on :{port}")
+        except Exception as e:
+            self.structured_logger.logger.warning(f"Prometheus exporter not started: {e}")
 
 
 # Global instances
@@ -509,6 +551,142 @@ def get_global_collector() -> MetricsCollector:
 def get_global_logger() -> StructuredLogger:
     """Get the global structured logger"""
     return _global_logger
+
+# ---------- Logging utilities ----------
+class JsonExtraFormatter(logging.Formatter):
+    """JSON formatter that includes structured extras such as 'structured', 'metrics', and 'alert'.
+
+    Produces JSON Lines suitable for ingestion.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        base: Dict[str, Any] = {
+            "ts": datetime.utcfromtimestamp(record.created).isoformat() + "Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "msg": record.getMessage(),
+        }
+
+        # Include common extras when present
+        if hasattr(record, "structured") and isinstance(record.structured, dict):
+            base.update(record.structured)
+        if hasattr(record, "metrics") and isinstance(record.metrics, dict):
+            base["metrics"] = record.metrics
+        if hasattr(record, "alert") and record.alert:
+            base["alert"] = record.alert
+
+        # Attach exception info if present
+        if record.exc_info:
+            base["exc_info"] = self.formatException(record.exc_info)
+
+        return json.dumps(base, ensure_ascii=False, default=_safe_json_default)
+
+
+def _safe_json_default(obj: Any) -> Any:
+    """Best-effort serializer for objects that aren't JSON serializable.
+
+    - datetime -> ISO string
+    - Exception -> ClassName(message)
+    - Objects with __dict__ -> short type tag
+    - Fallback -> str(obj)
+    """
+    try:
+        from datetime import date, datetime as _dt
+        if isinstance(obj, _dt):
+            return obj.isoformat()
+        if isinstance(obj, date):
+            return obj.isoformat()
+        if isinstance(obj, BaseException):
+            return f"{obj.__class__.__name__}({obj})"
+        # Avoid dumping large internal state; just record the type
+        return f"<{obj.__class__.__name__}>"
+    except Exception:
+        try:
+            return str(obj)
+        except Exception:
+            return "<unserializable>"
+
+
+# ---------- Prometheus (optional) ----------
+class _PrometheusExporter:
+    """Minimal Prometheus exporter wiring. Safe to import when prometheus_client is absent."""
+
+    def __init__(self, port: int = 8000):
+        self.port = int(port)
+        self._started = False
+        # Lazily import
+        try:
+            from prometheus_client import start_http_server, Gauge
+        except Exception as e:  # pragma: no cover - import failure path
+            raise RuntimeError("prometheus_client not installed") from e
+        self._start_http_server = start_http_server
+        self._Gauge = Gauge
+        # Define gauges for a subset of important metrics
+        self._gauges: Dict[str, Any] = {}
+
+    def start(self):
+        if not self._started:
+            self._start_http_server(self.port)
+            # Initialize gauges lazily on first update
+            self._started = True
+
+    def update(self, metrics: Dict[str, Any]):
+        # Flatten nested dicts into dot.notation for a curated set
+        flat = _flatten_metrics(metrics)
+        for key, value in flat.items():
+            if not isinstance(value, (int, float)):
+                continue
+            gauge = self._gauges.get(key)
+            if gauge is None:
+                # Sanitize metric name for Prometheus (replace illegal chars with '_')
+                prom_name = _to_prometheus_name(key)
+                self._gauges[key] = self._Gauge(prom_name, f"{key}")
+                gauge = self._gauges[key]
+            try:
+                gauge.set(float(value))
+            except Exception:
+                # Ignore bad value updates
+                pass
+
+
+def _flatten_metrics(d: Dict[str, Any], parent: str = "") -> Dict[str, Any]:
+    result: Dict[str, Any] = {}
+    for k, v in d.items():
+        name = f"{parent}.{k}" if parent else k
+        if isinstance(v, dict):
+            result.update(_flatten_metrics(v, name))
+        else:
+            result[name] = v
+    return result
+
+
+def _to_prometheus_name(name: str) -> str:
+    # Prometheus metric names: [a-zA-Z_:][a-zA-Z0-9_:]*
+    import re
+    sanitized = re.sub(r"[^a-zA-Z0-9_:]", "_", name)
+    if not sanitized or not sanitized[0].isalpha():
+        sanitized = f"m_{sanitized}"
+    return sanitized
+
+
+# ---------- Configuration helpers ----------
+def configure_metrics_from_config(config: Dict[str, Any]):
+    """Apply monitoring configuration (alert thresholds) to the global collector."""
+    monitoring_cfg = {}
+    try:
+        monitoring_cfg = config.get("monitoring", {}) if isinstance(config.get("monitoring"), dict) else {}
+    except Exception:
+        monitoring_cfg = {}
+    thresholds = monitoring_cfg.get("alert_thresholds", {}) if isinstance(monitoring_cfg.get("alert_thresholds"), dict) else {}
+    if thresholds:
+        try:
+            _global_collector.alert_thresholds.update({
+                k: float(v) if k.endswith("_threshold") else v
+                for k, v in thresholds.items()
+            })
+        except Exception:
+            pass
+
 
 # Job lifecycle recording functions
 def record_job_submitted():

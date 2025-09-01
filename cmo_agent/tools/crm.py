@@ -250,17 +250,31 @@ class SyncLinear(LinearTool):
             if dry_run:
                 parent_issue = {"id": f"dryrun-parent-{job_id}", "title": parent_title, "url": ""}
             else:
-                parent_issue = await self._create_parent_issue(parent_title, team_id)
+                # Try to find existing open parent issue with same title to avoid duplicates
+                parent_issue = await self._find_existing_parent_issue(parent_title, team_id) or await self._create_parent_issue(parent_title, team_id)
 
             child_issues = []
+            seen_child_keys = set()
             for event in events:
                 try:
                     if dry_run:
                         # Stable idempotency key per event
                         key = f"{job_id}:{event.get('type','event')}:{event.get('error_type') or event.get('event_type') or ''}"
+                        if key in seen_child_keys:
+                            continue
+                        seen_child_keys.add(key)
                         child = {"id": f"dryrun-{key}", "parent_id": parent_issue["id"], "title": parent_title}
                     else:
-                        child = await self._create_child_issue(parent_issue["id"], team_id, event)
+                        # Avoid creating duplicate child issues with same signature under the parent
+                        key = f"{event.get('type','event')}:{event.get('error_type') or event.get('event_type') or ''}"
+                        if key in seen_child_keys:
+                            continue
+                        existing = await self._find_existing_child_issue(parent_issue["id"], team_id, event)
+                        if existing:
+                            child = existing
+                        else:
+                            child = await self._create_child_issue(parent_issue["id"], team_id, event)
+                        seen_child_keys.add(key)
                     child_issues.append(child)
                 except Exception as e:
                     logger.error(f"Failed to create child issue: {e}")
@@ -274,6 +288,51 @@ class SyncLinear(LinearTool):
         except Exception as e:
             logger.error(f"Linear sync failed: {e}")
             return ToolResult(success=False, error=str(e))
+
+    async def _find_existing_parent_issue(self, title: str, team_id: str) -> Optional[Dict[str, Any]]:
+        """Search for an existing open parent issue with the given title."""
+        import aiohttp
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
+        query = {
+            "query": (
+                "query Issues($query: String!, $first: Int!) {"
+                "  issues(filter: { title: { eq: $query } }, first: $first) { nodes { id identifier url title state { type } team { id } } }"
+                "}"
+            ),
+            "variables": {"query": title, "first": 10},
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.base_url, headers=headers, json=query) as resp:
+                data = await resp.json()
+                nodes = data.get("data", {}).get("issues", {}).get("nodes", [])
+                for node in nodes:
+                    if node.get("team", {}).get("id") == team_id and node.get("state", {}).get("type") in ("started", "triage", "backlog"):
+                        return {"id": node.get("id"), "identifier": node.get("identifier"), "url": node.get("url"), "title": node.get("title")}
+        return None
+
+    async def _find_existing_child_issue(self, parent_id: str, team_id: str, event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Best-effort search for an existing child under parent with similar title."""
+        import aiohttp
+        headers = {"Authorization": self.api_key, "Content-Type": "application/json"}
+        event_type = event.get("type", "error")
+        title = (f"Error: {event.get('error_type', 'Unknown error')}" if event_type == "error" else f"Event: {event.get('event_type', 'Unknown event')}")
+        query = {
+            "query": (
+                "query Issues($first: Int!, $title: String!) {"
+                "  issues(filter: { title: { eq: $title } }, first: $first) { nodes { id identifier url title parent { id } team { id } } }"
+                "}"
+            ),
+            "variables": {"title": title, "first": 20},
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.base_url, headers=headers, json=query) as resp:
+                data = await resp.json()
+                nodes = data.get("data", {}).get("issues", {}).get("nodes", [])
+                for node in nodes:
+                    if node.get("team", {}).get("id") == team_id and node.get("parent", {}).get("id") == parent_id:
+                        issue = {"id": node.get("id"), "identifier": node.get("identifier"), "url": node.get("url"), "title": node.get("title"), "parent_id": parent_id}
+                        return issue
+        return None
 
     async def _create_parent_issue(self, title: str, team_id: str) -> Dict[str, Any]:
         import aiohttp

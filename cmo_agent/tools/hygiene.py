@@ -134,6 +134,7 @@ class ICPScores(BaseTool):
     async def execute(self, profile: Dict[str, Any], weights: Dict[str, float] = None, **kwargs) -> ToolResult:
         """Score a prospect against ICP criteria"""
         try:
+            icp: Dict[str, Any] = (kwargs.get("icp") or {}) if isinstance(kwargs.get("icp"), dict) else {}
             if weights is None:
                 # Default ICP weights
                 weights = {
@@ -159,13 +160,13 @@ class ICPScores(BaseTool):
             scores["activity_recency"] = recency_score
             explanations["activity_recency"] = f"Active in last {recent_activity} days"
 
-            # Score based on language match
-            language_match = self._calculate_language_match(profile)
+            # Score based on language match (dynamic from ICP if provided)
+            language_match = self._calculate_language_match(profile, icp)
             scores["language_match"] = language_match
             explanations["language_match"] = f"Language alignment: {language_match:.2f}"
 
-            # Score based on topic relevance
-            topic_relevance = self._calculate_topic_relevance(profile)
+            # Score based on topic relevance (dynamic from ICP if provided)
+            topic_relevance = self._calculate_topic_relevance(profile, icp)
             scores["topic_relevance"] = topic_relevance
             explanations["topic_relevance"] = f"Topic relevance: {topic_relevance:.2f}"
 
@@ -201,16 +202,28 @@ class ICPScores(BaseTool):
         # For now, return a mock value
         return 45  # Assume 45 days of activity
 
-    def _calculate_language_match(self, profile: Dict[str, Any]) -> float:
+    def _calculate_language_match(self, profile: Dict[str, Any], icp: Dict[str, Any] | None = None) -> float:
         """Calculate language alignment with ICP"""
-        # Check if profile has Python contributions
+        # Determine target languages from ICP; fallback to Python for backward compat
+        target_langs = []
+        if icp:
+            if isinstance(icp.get("languages"), list):
+                target_langs = [str(x).strip() for x in icp.get("languages") if x]
+            elif isinstance(icp.get("language"), str):
+                target_langs = [icp.get("language").strip()]
+        if not target_langs:
+            target_langs = ["Python"]
         contributions = profile.get("contributions", [])
-        python_contribs = sum(1 for c in contributions if c.get("repo_language") == "Python")
-        return min(python_contribs / max(len(contributions), 1), 1.0)
+        hits = sum(1 for c in contributions if str(c.get("repo_language") or "").strip() in target_langs)
+        return min(hits / max(len(contributions), 1), 1.0)
 
-    def _calculate_topic_relevance(self, profile: Dict[str, Any]) -> float:
+    def _calculate_topic_relevance(self, profile: Dict[str, Any], icp: Dict[str, Any] | None = None) -> float:
         """Calculate topic relevance to ICP"""
-        icp_topics = {"ci", "testing", "pytest", "devtools", "llm"}
+        # Pull desired topics from ICP; fallback to previous defaults for backward compat
+        if icp and (icp.get("include_topics") or icp.get("topics")):
+            icp_topics = set(map(str, (icp.get("include_topics") or icp.get("topics") or [])))
+        else:
+            icp_topics = {"ci", "testing", "pytest", "devtools", "llm"}
         profile_topics = set()
 
         for contrib in profile.get("contributions", []):

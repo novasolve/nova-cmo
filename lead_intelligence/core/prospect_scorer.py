@@ -477,4 +477,3 @@ class ProspectScorer:
             cohort['activity_level'] = 'low'
 
         return cohort
-

@@ -102,4 +102,3 @@ def safe_datetime_compare(dt1_str: str, dt2_str: str) -> int:
         return (dt1 > dt2) - (dt1 < dt2)
     except Exception:
         return 0  # Consider equal if parsing fails
-

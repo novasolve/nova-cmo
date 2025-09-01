@@ -89,7 +89,7 @@ class Prospect:
     compliance_blocked: bool = False
     compliance_risk_factors: Optional[List[str]] = None
     geo_location: Optional[str] = None
-    
+
     # URLs
     github_user_url: Optional[str] = None
     github_repo_url: Optional[str] = None
@@ -142,27 +142,27 @@ class Prospect:
     plan_space: Optional[int] = None
     plan_collaborators: Optional[int] = None
     plan_private_repos: Optional[int] = None
-    
+
     # Additional flags
     two_factor_authentication: Optional[bool] = None
     has_organization_projects: Optional[bool] = None
     has_repository_projects: Optional[bool] = None
-    
+
     def has_email(self) -> bool:
         """Check if prospect has any email"""
         return bool(self.email_public_commit or self.email_profile)
-    
+
     def get_best_email(self) -> Optional[str]:
         """Get the best available email"""
         # Prefer profile email as it's explicitly public
         return self.email_profile or self.email_public_commit
-    
+
     def get_linkedin(self) -> Optional[str]:
         """Extract LinkedIn from blog URL if present"""
         if self.blog and 'linkedin.com/in/' in self.blog:
             return self.blog
         return self.linkedin_username
-    
+
     def to_dict(self):
         return asdict(self)
 
@@ -180,23 +180,23 @@ class TimeoutSession(requests.Session):
 
 class GitHubScraper:
     """Scrapes GitHub for prospect data"""
-    
+
     def __init__(self, token: str, config: dict, output_path: str = None, output_dir: Optional[str] = None, icp_config_path: Optional[str] = None):
         self.token = token
         self.config = config
         self.output_path = output_path
         self.output_dir = output_dir
-        
+
         # Initialize token rotation support
         self.tokens = [token] if token else []
         self.current_token_index = 0
-        
+
         # Add backup tokens from environment
         for i in range(2, 10):
             backup_token = os.environ.get(f'GITHUB_TOKEN_{i}')
             if backup_token and backup_token not in self.tokens:
                 self.tokens.append(backup_token)
-        
+
         if len(self.tokens) > 1:
             print(f"🔑 Token rotation enabled with {len(self.tokens)} tokens")
 
@@ -321,7 +321,7 @@ class GitHubScraper:
             self._dedup_conn.commit()
         except Exception:
             pass
-        
+
     def _create_session(self, timeout_secs: int):
         """Create session with retry logic and default timeout"""
         session = TimeoutSession(timeout_secs)
@@ -334,7 +334,7 @@ class GitHubScraper:
         session.mount('http://', adapter)
         session.mount('https://', adapter)
         return session
-        
+
     def _render_query(self, raw_query: str) -> str:
         """Render dynamic placeholders in the search query.
 
@@ -354,20 +354,20 @@ class GitHubScraper:
         # Normalize whitespace
         q = ' '.join(q.split())
         return q
-        
+
     def _rate_limit_wait(self, response):
         """Handle GitHub rate limiting"""
         # Check remaining requests before we hit the limit
         remaining = response.headers.get('X-RateLimit-Remaining', '0')
         limit = response.headers.get('X-RateLimit-Limit', '5000')
         reset_time = int(response.headers.get('X-RateLimit-Reset', 0))
-        
+
         # Log current rate limit status
         if remaining and int(remaining) < 100:
             current_time = time.time()
             minutes_until_reset = max(0, (reset_time - current_time) / 60)
             print(f"⚠️  GitHub API rate limit: {remaining}/{limit} remaining. Resets in {minutes_until_reset:.1f} minutes")
-        
+
         if response.status_code == 403:
             # Check if it's rate limiting or other 403 error
             if 'rate limit' in response.text.lower() or reset_time:
@@ -375,61 +375,61 @@ class GitHubScraper:
                 if wait_time > 0:
                     print(f"🚫 GitHub rate limit exceeded! Token: {self.token[:20]}...")
                     print(f"   Would need to wait {wait_time} seconds ({wait_time/60:.1f} minutes)")
-                    
+
                     # Try rotating to a backup token
                     if self._try_rotate_token():
                         return True  # Successfully rotated, retry the request
-                    
+
                     # No backup tokens available, wait
                     print(f"⏱️  No backup tokens available. Waiting {wait_time/60:.1f} minutes...")
                     time.sleep(wait_time)
                     return True
         return False
-    
+
     def check_rate_limit(self):
         """Check current GitHub API rate limit status"""
         url = "https://api.github.com/rate_limit"
         response = self.session.get(url, headers=self.headers, timeout=10)
-        
+
         if response.status_code == 200:
             data = response.json()
             core = data.get('resources', {}).get('core', {})
             search = data.get('resources', {}).get('search', {})
-            
+
             print("\n📊 GitHub API Rate Limit Status:")
             print(f"   Core API: {core.get('remaining', 0)}/{core.get('limit', 5000)} remaining")
             print(f"   Search API: {search.get('remaining', 0)}/{search.get('limit', 30)} remaining")
-            
+
             # Check if we're close to limits
             if core.get('remaining', 0) < 100:
                 reset_time = core.get('reset', 0)
                 current_time = time.time()
                 minutes_until_reset = max(0, (reset_time - current_time) / 60)
                 print(f"   ⚠️  Warning: Low on API calls! Resets in {minutes_until_reset:.1f} minutes")
-                
+
             return core.get('remaining', 0), search.get('remaining', 0)
         return None, None
-    
+
     def _try_rotate_token(self) -> bool:
         """Try to rotate to a backup token with available rate limit"""
         if len(self.tokens) <= 1:
             return False
-        
+
         print("🔄 Attempting to rotate to backup token...")
-        
+
         # Try each token
         for i, token in enumerate(self.tokens):
             if token == self.token:
                 continue  # Skip current token
-            
+
             # Test the token's rate limit
             test_headers = self._get_headers(token)
             test_resp = self.session.get('https://api.github.com/rate_limit', headers=test_headers, timeout=10)
-            
+
             if test_resp.status_code == 200:
                 data = test_resp.json()
                 core_remaining = data.get('resources', {}).get('core', {}).get('remaining', 0)
-                
+
                 if core_remaining > 100:  # Need at least 100 calls
                     print(f"✅ Switching to backup token {i+1} with {core_remaining} API calls remaining")
                     self.token = token
@@ -437,7 +437,62 @@ class GitHubScraper:
                     return True
                 else:
                     print(f"   Token {i+1}: Only {core_remaining} calls remaining (need >100)")
-        
+
+        print("❌ No backup tokens have sufficient rate limit available")
+        return False
+
+    def check_rate_limit(self):
+        """Check current GitHub API rate limit status"""
+        url = "https://api.github.com/rate_limit"
+        response = self.session.get(url, headers=self.headers, timeout=10)
+
+        if response.status_code == 200:
+            data = response.json()
+            core = data.get('resources', {}).get('core', {})
+            search = data.get('resources', {}).get('search', {})
+
+            print("\n📊 GitHub API Rate Limit Status:")
+            print(f"   Core API: {core.get('remaining', 0)}/{core.get('limit', 5000)} remaining")
+            print(f"   Search API: {search.get('remaining', 0)}/{search.get('limit', 30)} remaining")
+
+            # Check if we're close to limits
+            if core.get('remaining', 0) < 100:
+                reset_time = core.get('reset', 0)
+                current_time = time.time()
+                minutes_until_reset = max(0, (reset_time - current_time) / 60)
+                print(f"   ⚠️  Warning: Low on API calls! Resets in {minutes_until_reset:.1f} minutes")
+
+            return core.get('remaining', 0), search.get('remaining', 0)
+        return None, None
+
+    def _try_rotate_token(self) -> bool:
+        """Try to rotate to a backup token with available rate limit"""
+        if len(self.tokens) <= 1:
+            return False
+
+        print("🔄 Attempting to rotate to backup token...")
+
+        # Try each token
+        for i, token in enumerate(self.tokens):
+            if token == self.token:
+                continue  # Skip current token
+
+            # Test the token's rate limit
+            test_headers = self._get_headers(token)
+            test_resp = self.session.get('https://api.github.com/rate_limit', headers=test_headers, timeout=10)
+
+            if test_resp.status_code == 200:
+                data = test_resp.json()
+                core_remaining = data.get('resources', {}).get('core', {}).get('remaining', 0)
+
+                if core_remaining > 100:  # Need at least 100 calls
+                    print(f"✅ Switching to backup token {i+1} with {core_remaining} API calls remaining")
+                    self.token = token
+                    self.headers = test_headers
+                    return True
+                else:
+                    print(f"   Token {i+1}: Only {core_remaining} calls remaining (need >100)")
+
         print("❌ No backup tokens have sufficient rate limit available")
         return False
 
@@ -580,7 +635,7 @@ class GitHubScraper:
         details = resp.json() if resp.status_code == 200 else {}
         self.org_cache[org_login] = details
         return details
-    
+
     def _init_csv_file(self):
         """Initialize CSV file for incremental writing"""
         if self.output_path and not self.csv_initialized:
@@ -630,13 +685,13 @@ class GitHubScraper:
             self.csv_writer.writeheader()
             self.csv_file.flush()
             self.csv_initialized = True
-    
+
     def _write_prospect_to_csv(self, prospect: Prospect):
         """Write a single prospect to CSV file immediately"""
         if self.csv_writer:
             self.csv_writer.writerow(prospect.to_dict())
             self.csv_file.flush()  # Ensure data is written immediately
-    
+
     def _close_csv_file(self):
         """Close CSV file"""
         if self.csv_file:
@@ -650,7 +705,7 @@ class GitHubScraper:
             except Exception:
                 pass
             self._dedup_conn = None
-        
+
     def _build_icp_query(self) -> str:
         """Build GitHub search query incorporating ICP filters"""
         base_query = self.config['search']['query']
@@ -907,7 +962,7 @@ class GitHubScraper:
                     return False
 
         return True
-        
+
     def get_pr_authors(self, repo: Dict) -> List[Dict]:
         """Get recent PR authors for a repo"""
         pr_authors = []
@@ -917,11 +972,11 @@ class GitHubScraper:
         repo_name = repo.get('name', '')
         if not owner or not repo_name:
             return pr_authors
-        
+
         # Calculate date range
         days_back = self.config['filters'].get('activity_days', 90)
         since = (datetime.now() - timedelta(days=days_back)).isoformat()
-        
+
         url = f"https://api.github.com/repos/{owner}/{repo_name}/pulls"
         params = {
             'state': 'all',
@@ -929,12 +984,12 @@ class GitHubScraper:
             'direction': 'desc',
             'per_page': min(self.config['limits']['per_repo_prs'], 100)
         }
-        
+
         response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-        
+
         if self._rate_limit_wait(response):
             response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-            
+
         if response.status_code == 200:
             prs = response.json()
             for pr in prs:
@@ -950,9 +1005,9 @@ class GitHubScraper:
                             'signal_at': pr['updated_at'],
                             'url': pr.get('html_url')
                         })
-                        
+
         return pr_authors
-        
+
     def get_commit_authors(self, repo: Dict) -> List[Dict]:
         """Get recent commit authors for a repo"""
         commit_authors = []
@@ -966,18 +1021,18 @@ class GitHubScraper:
         # Calculate date range
         days_back = self.config['filters'].get('activity_days', 90)
         since = days_ago(days_back)
-        
+
         url = f"https://api.github.com/repos/{owner}/{repo_name}/commits"
         params = {
             'since': since,
             'per_page': min(self.config['limits']['per_repo_commits'], 100)
         }
-        
+
         response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-        
+
         if self._rate_limit_wait(response):
             response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-            
+
         if response.status_code == 200:
             commits = response.json()
             for commit in commits:
@@ -989,30 +1044,30 @@ class GitHubScraper:
                         'signal_at': commit['commit']['author']['date'],
                         'url': commit.get('html_url') or f"https://github.com/{owner}/{repo_name}/commit/{commit.get('sha','')}"
                     }
-                    
+
                     # Try to get email from commit
                     if 'email' in commit['commit']['author']:
                         email = commit['commit']['author']['email']
                         if '@' in email and not email.endswith('@users.noreply.github.com'):
                             if author_data:
                                 author_data['email'] = email
-                            
+
                     commit_authors.append(author_data)
-                    
+
         return commit_authors
-        
+
     def get_user_details(self, username: str) -> Dict:
         """Get detailed user information"""
         url = f"https://api.github.com/users/{username}"
         response = self.session.get(url, headers=self.headers, timeout=10)
-        
+
         if self._rate_limit_wait(response):
             response = self.session.get(url, headers=self.headers, timeout=10)
-            
+
         if response.status_code == 200:
             return response.json()
         return {}
-    
+
     def get_user_contributions(self, username: str) -> Dict:
         """Get user contribution statistics for the last year using GitHub GraphQL API.
         Returns a dict including contributions_last_year and per-type totals. Cached per login.
@@ -1289,7 +1344,7 @@ class GitHubScraper:
                 error=str(e),
                 processing_time=time.time() - start_time
             )
-    
+
     def parse_github_url(self, url: str) -> Dict:
         """Parse GitHub URL to extract user/repo information"""
         if not url:
@@ -1300,13 +1355,13 @@ class GitHubScraper:
             url = url[1:]
         if not url.startswith('http'):
             url = f"https://{url}"
-            
+
         parsed = urlparse(url)
         if parsed.netloc != 'github.com':
             raise ValueError(f"Invalid GitHub URL: {url}")
-            
+
         path_parts = [p for p in parsed.path.split('/') if p]
-        
+
         if len(path_parts) == 0:
             raise ValueError("Invalid GitHub URL: no user or repo specified")
         elif len(path_parts) == 1:
@@ -1317,7 +1372,7 @@ class GitHubScraper:
             return {'type': 'repo', 'owner': path_parts[0], 'repo': path_parts[1]}
         else:
             raise ValueError(f"Invalid GitHub URL format: {url}")
-    
+
     def get_user_repos(self, username: str, limit: int = 10) -> List[Dict]:
         """Get user's repositories"""
         url = f"https://api.github.com/users/{username}/repos"
@@ -1326,18 +1381,18 @@ class GitHubScraper:
             'direction': 'desc',
             'per_page': min(limit, 100)
         }
-        
+
         response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-        
+
         if self._rate_limit_wait(response):
             response = self.session.get(url, headers=self.headers, params=params, timeout=10)
-            
+
         if response.status_code == 200:
             return response.json()
         else:
             print(f"Error fetching user repos: {response.status_code}")
             return []
-    
+
     def scrape_from_url(self, github_url: str):
         """Scrape prospects from a GitHub URL (user profile or repository)"""
         # Set URL mode flag to allow prospects without emails
@@ -1346,21 +1401,21 @@ class GitHubScraper:
             parsed = self.parse_github_url(github_url)
             if parsed['type'] == 'user':
                 username = parsed['username']
-                
+
                 # Get user details first
                 user_details = self.get_user_details(username)
                 if not user_details:
                     tqdm.write(f"❌ User {username} not found")
                     return
-                
+
                 # Get user's repositories
                 repos = self.get_user_repos(username, limit=10)
-                
+
                 # Create a prospect from the user's most recent activity
                 if repos:
                     # Use the most recently updated repo as context
                     recent_repo = repos[0]
-                    
+
                     # Create author data for this user
                     author_data = {
                         'user': {
@@ -1371,32 +1426,32 @@ class GitHubScraper:
                         'signal_type': 'repo_owner',
                         'signal_at': recent_repo.get('updated_at', datetime.now().isoformat())
                     }
-                    
+
                     prospect = self.create_prospect(author_data, recent_repo)
                     if prospect:
                         self.all_prospects.append(prospect)
-                
+
             elif parsed['type'] == 'repo':
                 owner = parsed['owner']
                 repo_name = parsed['repo']
-                
+
                 # Get repository details
                 repo_url = f"https://api.github.com/repos/{owner}/{repo_name}"
                 response = self.session.get(repo_url, headers=self.headers, timeout=10)
-                
+
                 if self._rate_limit_wait(response):
                     response = self.session.get(repo_url, headers=self.headers, timeout=10)
-                
+
                 if response.status_code != 200:
                     tqdm.write(f"❌ Repository {owner}/{repo_name} not found")
                     return
-                
+
                 repo = response.json()
-                
+
                 # Get contributors from this specific repo
                 pr_authors = self.get_pr_authors(repo)
                 commit_authors = self.get_commit_authors(repo)
-                
+
                 # Process all authors with progress bar
                 all_authors = pr_authors + commit_authors
                 if all_authors:
@@ -1406,23 +1461,23 @@ class GitHubScraper:
                         if prospect:
                             self.all_prospects.append(prospect)
                             pbar.set_description(f"Added {prospect.login}")
-                        
+
         except Exception as e:
             tqdm.write(f"❌ Error processing URL {github_url}: {e}")
-    
+
     def print_prospects_summary(self):
         """Print a summary of all found prospects"""
         if not self.all_prospects:
             print("\n📭 No prospects found")
             return
-            
+
         print(f"\n📊 PROSPECT SUMMARY ({len(self.all_prospects)} total)")
         print("=" * 80)
-        
+
         for i, prospect in enumerate(self.all_prospects, 1):
             email = prospect.get_best_email()
             linkedin = prospect.get_linkedin()
-            
+
             print(f"\n{i:2d}. {prospect.login} ({prospect.name or 'No name'})")
             print(f"    👤 GitHub: {prospect.github_user_url}")
             print(f"    📧 Email: {email or 'No email found'}")
@@ -1434,23 +1489,23 @@ class GitHubScraper:
             print(f"    📦 Repo URL: {prospect.github_repo_url}")
             print(f"    🎯 Signal: {prospect.signal}")
             print(f"    📅 Activity: {prospect.signal_at}")
-            
+
             if prospect.bio:
                 bio_short = prospect.bio[:100] + "..." if len(prospect.bio) > 100 else prospect.bio
                 print(f"    💭 Bio: {bio_short}")
-        
+
         print("\n" + "=" * 80)
-        
+
         # Summary stats
         with_email = sum(1 for p in self.all_prospects if p.has_email())
         with_company = sum(1 for p in self.all_prospects if p.company)
         with_linkedin = sum(1 for p in self.all_prospects if p.get_linkedin())
-        
+
         print(f"📈 STATS:")
         print(f"   • {with_email}/{len(self.all_prospects)} have email addresses ({with_email/len(self.all_prospects)*100:.1f}%)")
         print(f"   • {with_company}/{len(self.all_prospects)} have company info ({with_company/len(self.all_prospects)*100:.1f}%)")
         print(f"   • {with_linkedin}/{len(self.all_prospects)} have LinkedIn ({with_linkedin/len(self.all_prospects)*100:.1f}%)")
-        
+
         # Top companies
         companies = [p.company for p in self.all_prospects if p.company]
         if companies:
@@ -1459,10 +1514,10 @@ class GitHubScraper:
             print(f"\n🏢 TOP COMPANIES:")
             for company, count in top_companies:
                 print(f"   • {company}: {count} prospects")
-        
+
         print(f"\n💾 Data saved to: {self.output_path or 'No output file specified'}")
         print("=" * 80)
-        
+
     def create_prospect(self, author_data: Dict, repo: Dict) -> Optional[Prospect]:
         """Create a Prospect object from author and repo data"""
         if not author_data or 'user' not in author_data:
@@ -1470,20 +1525,20 @@ class GitHubScraper:
         user = author_data['user']
         if not user or not isinstance(user, dict):
             return None
-        
+
         # Dedup: skip if we've seen this login before
         login_val = user.get('login')
         if not login_val or self._dedup_seen(login_val):
             return None
-        
+
         # Generate stable lead_id
         repo_full_name = repo.get('full_name', 'unknown/unknown')
         lead_id = hashlib.md5(f"{login_val}_{repo_full_name}".encode()).hexdigest()[:12]
-        
+
         # Skip if we've already seen this lead
         if lead_id in self.prospects:
             return None
-        
+
         # Get full user details
         user_details = self.get_user_details(user['login'])
 
@@ -1498,12 +1553,12 @@ class GitHubScraper:
         # Extract emails
         email_commit = author_data.get('email')
         email_profile = user_details.get('email')
-        
+
         # Inclusion policy: include prospects even without emails unless explicitly configured to skip
         skip_without_email = self.config.get('filters', {}).get('skip_without_email', False)
         if skip_without_email and not (email_commit or email_profile):
             return None
-        
+
         # Extract LinkedIn from blog URL if present
         linkedin_username = None
         blog_url = user_details.get('blog', '')
@@ -1542,7 +1597,7 @@ class GitHubScraper:
             name = user_details.get('name', '') or ''
             company = user_details.get('company', '') or ''
             linkedin_query = f"{name} {company} site:linkedin.com/in/".strip()
-        
+
         # Extract pronouns (often in bio or name field)
         pronouns = None
         if user_details.get('bio') and isinstance(user_details['bio'], str):
@@ -1553,7 +1608,7 @@ class GitHubScraper:
                 pronouns = 'she/her'
             elif 'they/them' in bio_lower:
                 pronouns = 'they/them'
-        
+
         # Get contribution stats (GraphQL) with caching
         try:
             contribs = self.get_user_contributions(user['login'])
@@ -1561,7 +1616,7 @@ class GitHubScraper:
             contribs = None
         contributions_last_year = (contribs or {}).get('contributions_last_year')
         total_contributions = (contribs or {}).get('total_contributions')
-        
+
         prospect = Prospect(
             # Core identification
             lead_id=lead_id,
@@ -1662,16 +1717,16 @@ class GitHubScraper:
             has_organization_projects=user_details.get('has_organization_projects'),
             has_repository_projects=user_details.get('has_repository_projects')
         )
-        
+
         self.prospects.add(lead_id)
         # Count as a lead only if we have an email
         if prospect.email_profile or prospect.email_public_commit or prospect.get_best_email():
             self.leads_with_email_count += 1
-        
+
         # Write to CSV immediately if incremental writing is enabled
         if self.output_path:
             self._write_prospect_to_csv(prospect)
-        
+
         # Score the prospect before saving
         prospect_dict = prospect.to_dict()
         scoring_result = self.prospect_scorer.score_prospect(prospect_dict, repo)
@@ -1709,7 +1764,7 @@ class GitHubScraper:
 
         # Mark login as seen in dedup DB
         self._dedup_mark(user['login'])
-            
+
         return prospect
 
     def _upsert_person_record(self, user_details: Dict, login: str, email_public_commit: Optional[str] = None, repo: Optional[Dict] = None):
@@ -2046,7 +2101,7 @@ class GitHubScraper:
             'signals_repo_full_name': repo_full_name,
             'signals_repo_id': repo_id,
         })
-        
+
     def scrape(self):
         """Main scraping logic with job tracking"""
         # Start job tracking
@@ -2181,7 +2236,7 @@ class GitHubScraper:
             # Update job stats for sequential processing
             job.stats.raw_prospects_found = len(self.all_prospects)
             job.stats.contactable_prospects = self.leads_with_email_count
-        
+
         # Perform identity deduplication
         if self.all_prospects:
             print(f"\n🔄 Deduplicating {len(self.all_prospects)} prospects...")
@@ -2251,7 +2306,7 @@ class GitHubScraper:
         """Export prospects to CSV"""
         if not self.all_prospects:
             return
-            
+
         # Use same fieldnames as init_csv_file
         fieldnames = [
             # Core identification
@@ -2293,11 +2348,11 @@ class GitHubScraper:
             'two_factor_authentication', 'has_organization_projects',
             'has_repository_projects'
         ]
-        
+
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
             writer.writeheader()
-            
+
             for prospect in self.all_prospects:
                 writer.writerow(prospect.to_dict())
 
@@ -2372,7 +2427,7 @@ class GitHubScraper:
                     'api_url': row.get('api_url'),
                 }
                 w.writerow(out)
-        
+
         # Repos.csv
         repo_headers = [
             'repo_full_name','repo_name','owner_login','host','description','primary_language','license','topics',
@@ -2384,7 +2439,7 @@ class GitHubScraper:
             w.writeheader()
             for row in self.repo_records.values():
                 w.writerow({k: row.get(k) for k in repo_headers})
-        
+
         # Membership.csv
         membership_headers = [
             'membership_id','login','repo_full_name','role','permission','contributions_past_year','last_activity_at'
@@ -2403,7 +2458,7 @@ class GitHubScraper:
                     'last_activity_at': row.get('last_activity_at'),
                 }
                 w.writerow(out_row)
-        
+
         # Signals.csv
         signal_headers = ['signal_id','login','repo_full_name','signal_type','signal','signal_at','url','source']
         signals_file = os.path.join(signals_dir, 'Signals.csv')
@@ -2525,7 +2580,7 @@ def main():
     parser.add_argument('--no-dedup', action='store_true', help='Disable deduplication (process all logins)')
     parser.add_argument('--timeout-secs', type=int, default=int(os.environ.get('HTTP_TIMEOUT_SECS', '15')), help='HTTP request timeout seconds (default: $HTTP_TIMEOUT_SECS or 15)')
     args = parser.parse_args()
-    
+
     # Check for GitHub token
     # Prefer token from config.github.token_env, then GITHUB_TOKEN, then GH_TOKEN
     token_env_name = None
@@ -2553,10 +2608,10 @@ def main():
         print("   Running without authentication (limited to public data)")
         print("   Get a token at: https://github.com/settings/tokens for full access")
         token = ""
-    
+
     # Handle URL mode
     if args.url:
-        
+
         # Use minimal config for URL mode
         config = {
             'filters': {'activity_days': 90},
@@ -2578,38 +2633,38 @@ def main():
                 current = config['limits'].get('max_repos', 0) or 0
                 config['limits']['max_repos'] = max(current, desired)
                 print(f"🔧 Auto-setting max_repos to {config['limits']['max_repos']} for leads target {config['limits']['max_people']}")
-        
+
         # Don't save to CSV if print-only mode
         output_path = None if args.print_only else args.out
         if output_path:
             os.makedirs(os.path.dirname(output_path) or '.', exist_ok=True)
-        
+
         scraper = GitHubScraper(token, config, output_path, None)
-        
+
         # Initialize CSV if needed
         if output_path:
             scraper._init_csv_file()
-        
+
         # Scrape from URL
         scraper.scrape_from_url(args.url)
-        
+
         # Always print results in URL mode
         scraper.print_prospects_summary()
-        
+
         # Close CSV file and dedup DB
         if output_path:
             scraper._close_csv_file()
         else:
             # Ensure dedup DB closed even if no CSV
             scraper._close_csv_file()
-        
+
         return
-        
+
     # Regular config-based mode
     try:
         with open(args.config, 'r') as f:
             config = yaml.safe_load(f)
-            
+
         # Overrides from CLI
         if args.max_repos or args.repos:
             config['limits']['max_repos'] = args.repos or args.max_repos
@@ -2632,7 +2687,7 @@ def main():
     except FileNotFoundError:
         print(f"❌ Error: Config file '{args.config}' not found")
         print("Creating default config...")
-        
+
         # Create default config
         default_config = {
             'search': {
@@ -2654,15 +2709,15 @@ def main():
             'dedup': {'enabled': (not args.no_dedup), 'db_path': args.dedup_db},
             'http': {'timeout_secs': args.timeout_secs}
         }
-        
+
         os.makedirs(os.path.dirname(args.config) or '.', exist_ok=True)
         with open(args.config, 'w') as f:
             yaml.dump(default_config, f, default_flow_style=False)
-            
+
         print(f"✅ Created default config at {args.config}")
         print("Edit it and run again!")
         sys.exit(0)
-        
+
     # Create output directories
     os.makedirs(os.path.dirname(args.out) or '.', exist_ok=True)
     os.makedirs(args.out_dir or 'data', exist_ok=True)
@@ -2714,14 +2769,14 @@ def main():
 if __name__ == '__main__':
     import signal
     import sys
-    
+
     def signal_handler(sig, frame):
         print('\n\n⚠️  Interrupted by user (Ctrl+C)')
         print('📊 Saving current progress...')
         sys.exit(0)
-    
+
     signal.signal(signal.SIGINT, signal_handler)
-    
+
     try:
         main()
     except KeyboardInterrupt:

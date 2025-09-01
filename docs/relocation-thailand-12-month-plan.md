@@ -172,6 +172,5 @@ Execute wrap‑up tasks for a smooth transition.
 
 ---
 
-Owner: Sebastian Heyneman  
+Owner: Sebastian Heyneman
 Linear project: [Move to Thailand for 12 months](https://linear.app/nova-solve/project/move-to-thailand-for-12-months-3e7ae692e73d/overview)
-

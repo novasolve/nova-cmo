@@ -1,6 +1,6 @@
 # CMO Agent Makefile
 
-.PHONY: install run test clean
+.PHONY: install run test clean ux
 
 # Installation
 install:
@@ -36,8 +36,7 @@ test-queue:
 	PYTHONPATH=.. python -m cmo_agent.scripts.test_persistent_queue
 
 # Demo job processing (shows actual execution)
-demo-processing:
-	PYTHONPATH=.. python -m cmo_agent.scripts.demo_job_processing
+
 
 # Submit a job to execution engine (just queue it)
 submit-job:
@@ -89,7 +88,7 @@ help:
 	@echo "  make test-campaign    - Run a small test campaign"
 	@echo "  make test-persistence - Test job persistence across script runs"
 	@echo "  make test-queue       - Test persistent queue functionality"
-	@echo "  make demo-processing  - Demo job submission and actual processing"
+
 	@echo "  make submit-job GOAL='...' - Submit job to execution engine (queue only)"
 	@echo "  make run-job GOAL='...'    - Submit and process job immediately"
 	@echo "  make job-status JOB_ID=job_id - Check job status"
@@ -98,6 +97,7 @@ help:
 	@echo "  make new-config NAME=config_name - Create new campaign config"
 	@echo "  make check-tools      - Validate tool availability/config"
 	@echo "  make smoke-tools      - Run toolbelt smoke tests"
+	@echo "  make ux VIEW=dashboard - Render UX view from latest checkpoint"
 
 # Validate toolbelt/tool availability
 check-tools:
@@ -106,3 +106,10 @@ check-tools:
 # Smoke test suite for tools
 smoke-tools:
 	PYTHONPATH=.. python -m cmo_agent.scripts.smoke_test_tools
+
+# UX CLI
+ux:
+	@if [ -z "$(VIEW)" ]; then \
+		VIEW=dashboard; \
+	fi; \
+	PYTHONPATH=.. python -m cmo_agent.ux.cli $$VIEW

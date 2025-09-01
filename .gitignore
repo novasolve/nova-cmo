@@ -134,3 +134,86 @@ lead_intelligence/data/dedup.sqlite3
 *.hdf5
 
 _nova-cmo_mirror.git/
+
+# Frontend (Next.js)
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+frontend/.vercel/
+frontend/.pnpm-store/
+frontend/.cache/
+frontend/coverage/
+
+# Video system binaries and artifacts
+video_system/tools/ffmpeg
+video_system/tools/ffmpeg.exe
+video_system/tools/ffmpeg.tar.*
+video_system/outputs/
+video_system/assets/base_videos/
+video_system/assets/final_outputs/
+video_system/assets/intros/
+
+
+# Next.js SWC native binaries
+frontend/node_modules/**/@next/swc-*/next-swc.*.node
+frontend/node_modules/**/next-swc.*.node
+frontend/node_modules/.pnpm/**/@next/swc-*/next-swc.*.node
+
+# Consolidated repo ignores (macOS/editors)
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv*/
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Node / Next (ignore everywhere)
+**/node_modules/
+**/.next/
+**/.turbo/
+**/.vercel/
+**/.eslintcache
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Coverage / caches
+coverage/
+.nyc_output/
+.cache/
+.tmp/
+
+# Note: lockfiles and Next config should remain tracked
+# e.g., keep: next-env.d.ts, next.config.js, lockfiles
+
+# Cache and virtualenvs (global)
+**/.cache/
+**/cache/
+**/.venv/
+**/.venv*/
+**/venv/
+**/venv*/
+
+# JSON cache files
+**/*.cache.json
+**/cache/*.json
+.cache/*.json
+cache/*.json
+*.jsonl

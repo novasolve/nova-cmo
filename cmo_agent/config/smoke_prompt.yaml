@@ -1,0 +1,47 @@
+version: 1
+
+# Parameters used to render the smoke-test prompt and display plan
+params:
+  language: "Python"
+  stars_range: "300..2000"
+  activity_days: 90
+  target_leads: 10
+  budget_per_day: 10
+
+# If provided, overrides computed pushed_since; otherwise computed as today - activity_days
+pushed_since: null # e.g., "2025-06-01"
+
+# Goal template rendered into the job "goal" sent to the agent
+goal_template: |
+  Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>= {{pushed_since}}; prioritize active {{activity_days}} days; export CSV.
+
+# Assistant intro template for the chat UI (frontend may use this to show a friendly banner)
+assistant_intro_template: |
+  🧪 Real Smoke Test Started: {{job_id}}
+  Running live campaign validation with real GitHub data...
+  Mode: 🤝 Co‑pilot (Real Run)  Daily Cap: ${{budget_per_day}}  Target: {{target_leads}} {{language}} maintainers  Scope: Last {{activity_days}} days
+  This will make real GitHub API calls and show live progress in the Inspector →
+
+# Optional: pass prompt params down to agent config for early-stop
+propagate_params_to_config: true
+
+max_steps: 40
+features:
+  dry_run: true
+logging:
+  level: INFO
+directories:
+  logs: ./logs
+  checkpoints: ./checkpoints
+  artifacts: ./artifacts
+  exports: ./exports
+job_config:
+  checkpoints:
+    enable_stage: false
+    time_interval: 900 # 15 minutes for smoke runs to avoid frequent writes
+
+default_icp:
+  languages: ["python"]
+  stars_range: "300..2000"
+  activity_days: 90
+  exclude_topics: ["deprecated", "unmaintained"]

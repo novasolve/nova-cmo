@@ -148,6 +148,8 @@ class InMemoryJobQueue(JobQueue):
         self._jobs: Dict[str, Job] = {}  # Job storage
         self._progress_streams: Dict[str, asyncio.Queue] = {}  # Progress streams
         self._lock = asyncio.Lock()
+        # Track active SSE listeners per job for accurate stats
+        self._progress_listeners: Dict[str, int] = {}
 
     async def enqueue_job(self, job: Job, priority: int = JobPriority.NORMAL.value, tags: List[str] = None, scheduled_at: Optional[datetime] = None) -> str:
         """Add job to queue with priority and scheduling support"""
@@ -167,6 +169,7 @@ class InMemoryJobQueue(JobQueue):
 
             # Create progress stream
             self._progress_streams[job.id] = asyncio.Queue()
+            self._progress_listeners[job.id] = 0
 
             return job.id
 
@@ -219,6 +222,14 @@ class InMemoryJobQueue(JobQueue):
                     except Exception:
                         pass  # Stream might be closed
 
+                # If job reached a terminal state, close the progress stream
+                if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                    if job_id in self._progress_streams:
+                        try:
+                            await self._progress_streams[job_id].put(None)
+                        except Exception:
+                            pass
+
     async def get_job_progress(self, job_id: str) -> Optional[ProgressInfo]:
         """Get job progress information"""
         job = self._jobs.get(job_id)
@@ -227,12 +238,26 @@ class InMemoryJobQueue(JobQueue):
     async def get_progress_stream(self, job_id: str):
         """Get async stream of progress updates"""
         if job_id not in self._progress_streams:
-            # Create a queue that will immediately return None if job doesn't exist
+            # Return an empty queue to keep SSE connection alive; server will send keep-alives
             queue = asyncio.Queue()
-            await queue.put(None)
             return queue
 
         return self._progress_streams[job_id]
+
+    def register_progress_listener(self, job_id: str):
+        """Increment active listener count for a job"""
+        try:
+            self._progress_listeners[job_id] = self._progress_listeners.get(job_id, 0) + 1
+        except Exception:
+            pass
+
+    def unregister_progress_listener(self, job_id: str):
+        """Decrement active listener count for a job"""
+        try:
+            if job_id in self._progress_listeners and self._progress_listeners[job_id] > 0:
+                self._progress_listeners[job_id] -= 1
+        except Exception:
+            pass
 
     async def pause_job(self, job_id: str) -> None:
         """Pause a running job"""
@@ -325,13 +350,16 @@ class InMemoryJobQueue(JobQueue):
                 priority = item.priority
                 priority_depths[priority] = priority_depths.get(priority, 0) + 1
 
+            # Active streams: number of jobs with at least one active listener
+            active_streams = sum(1 for v in self._progress_listeners.values() if v > 0)
+
             return {
                 "total_jobs": len(self._jobs),
                 "queued_jobs": len(self._queue),
                 "jobs_by_status": jobs_by_status,
                 "jobs_by_priority": priority_counts,
                 "priority_queue_depths": priority_depths,
-                "active_streams": len([s for s in self._progress_streams.values() if not s.empty()]),
+                "active_streams": active_streams,
                 "scheduled_jobs": sum(1 for item in self._queue if item.scheduled_at is not None),
             }
 

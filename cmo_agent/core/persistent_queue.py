@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from datetime import datetime
+import logging
 
 from .job import Job, JobStatus, ProgressInfo
 from .queue import JobQueue, QueueItem
@@ -24,6 +25,8 @@ class PersistentJobQueue(JobQueue):
         self._jobs: Dict[str, Job] = {}  # Job storage
         self._progress_streams: Dict[str, asyncio.Queue] = {}  # Progress streams
         self._lock = asyncio.Lock()
+        # Track active SSE listeners per job for accurate stats
+        self._progress_listeners: Dict[str, int] = {}
 
         # Load existing jobs from disk
         self._load_jobs_from_disk()
@@ -37,10 +40,12 @@ class PersistentJobQueue(JobQueue):
         try:
             job_data = job.to_dict()
             job_file = self._get_job_file(job.id)
-            with open(job_file, 'w') as f:
-                json.dump(job_data, f, indent=2, default=str)
+            tmp_file = job_file.with_suffix(".tmp")
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(job_data, f, indent=2, default=str, ensure_ascii=False)
+            os.replace(tmp_file, job_file)
         except Exception as e:
-            print(f"Error saving job {job.id}: {e}")
+            logging.getLogger(__name__).error(f"Error saving job {job.id}: {e}")
 
     def _load_job_from_disk(self, job_id: str) -> Optional[Job]:
         """Load job from disk"""
@@ -49,7 +54,7 @@ class PersistentJobQueue(JobQueue):
             if not job_file.exists():
                 return None
 
-            with open(job_file, 'r') as f:
+            with open(job_file, 'r', encoding='utf-8') as f:
                 job_data = json.load(f)
 
             # Convert string dates back to datetime
@@ -70,7 +75,7 @@ class PersistentJobQueue(JobQueue):
 
             return Job(**job_data)
         except Exception as e:
-            print(f"Error loading job {job_id}: {e}")
+            logging.getLogger(__name__).error(f"Error loading job {job_id}: {e}")
             return None
 
     def _load_jobs_from_disk(self):
@@ -90,8 +95,12 @@ class PersistentJobQueue(JobQueue):
                         queue_item = QueueItem(job=job, priority=1 if job.status == JobStatus.RUNNING else 0)
                         self._queue.append(queue_item)
 
+                        # Create progress stream for reloaded jobs
+                        self._progress_streams[job_id] = asyncio.Queue()
+                        self._progress_listeners[job_id] = 0
+
         except Exception as e:
-            print(f"Error loading jobs from disk: {e}")
+            logging.getLogger(__name__).error(f"Error loading jobs from disk: {e}")
 
     async def enqueue_job(self, job: Job, priority: int = 0) -> str:
         """Add job to queue and persist to disk"""
@@ -109,25 +118,38 @@ class PersistentJobQueue(JobQueue):
 
             # Create progress stream
             self._progress_streams[job.id] = asyncio.Queue()
+            self._progress_listeners[job.id] = 0
 
             return job.id
 
     async def dequeue_job(self) -> Optional[Job]:
-        """Get next job to process"""
+        """Get next job to process (respects simple scheduling if set)"""
         async with self._lock:
-            while self._queue:
-                queue_item = self._queue.pop(0)  # FIFO for simplicity
+            # Iterate to find the first ready job
+            for idx, queue_item in enumerate(list(self._queue)):
                 job = queue_item.job
 
-                # Check if job is still valid
+                # Skip if scheduled in the future
+                try:
+                    if getattr(queue_item, "scheduled_at", None):
+                        if datetime.now() < queue_item.scheduled_at:
+                            continue
+                except Exception:
+                    pass
+
+                # Check if job is still valid and queued
                 if job.id in self._jobs and job.status == JobStatus.QUEUED:
-                    # Mark as running
+                    # Remove from queue and mark as running
+                    try:
+                        self._queue.pop(idx)
+                    except Exception:
+                        # Fallback: remove by id filter
+                        self._queue = [it for it in self._queue if it.job.id != job.id]
                     job.update_status(JobStatus.RUNNING)
                     self._save_job_to_disk(job)
                     return job
-                # If job was cancelled or already processed, continue to next
 
-            return None  # No jobs available
+            return None  # No ready jobs available
 
     async def update_job_status(self, job_id: str, status: JobStatus) -> None:
         """Update job status"""
@@ -145,6 +167,14 @@ class PersistentJobQueue(JobQueue):
                     except Exception:
                         pass  # Stream might be closed
 
+                # If job reached a terminal state, close the progress stream
+                if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                    if job_id in self._progress_streams:
+                        try:
+                            await self._progress_streams[job_id].put(None)
+                        except Exception:
+                            pass
+
     async def get_job_progress(self, job_id: str) -> Optional[ProgressInfo]:
         """Get job progress information"""
         job = self._jobs.get(job_id)
@@ -153,12 +183,26 @@ class PersistentJobQueue(JobQueue):
     async def get_progress_stream(self, job_id: str):
         """Get async stream of progress updates"""
         if job_id not in self._progress_streams:
-            # Create a queue that will immediately return None if job doesn't exist
+            # Return an empty queue to keep SSE connection alive; server will send keep-alives
             queue = asyncio.Queue()
-            await queue.put(None)
             return queue
 
         return self._progress_streams[job_id]
+
+    def register_progress_listener(self, job_id: str):
+        """Increment active listener count for a job"""
+        try:
+            self._progress_listeners[job_id] = self._progress_listeners.get(job_id, 0) + 1
+        except Exception:
+            pass
+
+    def unregister_progress_listener(self, job_id: str):
+        """Decrement active listener count for a job"""
+        try:
+            if job_id in self._progress_listeners and self._progress_listeners[job_id] > 0:
+                self._progress_listeners[job_id] -= 1
+        except Exception:
+            pass
 
     async def pause_job(self, job_id: str) -> None:
         """Pause a running job"""
@@ -223,9 +267,63 @@ class PersistentJobQueue(JobQueue):
                 status = job.status.value
                 jobs_by_status[status] = jobs_by_status.get(status, 0) + 1
 
+            active_streams = sum(1 for v in self._progress_listeners.values() if v > 0)
+
             return {
                 "total_jobs": len(self._jobs),
                 "queued_jobs": len([j for j in self._queue if j.job.status == JobStatus.QUEUED]),
                 "jobs_by_status": jobs_by_status,
-                "active_streams": len([s for s in self._progress_streams.values() if not s.empty()]),
+                "active_streams": active_streams,
             }
+
+    async def retry_job(self, job_id: str) -> bool:
+        """Retry a failed job by re-queuing it with a basic retry counter."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.status != JobStatus.FAILED:
+                return False
+
+            # Locate existing queue item
+            queue_item = None
+            for item in self._queue:
+                if item.job.id == job_id:
+                    queue_item = item
+                    break
+
+            if not queue_item:
+                # Create a minimal QueueItem if missing
+                queue_item = QueueItem(job=job, priority=0)
+
+            # Increment retry bookkeeping
+            try:
+                queue_item.retry_count = getattr(queue_item, "retry_count", 0) + 1
+            except Exception:
+                pass
+
+            # Re-queue as QUEUED
+            job.update_status(JobStatus.QUEUED)
+            self._save_job_to_disk(job)
+            self._queue.append(queue_item)
+            return True
+
+    async def schedule_job(self, job_id: str, scheduled_at: datetime) -> None:
+        """Schedule a job for future execution (best-effort)."""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return
+
+            # Find queue item or create one
+            queue_item = None
+            for item in self._queue:
+                if item.job.id == job_id:
+                    queue_item = item
+                    break
+
+            if not queue_item:
+                queue_item = QueueItem(job=job, priority=0)
+                self._queue.append(queue_item)
+
+            queue_item.scheduled_at = scheduled_at
+            # Persist current job state (metadata remains in memory)
+            self._save_job_to_disk(job)

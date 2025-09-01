@@ -307,7 +307,7 @@ def main():
         parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
         parser.add_argument('--dry-run', action='store_true', help='Show what would be done')
         parser.add_argument('--phase', choices=['collect', 'analyze', 'report', 'all'], default='all', help='Run specific phase')
-        parser.add_argument('--demo', action='store_true', help='Run in demo mode')
+
 
         # Filtering options
         parser.add_argument('--location', default='us', help='Filter by location (default: us)')
@@ -335,10 +335,10 @@ def main():
     # Check for GitHub token
     # HARDCODED TOKEN - Replace 'YOUR_ACTUAL_TOKEN_HERE' with your real token
     HARDCODED_TOKEN = "YOUR_ACTUAL_TOKEN_HERE"
-    
+
     # Try to get token from environment first, then from args
     github_token = os.environ.get('GITHUB_TOKEN') or args.github_token
-    
+
     # Check for backup tokens if primary fails
     if not github_token:
         for i in range(2, 10):
@@ -347,7 +347,7 @@ def main():
                 print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
                 github_token = backup_token
                 break
-    
+
     if not github_token:
         logger.error("❌ GitHub token required. Please update the HARDCODED_TOKEN variable")
         print("\nTo get a GitHub token:")
@@ -508,14 +508,9 @@ def main():
             logger.info("✅ Generated reports")
             return 0
         elif args.phase == 'all':
-            if args.demo:
-                logger.info("🎭 Running in DEMO mode with sample data")
-                import asyncio
-                result = asyncio.run(engine.run_demo_cycle())
-            else:
-                logger.info("🔄 Running comprehensive intelligence pipeline")
-                import asyncio
-                result = asyncio.run(engine.run_intelligence_cycle())
+            logger.info("🔄 Running comprehensive intelligence pipeline")
+            import asyncio
+            result = asyncio.run(engine.run_intelligence_cycle())
 
             if result['success']:
                 logger.info("✅ Lead Intelligence Pipeline completed successfully!")
@@ -660,7 +655,7 @@ def interactive_config_setup() -> Dict:
     # GitHub token
     # Get token from environment
     github_token = os.environ.get('GITHUB_TOKEN', '')
-    
+
     # Check for backup tokens if primary is not available
     if not github_token:
         for i in range(2, 10):
@@ -669,7 +664,7 @@ def interactive_config_setup() -> Dict:
                 print(f"🔄 Using backup token GITHUB_TOKEN_{i}")
                 github_token = backup_token
                 break
-    
+
     if not github_token:
         print("\n🔑 GitHub Token Setup:")
         print("You need a GitHub token to collect data.")

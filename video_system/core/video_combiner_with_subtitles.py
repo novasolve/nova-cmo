@@ -28,7 +28,7 @@ def get_video_info(video_path):
 def combine_with_subtitle_preservation(intro_path, base_video_path, background_video_path, output_path, overlay_duration=36):
     """
     Combine intro video with base video while preserving subtitles.
-    
+
     Args:
         intro_path: Path to the intro video (provides main visuals for first 36s)
         base_video_path: Path to the base video (provides audio and subtitles)
@@ -59,11 +59,11 @@ def combine_with_subtitle_preservation(intro_path, base_video_path, background_v
         # Crop subtitle area from base video (bottom 20% of screen)
         subtitle_height = int(height * 0.2)
         subtitle_y_start = height - subtitle_height
-        
+
         subtitle_area = base_audio_part.cropped(
-            x1=0, 
-            y1=subtitle_y_start, 
-            x2=width, 
+            x1=0,
+            y1=subtitle_y_start,
+            x2=width,
             y2=height
         )
 
@@ -75,10 +75,10 @@ def combine_with_subtitle_preservation(intro_path, base_video_path, background_v
         # 2. Intro video as main content (positioned in center/top area)
         # 3. Subtitle area from base video at bottom
         # 4. Audio from base video
-        
+
         # Position intro video in the main content area (not covering subtitles)
         intro_positioned = intro_visuals.with_position('center')
-        
+
         composite_clip = moviepy.CompositeVideoClip([
             background_part,      # Clean background
             intro_positioned,     # Intro video content

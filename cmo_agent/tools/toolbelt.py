@@ -168,6 +168,16 @@ class Toolbelt:
         tool = self.tools[tool_name]
 
         async def _run_tool():
+            # Prefer the tool's internal retry + rate limiter to ensure spacing on each attempt
+            max_attempts = (
+                self.config.get("retries", {}).get("max_attempts", 3)
+                if isinstance(self.config.get("retries"), dict)
+                else 3
+            )
+            # Many tools inherit from BaseTool and expose _execute_with_retry
+            if hasattr(tool, "_execute_with_retry"):
+                return await tool._execute_with_retry(max_attempts=max_attempts, **args)  # type: ignore[attr-defined]
+            # Fallback if a custom tool lacks the helper
             return await tool.execute(**args)
 
         try:
@@ -200,5 +210,3 @@ class Toolbelt:
             record_error("toolbelt", type(e).__name__, is_critical=False)
             log_error(e, component="toolbelt", tool=tool_name, job_id=job_id)
             return ToolResult(success=False, error=str(e), metadata={"tool": tool_name})
-
-

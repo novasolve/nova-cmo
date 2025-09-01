@@ -262,4 +262,3 @@ class CopyGenerator:
             )
 
         return self.generate_copy(template, sample_prospect, sample_icp)
-

@@ -504,4 +504,3 @@ BODY: [optimized body]
             score += 0.3
 
         return min(1.0, score)
-

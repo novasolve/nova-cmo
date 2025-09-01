@@ -51,9 +51,6 @@ export ATTIO_WORKSPACE_ID=your_workspace_id
 ### **3. Run Intelligence Pipeline**
 
 ```bash
-# Demo mode (no tokens needed - shows full pipeline)
-make intelligence-demo
-
 # Production mode (requires GitHub token)
 make intelligence
 ```
