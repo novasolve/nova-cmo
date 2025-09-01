@@ -148,24 +148,31 @@ start_dev() {
     fi
     success "API running at http://localhost:$API_PORT"
 
-    # Start frontend in background
-    log "🎨 Starting frontend..."
-    cd frontend
-    if [[ ! -d "node_modules" ]]; then
-        log "Installing dependencies..."
-        npm install
-    fi
-    npm run dev > /tmp/cmo_frontend.log 2>&1 &
-    local frontend_pid=$!
-    echo $frontend_pid > "$PIDFILE_FRONTEND"
-    cd ..
+    # Start frontend in background (only if present)
+    local frontend_available=0
+    if [[ -d "frontend" && -f "frontend/package.json" ]]; then
+        frontend_available=1
+        log "🎨 Starting frontend..."
+        cd frontend
+        if [[ ! -d "node_modules" ]]; then
+            log "Installing dependencies..."
+            npm install
+        fi
+        npm run dev > /tmp/cmo_frontend.log 2>&1 &
+        local frontend_pid=$!
+        echo $frontend_pid > "$PIDFILE_FRONTEND"
+        cd ..
 
-    # Wait for frontend
-    sleep 5
-    if ! curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
-        warn "Frontend may still be starting..."
+        # Wait for frontend
+        sleep 5
+        if ! curl -s http://localhost:$FRONTEND_PORT/ >/dev/null 2>&1; then
+            warn "Frontend may still be starting..."
+        else
+            success "Frontend running at http://localhost:$FRONTEND_PORT"
+        fi
     else
-        success "Frontend running at http://localhost:$FRONTEND_PORT"
+        warn "Frontend directory or package.json not found. Skipping frontend startup."
+        echo "Frontend not started: missing frontend/package.json" > /tmp/cmo_frontend.log
     fi
 
     success "🎉 Development environment ready!"
@@ -181,11 +188,20 @@ start_dev() {
     trap 'log "Shutting down..."; kill $api_pid $frontend_pid 2>/dev/null; stop_all; exit 0' INT TERM
 
     # Follow logs in foreground
-    tail -f /tmp/cmo_api.log /tmp/cmo_frontend.log
+    if [[ $frontend_available -eq 1 ]]; then
+        tail -f /tmp/cmo_api.log /tmp/cmo_frontend.log
+    else
+        tail -f /tmp/cmo_api.log
+    fi
 }
 
 start_frontend() {
     log "Starting frontend server on port $FRONTEND_PORT..."
+    if [[ ! -d "$(dirname "$0")/frontend" || ! -f "$(dirname "$0")/frontend/package.json" ]]; then
+        warn "Frontend not present (missing directory or package.json). Skipping."
+        echo "Frontend not started: missing frontend/package.json" > /tmp/cmo_frontend.log
+        return 0
+    fi
     cd "$(dirname "$0")/frontend"
 
     # Install deps if needed

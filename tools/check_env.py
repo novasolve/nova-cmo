@@ -109,14 +109,38 @@ def check_environment(dry_run: bool = False) -> int:
         "1"
     )
     
-    # Check for .env file
-    env_file = Path(".env")
+    # Check for .env files in multiple locations
+    env_locations = [
+        Path(".env"),
+        Path("cmo_agent/.env"),
+        Path.home() / ".cmo_agent.env"
+    ]
+    
+    env_found = any(env_file.exists() for env_file in env_locations)
     env_example = Path(".env.example")
     
-    if not env_file.exists() and env_example.exists():
+    if not env_found:
+        if env_example.exists():
+            checker.warnings.append(
+                "⚠️  No .env file found. Copy .env.example to .env and fill in your credentials."
+            )
+        else:
+            checker.warnings.append(
+                "⚠️  No .env file found. Create one with your API credentials."
+            )
         checker.warnings.append(
-            "⚠️  No .env file found. Copy .env.example to .env and fill in your credentials."
+            f"⚠️  Checked locations: {', '.join(str(p) for p in env_locations)}"
         )
+    else:
+        # Find which env file exists and mention it
+        existing_env = next((str(p) for p in env_locations if p.exists()), None)
+        if existing_env:
+            print(f"📄 Found environment file: {existing_env}")
+            
+        # Security reminder for cmo_agent/.env
+        cmo_env = Path("cmo_agent/.env")
+        if cmo_env.exists():
+            print("🔐 Security reminder: cmo_agent/.env contains real API keys - ensure it's in .gitignore")
     
     # Print results
     if checker.warnings:

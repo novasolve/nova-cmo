@@ -10,8 +10,8 @@
 ##
 ## Notes:
 ## - pushed_since auto-computes to today - activity_days when null
-## - goal_template renders to a human-friendly goal string for logs/UI
-## - agent uses the structured values directly; goal is display-only
+## - No goal string is required. If goal_template is omitted, a friendly
+##   display-only line is synthesized from params for logs/UI.
 
 version: 1
 
@@ -26,13 +26,6 @@ params:
 # If provided, overrides computed pushed_since; otherwise computed as today - activity_days
 pushed_since: null # e.g., "2025-06-01"
 
-# Goal template rendered into the job "goal" sent to the agent
-goal_template: |
-  Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>= {{pushed_since}}; prioritize active {{activity_days}} days; export CSV.
-
-# Assistant intro template for the chat UI (frontend may use this to show a friendly banner)
-assistant_intro_template: |
-  🧪 Real Smoke Test Started: {{job_id}}
-  Running live campaign validation with real GitHub data...
-  Mode: 🤝 Co‑pilot (Real Run)  Daily Cap: ${{budget_per_day}}  Target: {{target_leads}} {{language}} maintainers  Scope: Last {{activity_days}} days
-  This will make real GitHub API calls and show live progress in the Inspector →
+## Optional: You may still provide a goal_template to control the display line
+## goal_template: |
+##   Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>={{pushed_since}}; prioritize active {{activity_days}} days; export CSV.

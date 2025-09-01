@@ -2,10 +2,11 @@
 """
 Run CMO Agent using a small structured YAML config (no typed GOAL needed).
 
-- Loads YAML (with params, pushed_since, goal_template, assistant_intro_template)
+- Loads YAML (params, pushed_since, optional goal_template)
 - Computes pushed_since if null using params.activity_days
 - Renders templates with {{ }} (Jinja2 if available, fallback otherwise)
-- Forwards a derived goal string to the existing run_agent entrypoint
+- If goal_template is absent, synthesizes a friendly display-only line from params
+- Forwards the derived display string to the existing run_agent entrypoint
 """
 
 from __future__ import annotations
@@ -92,9 +93,27 @@ def _build_template_context(config: Dict[str, Any]) -> Dict[str, Any]:
 
 def _derive_goal(config: Dict[str, Any], context: Mapping[str, Any]) -> str:
     template = config.get("goal_template") or ""
-    if not isinstance(template, str) or not template.strip():
-        raise ValueError("goal_template is required in the YAML config")
-    return " ".join(render_template(template, context).split())
+    if isinstance(template, str) and template.strip():
+        return " ".join(render_template(template, context).split())
+
+    # Synthesize a default human-friendly line from params (display-only)
+    language = str(context.get("language") or context.get("params", {}).get("language") or "Python")
+    stars_range = str(context.get("stars_range") or context.get("params", {}).get("stars_range") or "300..2000")
+    pushed_since = str(context.get("pushed_since") or "")
+    try:
+        activity_days = int(context.get("activity_days") or context.get("params", {}).get("activity_days") or 90)
+    except Exception:
+        activity_days = 90
+
+    parts = [
+        f"Find maintainers of {language} repos",
+        f"stars:{stars_range}",
+        f"pushed:>={pushed_since}" if pushed_since else "",
+        f"prioritize active {activity_days} days",
+        "export CSV."
+    ]
+    synthesized = "; ".join([p for p in parts if p]).replace("; ;", "; ")
+    return synthesized.strip()
 
 
 async def _run_with_yaml(config_path: str, dry_run: bool, no_emoji: bool, interactive: bool, set_pairs: list[str] | None) -> int:
