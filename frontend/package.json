@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "smoke-test": "node scripts/smoke-test-cli.js"
+    "lint": "next lint"
   },
   "dependencies": {
     "@monaco-editor/loader": "^1.4.0",

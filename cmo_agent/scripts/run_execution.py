@@ -351,6 +351,8 @@ class ExecutionEngine:
             "progress": progress.to_dict() if progress else None,
             "artifacts": job.artifacts,
             "metadata": job.metadata,
+            # Expose run_state so downstream summary fallback can compute real counts
+            "run_state": job.run_state if job.run_state else None,
         }
 
     async def list_jobs(self, status_filter: Optional[JobStatus] = None) -> list:

@@ -539,8 +539,16 @@ class CMOAgent:
         if self.config.get("LINEAR_API_KEY"):
             tools["sync_linear"] = SyncLinear(self.config["LINEAR_API_KEY"])
 
-        # Export tools
-        tools["export_csv"] = ExportCSV(self.config.get("EXPORT_DIR", "./exports"))
+        # Export tools: honor directories.exports for consistency with JSON artifacts
+        try:
+            exports_dir = (
+                self.config.get("directories", {}).get("exports")
+                or self.config.get("EXPORT_DIR")
+                or "./exports"
+            )
+        except Exception:
+            exports_dir = self.config.get("EXPORT_DIR", "./exports")
+        tools["export_csv"] = ExportCSV(exports_dir)
         tools["done"] = Done()
 
         return tools
@@ -938,7 +946,7 @@ class CMOAgent:
                                 except Exception as e:
                                     logger.warning(f"Auto-personalization (render_copy) failed: {e}")
 
-                            # Export leads with email
+                            # Export leads with email (CSV + JSON sidecar)
                             if "export_csv" in self.tools:
                                 export_tool = self.tools["export_csv"]
                                 job_id = state.get("job_id", "job")
@@ -956,6 +964,29 @@ class CMOAgent:
                                         })
                                 except Exception:
                                     pass
+
+                                # Write JSON export next to CSV for easy consumption
+                                try:
+                                    from pathlib import Path
+                                    import json as _json
+                                    exports_dir = (
+                                        self.config.get("directories", {}).get("exports")
+                                        or self.config.get("EXPORT_DIR")
+                                        or "./exports"
+                                    )
+                                    Path(exports_dir).mkdir(parents=True, exist_ok=True)
+                                    json_path = Path(exports_dir) / f"{job_id}_leads.json"
+                                    # Prefer leads_with_email subset for JSON as well
+                                    with open(json_path, "w", encoding="utf-8") as f:
+                                        _json.dump({
+                                            "job_id": job_id,
+                                            "export_timestamp": datetime.now().isoformat(),
+                                            "data_type": "leads",
+                                            "count": len(leads_with_email),
+                                            "leads": leads_with_email,
+                                        }, f, indent=2, default=str)
+                                except Exception as e:
+                                    logger.warning(f"Failed to write JSON leads export: {e}")
 
                             # Signal completion
                             if "done" in self.tools:
@@ -1281,6 +1312,16 @@ class CMOAgent:
                     else:
                         return None, "[auto] enrich_github_users skipped: no valid candidates available."
 
+                return hydrated, note
+
+            if tool_name == "extract_people":
+                # Requires repos list - auto-fill from state if not provided
+                if "repos" not in hydrated or not hydrated.get("repos"):
+                    repos = state.get("repos", [])
+                    if not repos:
+                        return None, "[auto] extract_people skipped: no repos available in state."
+                    hydrated["repos"] = repos
+                    note = f"[auto] Filled extract_people repos: {len(repos)} repositories"
                 return hydrated, note
 
             if tool_name == "find_commit_emails_batch":

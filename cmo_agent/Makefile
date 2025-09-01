@@ -16,7 +16,20 @@ run:
 	PYTHONPATH=.. python -m cmo_agent.scripts.run_agent "$(GOAL)"
 
 # Run with custom config (YAML-driven, no GOAL required). Optional: SET="k=v k2=v2"
+# Phase 1: Unified CLI with auto mode detection
 run-config:
+	PYTHONPATH=.. python -m cmo_agent.scripts.unified_cli --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
+
+# Force in-process mode (CLI speed)
+run-config-fast:
+	PYTHONPATH=.. python -m cmo_agent.scripts.unified_cli --mode inproc --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
+
+# Force API mode (Web UI path)
+run-config-api:
+	PYTHONPATH=.. python -m cmo_agent.scripts.cli_run --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
+
+# Legacy direct execution (for fallback)
+run-config-legacy:
 	PYTHONPATH=.. python -m cmo_agent.scripts.run_from_yaml --config $(CONFIG) $(foreach kv,$(SET),--set $(kv))
 
 # Dry run with YAML (requires CONFIG). Optional: SET="k=v k2=v2"

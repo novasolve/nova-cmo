@@ -108,7 +108,28 @@ async def on_shutdown():
 # -----------------------
 @app.get("/", response_class=HTMLResponse)
 async def index():
-    return render_index()
+    return HTMLResponse("""
+<!doctype html>
+<html lang=\"en\">
+  <head>
+    <meta charset=\"utf-8\"/>
+    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>
+    <title>CMO Agent API</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 24px; background:#f6f7fb; }
+      .container { max-width: 720px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.06); }
+      h1 { margin: 0 0 12px; }
+      a { color:#0070f3; text-decoration:none; }
+    </style>
+  </head>
+  <body>
+    <div class=\"container\">
+      <h1>CMO Agent API</h1>
+      <p>Server is running. See <a href=\"/docs\">/docs</a> for API documentation.</p>
+    </div>
+  </body>
+  </html>
+""")
 
 
 @app.post("/run", response_class=HTMLResponse)
@@ -142,10 +163,10 @@ async def run(request: Request, goal: str = Form(...), dry_run: Optional[bool] =
           </div>
         </div>
         """
-        return render_index(result_html)
+        return HTMLResponse(result_html)
     except Exception as e:
         result_html = f"<div class=card><strong>Result:</strong> ❌ Error: {e}</div>"
-        return render_index(result_html)
+        return HTMLResponse(result_html)
 
 
 # -----------------------
@@ -226,19 +247,135 @@ async def api_get_job_summary(job_id: str):
     if not status:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Build summary from progress metrics if available
+    # Build summary from progress metrics if available; otherwise derive from run_state,
+    # then enrich from artifacts if needed (best-effort).
     summary = None
     try:
         prog = status.get("progress") or {}
         metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
-        summary = {
-            "duration_ms": int(metrics.get("duration_ms") or 0),
-            "repos": int(metrics.get("repos") or 0),
-            "candidates": int(metrics.get("candidates") or 0),
-            "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
-        }
+        # Prefer populated metrics
+        duration_ms = int(metrics.get("duration_ms") or 0)
+        repos = int(metrics.get("repos") or 0)
+        candidates = int(metrics.get("candidates") or 0)
+        leads_with_emails = int(metrics.get("leads_with_emails") or 0)
+
+        if any([duration_ms, repos, candidates, leads_with_emails]):
+            summary = {
+                "duration_ms": duration_ms,
+                "repos": repos,
+                "candidates": candidates,
+                "leads_with_emails": leads_with_emails,
+            }
+        else:
+            # Fallback: compute from run_state snapshot if present
+            run_state = status.get("run_state") or {}
+            agent_state = run_state.get('agent', run_state) if isinstance(run_state, dict) else {}
+            repos_count = 0
+            candidates_count = 0
+            leads_with_emails_count = 0
+            try:
+                repos_count = len(agent_state.get('repos') or [])
+            except Exception:
+                pass
+            try:
+                candidates_count = len(agent_state.get('candidates') or [])
+            except Exception:
+                pass
+            try:
+                for lead in (agent_state.get('leads') or []):
+                    email = (lead or {}).get('email')
+                    if isinstance(email, str):
+                        el = email.lower()
+                        if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                            leads_with_emails_count += 1
+            except Exception:
+                pass
+
+            # Rough duration from timestamps if available
+            duration_ms_fallback = 0
+            try:
+                created_at = status.get("created_at")
+                updated_at = status.get("updated_at")
+                if created_at and updated_at:
+                    from datetime import datetime
+                    start = datetime.fromisoformat(created_at)
+                    end = datetime.fromisoformat(updated_at)
+                    duration_ms_fallback = int((end - start).total_seconds() * 1000)
+            except Exception:
+                pass
+
+            summary = {
+                "duration_ms": duration_ms_fallback,
+                "repos": int(repos_count),
+                "candidates": int(candidates_count),
+                "leads_with_emails": int(leads_with_emails_count),
+            }
     except Exception:
         summary = None
+
+    # Enrich summary from artifacts if present and summary is missing or zeroed
+    try:
+        artifacts = status.get("artifacts") or []
+        if isinstance(artifacts, list) and artifacts:
+            # Helper to safely read JSON file
+            def _read_json(path: str):
+                try:
+                    import json
+                    from pathlib import Path
+                    p = Path(path)
+                    if p.exists():
+                        with p.open("r", encoding="utf-8") as f:
+                            return json.load(f)
+                except Exception:
+                    return None
+                return None
+
+            # Initialize summary if needed
+            if not isinstance(summary, dict):
+                summary = {"duration_ms": 0, "repos": 0, "candidates": 0, "leads_with_emails": 0}
+
+            # Prefer explicit counts on artifacts; fallback to file content
+            # Candidates
+            cand_art = next((a for a in artifacts if isinstance(a, dict) and a.get("type") == "candidates"), None)
+            if cand_art:
+                cnt = cand_art.get("count")
+                if isinstance(cnt, int) and cnt > 0:
+                    summary["candidates"] = max(summary.get("candidates", 0), cnt)
+                elif cand_art.get("path"):
+                    data = _read_json(cand_art.get("path")) or {}
+                    if isinstance(data, dict) and isinstance(data.get("candidates"), list):
+                        summary["candidates"] = max(summary.get("candidates", 0), len(data.get("candidates")))
+
+            # Repositories
+            repo_art = next((a for a in artifacts if isinstance(a, dict) and a.get("type") == "repositories"), None)
+            if repo_art:
+                cnt = repo_art.get("count")
+                if isinstance(cnt, int) and cnt > 0:
+                    summary["repos"] = max(summary.get("repos", 0), cnt)
+                elif repo_art.get("path"):
+                    data = _read_json(repo_art.get("path")) or {}
+                    if isinstance(data, dict) and isinstance(data.get("repositories"), list):
+                        summary["repos"] = max(summary.get("repos", 0), len(data.get("repositories")))
+
+            # Leads with emails
+            leads_art = next((a for a in artifacts if isinstance(a, dict) and a.get("type") == "leads"), None)
+            if leads_art:
+                if leads_art.get("path"):
+                    data = _read_json(leads_art.get("path")) or {}
+                    leads = data.get("leads") if isinstance(data, dict) else None
+                    if isinstance(leads, list) and leads:
+                        count_emailable = 0
+                        for lead in leads:
+                            if isinstance(lead, dict):
+                                email = (lead.get("email") or lead.get("best_email") or "")
+                                if isinstance(email, str):
+                                    el = email.lower()
+                                    if "@" in el and "noreply" not in el and "no-reply" not in el:
+                                        count_emailable += 1
+                        summary["leads_with_emails"] = max(summary.get("leads_with_emails", 0), count_emailable)
+    except Exception:
+        # Non-fatal enrichment failure
+        pass
 
     return {
         "status": status.get("status"),
@@ -353,12 +490,53 @@ async def api_job_events(request: Request, job_id: str):
                         try:
                             prog = status.get("progress") or {}
                             metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
-                            summary = {
-                                "duration_ms": int(metrics.get("duration_ms") or 0),
-                                "repos": int(metrics.get("repos") or 0),
-                                "candidates": int(metrics.get("candidates") or 0),
-                                "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
-                            }
+                            # Primary path: metrics
+                            duration_ms = int(metrics.get("duration_ms") or 0)
+                            repos = int(metrics.get("repos") or 0)
+                            candidates = int(metrics.get("candidates") or 0)
+                            leads_with_emails = int(metrics.get("leads_with_emails") or 0)
+
+                            if any([duration_ms, repos, candidates, leads_with_emails]):
+                                summary = {
+                                    "duration_ms": duration_ms,
+                                    "repos": repos,
+                                    "candidates": candidates,
+                                    "leads_with_emails": leads_with_emails,
+                                }
+                            else:
+                                # Fallback: derive from run_state if exposed
+                                run_state = status.get("run_state") or {}
+                                agent_state = run_state.get('agent', run_state) if isinstance(run_state, dict) else {}
+                                repos_count = len(agent_state.get('repos') or []) if isinstance(agent_state, dict) else 0
+                                candidates_count = len(agent_state.get('candidates') or []) if isinstance(agent_state, dict) else 0
+                                leads_with_emails_count = 0
+                                try:
+                                    for lead in (agent_state.get('leads') or []):
+                                        email = (lead or {}).get('email')
+                                        if isinstance(email, str):
+                                            el = email.lower()
+                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                                leads_with_emails_count += 1
+                                except Exception:
+                                    pass
+                                # Duration from timestamps if present
+                                duration_ms_fb = 0
+                                try:
+                                    created_at = status.get("created_at")
+                                    updated_at = status.get("updated_at")
+                                    if created_at and updated_at:
+                                        from datetime import datetime
+                                        start = datetime.fromisoformat(created_at)
+                                        end = datetime.fromisoformat(updated_at)
+                                        duration_ms_fb = int((end - start).total_seconds() * 1000)
+                                except Exception:
+                                    pass
+                                summary = {
+                                    "duration_ms": duration_ms_fb,
+                                    "repos": int(repos_count),
+                                    "candidates": int(candidates_count),
+                                    "leads_with_emails": int(leads_with_emails_count),
+                                }
                         except Exception:
                             summary = None
                         final_evt = {
@@ -507,12 +685,49 @@ async def api_job_events(request: Request, job_id: str):
                             artifacts = status.get("artifacts") or []
                             prog = status.get("progress") or {}
                             metrics = (prog.get("metrics") or {}) if isinstance(prog, dict) else {}
-                            summary = {
-                                "duration_ms": int(metrics.get("duration_ms") or 0),
-                                "repos": int(metrics.get("repos") or 0),
-                                "candidates": int(metrics.get("candidates") or 0),
-                                "leads_with_emails": int(metrics.get("leads_with_emails") or 0),
-                            }
+                            duration_ms = int(metrics.get("duration_ms") or 0)
+                            repos = int(metrics.get("repos") or 0)
+                            candidates = int(metrics.get("candidates") or 0)
+                            leads_with_emails = int(metrics.get("leads_with_emails") or 0)
+                            if any([duration_ms, repos, candidates, leads_with_emails]):
+                                summary = {
+                                    "duration_ms": duration_ms,
+                                    "repos": repos,
+                                    "candidates": candidates,
+                                    "leads_with_emails": leads_with_emails,
+                                }
+                            else:
+                                run_state = status.get("run_state") or {}
+                                agent_state = run_state.get('agent', run_state) if isinstance(run_state, dict) else {}
+                                repos_count = len(agent_state.get('repos') or []) if isinstance(agent_state, dict) else 0
+                                candidates_count = len(agent_state.get('candidates') or []) if isinstance(agent_state, dict) else 0
+                                leads_with_emails_count = 0
+                                try:
+                                    for lead in (agent_state.get('leads') or []):
+                                        email = (lead or {}).get('email')
+                                        if isinstance(email, str):
+                                            el = email.lower()
+                                            if '@' in el and 'noreply' not in el and 'no-reply' not in el:
+                                                leads_with_emails_count += 1
+                                except Exception:
+                                    pass
+                                duration_ms_fb = 0
+                                try:
+                                    created_at = status.get("created_at")
+                                    updated_at = status.get("updated_at")
+                                    if created_at and updated_at:
+                                        from datetime import datetime
+                                        start = datetime.fromisoformat(created_at)
+                                        end = datetime.fromisoformat(updated_at)
+                                        duration_ms_fb = int((end - start).total_seconds() * 1000)
+                                except Exception:
+                                    pass
+                                summary = {
+                                    "duration_ms": duration_ms_fb,
+                                    "repos": int(repos_count),
+                                    "candidates": int(candidates_count),
+                                    "leads_with_emails": int(leads_with_emails_count),
+                                }
                     except Exception:
                         pass
                     final_evt = {

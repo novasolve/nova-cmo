@@ -33,3 +33,4 @@ export function SimulationCardView({ simulation }: SimulationCardViewProps) {
     </div>
   );
 }
+

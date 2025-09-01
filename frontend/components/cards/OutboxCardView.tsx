@@ -41,3 +41,4 @@ export function OutboxCardView({ outbox }: OutboxCardViewProps) {
     </div>
   );
 }
+

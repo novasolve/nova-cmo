@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { AUTONOMY, QUICK_ACTIONS, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
+import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, type AutonomyLevel } from "@/lib/autonomy";
 
 export function ChatComposer({
   onSend,
@@ -10,7 +10,7 @@ export function ChatComposer({
   onSmokeTest?: () => void;
 }) {
   const [text, setText] = useState("");
-  const [autonomy, setAutonomy] = useState<AutonomyLevel>("L0");
+  const [autonomy, setAutonomy] = useState<AutonomyLevel>("L2");
   const [budget, setBudget] = useState<number | undefined>(undefined);
 
   return (
@@ -47,29 +47,7 @@ export function ChatComposer({
             setBudget(e.target.value ? Number(e.target.value) : undefined)
           }
         />
-        <div className="ml-auto flex gap-1">
-          {Object.values(QUICK_ACTIONS).filter((a: any) => a.id !== 'smoke_test').map((action: any) => (
-            <button
-              key={action.id}
-              onClick={() => {
-                if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {
-                  setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
-                } else {
-                  // Handle guide and other actions
-                  setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
-                }
-              }}
-              className={`text-xs px-2 py-1 border rounded hover:bg-gray-50 transition-colors ${
-                action.id === "smoke_test"
-                  ? "bg-green-100 text-green-700 border-green-300 hover:bg-green-200"
-                  : "border-gray-300"
-              }`}
-              title={action.tooltip}
-            >
-              {action.label}
-            </button>
-          ))}
-        </div>
+        {/* Quick action buttons removed */}
       </div>
 
       <div className="flex gap-2">

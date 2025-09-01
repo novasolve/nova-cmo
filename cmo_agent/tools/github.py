@@ -100,7 +100,9 @@ class SearchGitHubRepos(GitHubTool):
                 raw_q += (" " if raw_q else "") + f"stars:{stars_range}"
             if ("pushed:" not in raw_q) and ("created:" not in raw_q):
                 try:
-                    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, activity_days))).date().isoformat()
+                    # Use same calculation as CLI (date.today() not datetime.now(UTC)) for consistency
+                    from datetime import date
+                    cutoff = (date.today() - timedelta(days=max(1, activity_days))).isoformat()
                     raw_q += (" " if raw_q else "") + f"pushed:>={cutoff}"
                 except Exception:
                     pass
@@ -289,6 +291,12 @@ class ExtractPeople(GitHubTool):
         """Extract people from repositories"""
         try:
             all_candidates = []
+            # Activity window for validating recent commits
+            try:
+                activity_days = int(kwargs.get("activity_days", 90))
+            except Exception:
+                activity_days = 90
+            cutoff_iso = (datetime.now(timezone.utc) - timedelta(days=max(1, activity_days))).isoformat().replace("+00:00", "Z")
 
             for repo in repos[:50]:  # Limit to avoid rate limits
                 try:
@@ -319,7 +327,7 @@ class ExtractPeople(GitHubTool):
                         logger.info(f"No contributors found for {repo_full_name}")
                         continue
 
-                    # Filter out bots and validate usernames
+                    # Filter out bots and validate usernames; require recent activity in this repo
                     import re
                     human_contributors = []
                     for c in contributors:
@@ -336,6 +344,20 @@ class ExtractPeople(GitHubTool):
                         # Additional validation: reject obvious test/fake usernames
                         if any(pattern in login.lower() for pattern in ['test', 'fake', 'example', 'dummy']):
                             logger.warning(f"Rejecting test/fake contributor username: {login}")
+                            continue
+
+                        # Recent activity check: ensure user has a commit in this repo within activity window
+                        try:
+                            recent = await self._github_request(
+                                f"/repos/{repo_full_name}/commits",
+                                params={"author": login, "since": cutoff_iso, "per_page": 1}
+                            )
+                            if not recent or (isinstance(recent, list) and len(recent) == 0):
+                                # Skip inactive contributors for our ICP window
+                                continue
+                        except Exception as e:
+                            # If the activity check fails, be conservative and skip this contributor
+                            logger.warning(f"Activity check failed for {login} in {repo_full_name}: {e}")
                             continue
                         
                         human_contributors.append(c)

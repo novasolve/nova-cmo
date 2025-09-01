@@ -155,32 +155,55 @@ class JobWorker:
                 # Normalize and update the job's progress
                 if isinstance(progress_info, dict):
                     current = job.progress or None
-                    # Choose a meaningful stage fallback
-                    normalized_stage = (
+
+                    # Determine provided stage/node/event (do not inject placeholders)
+                    provided_stage = (
                         progress_info.get("stage")
                         or progress_info.get("node")
                         or progress_info.get("event")
-                        or (current.stage if current else None)
-                        or "working"
                     )
-                    # Auto-increment step when not provided
-                    try:
-                        current_step = int(progress_info.get("step")) if progress_info.get("step") is not None else None
-                    except Exception:
-                        current_step = None
-                    normalized_step = (
-                        current_step
-                        if current_step is not None
-                        else ((current.step + 1) if current else 0)
+                    provided_stage_str = (
+                        provided_stage.strip() if isinstance(provided_stage, str) else provided_stage
                     )
 
-                    # Build update payload without overwriting with None
+                    is_unknown_stage = (
+                        provided_stage_str is None
+                        or (isinstance(provided_stage_str, str) and provided_stage_str.strip().lower() in {"", "unknown"})
+                    )
+
+                    # Prepare update payload without None values
                     update_payload = {k: v for k, v in progress_info.items() if v is not None}
-                    update_payload["stage"] = normalized_stage
-                    update_payload["step"] = normalized_step
+
+                    # Merge metrics rather than overwrite entirely
+                    if "metrics" in update_payload and isinstance(update_payload["metrics"], dict):
+                        previous_metrics = (current.metrics if current and isinstance(current.metrics, dict) else {})
+                        merged_metrics = {**previous_metrics, **update_payload["metrics"]}
+                        update_payload["metrics"] = merged_metrics
+
+                    # Drop placeholders: do not overwrite stage/step/current_item on unknown events
+                    if is_unknown_stage:
+                        update_payload.pop("stage", None)
+                        update_payload.pop("node", None)
+                        update_payload.pop("event", None)
+                        update_payload.pop("current_item", None)
+                        update_payload.pop("step", None)
+                    else:
+                        # We have a real stage value; set it explicitly
+                        update_payload["stage"] = provided_stage_str
+
+                        # Step handling: only increment on real stage transition when step not provided
+                        step_provided = ("step" in progress_info and progress_info.get("step") is not None)
+                        if not step_provided:
+                            if current and current.stage != provided_stage_str:
+                                update_payload["step"] = (current.step + 1)
+                            else:
+                                # Keep existing step; do not modify
+                                update_payload.pop("step", None)
 
                     job.update_progress(**update_payload)
-                    logger.info(f"✅ Updated job progress: stage={normalized_stage}, step={normalized_step}")
+                    logger.info(
+                        f"✅ Updated job progress: stage={(job.progress.stage if job.progress else None)}, step={(job.progress.step if job.progress else None)}"
+                    )
                 else:
                     job.progress = progress_info
                     logger.info(f"✅ Set job progress object: {progress_info}")
@@ -199,30 +222,36 @@ class JobWorker:
             # Run the CMO Agent with progress callback
             result = await self.agent.run_job(job.goal, job.metadata.get('created_by', 'worker'), progress_callback)
 
-            # On normal completion, ensure a final summary message is emitted to the stream
+            # On normal completion, generate beautiful campaign summary like CLI
             try:
-                summary = None
                 final_state = result.get('final_state') if isinstance(result, dict) else None
                 if isinstance(final_state, dict):
-                    # Prefer agent-provided summary if present
-                    report = final_state.get('report') or {}
-                    summary = (report.get('summary') or {}).get('text') or report.get('summary')
-                    # Fallback: synthesize a small summary
-                    if not summary:
+                    # Generate beautiful campaign summary using the same function as CLI
+                    try:
+                        beautiful_summary = self._generate_campaign_summary(final_state)
+                        logger.info(f"Campaign Summary:\n{beautiful_summary}")
+                        
+                        # Emit as a final progress payload so UI can render the beautiful message
+                        from .job import ProgressInfo
+                        job.update_progress(stage="completed", message=beautiful_summary)
+                        if job.id in self.queue._progress_streams:
+                            try:
+                                await self.queue._progress_streams[job.id].put(job.progress)
+                            except Exception as e:
+                                logger.debug(f"Failed to emit beautiful summary for job {job.id}: {e}")
+                    except Exception as e:
+                        # Fallback to simple summary if beautiful one fails
                         steps = (final_state.get('counters') or {}).get('steps', 0)
                         leads = len(final_state.get('leads') or [])
                         repos = len(final_state.get('repos') or [])
-                        summary = f"Job {job.id} completed. steps={steps}, repos={repos}, leads={leads}."
-
-                if summary:
-                    # Emit as a final progress payload so UI can render a message
-                    from .job import ProgressInfo
-                    job.update_progress(stage="completed", message=summary)
-                    if job.id in self.queue._progress_streams:
-                        try:
-                            await self.queue._progress_streams[job.id].put(job.progress)
-                        except Exception as e:
-                            logger.debug(f"Failed to emit final summary for job {job.id}: {e}")
+                        simple_summary = f"Job {job.id} completed. steps={steps}, repos={repos}, leads={leads}."
+                        
+                        job.update_progress(stage="completed", message=simple_summary)
+                        if job.id in self.queue._progress_streams:
+                            try:
+                                await self.queue._progress_streams[job.id].put(job.progress)
+                            except Exception as e:
+                                logger.debug(f"Failed to emit simple summary for job {job.id}: {e}")
             except Exception:
                 # Non-fatal if summary emission fails
                 pass
@@ -264,6 +293,32 @@ class JobWorker:
                 job.update_progress(stage="completed", items_processed=steps_done)
                 record_job_completed(duration)
                 logger.info(f"Job {job.id} completed in {duration:.1f}s")
+
+            # Populate metrics snapshot for summary consumers (repos/candidates/emails/duration)
+            try:
+                agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else {}
+                repos_count = len(agent_state.get('repos') or [])
+                candidates_count = len(agent_state.get('candidates') or [])
+                leads_list = agent_state.get('leads') or []
+                leads_with_emails_count = 0
+                for lead in leads_list:
+                    email = (lead or {}).get('email')
+                    if isinstance(email, str):
+                        email_lower = email.lower()
+                        if '@' in email_lower and 'noreply' not in email_lower and 'no-reply' not in email_lower:
+                            leads_with_emails_count += 1
+
+                # Merge with any existing metrics rather than overwrite
+                existing_metrics = dict(getattr(job.progress, 'metrics', {}) or {})
+                existing_metrics.update({
+                    'duration_ms': int(duration * 1000),
+                    'repos': int(repos_count),
+                    'candidates': int(candidates_count),
+                    'leads_with_emails': int(leads_with_emails_count),
+                })
+                job.update_progress(metrics=existing_metrics)
+            except Exception as e:
+                logger.debug(f"Failed to compute final metrics for job {job.id}: {e}")
 
             # Emit final progress to stream
             if job.id in self.queue._progress_streams:
@@ -311,6 +366,127 @@ class JobWorker:
             "uptime_seconds": uptime.total_seconds() if uptime else 0,
             "last_heartbeat": self.last_heartbeat.isoformat(),
         }
+
+    def _generate_campaign_summary(self, final_state: dict, no_emoji: bool = False) -> str:
+        """Generate a detailed campaign summary with distinct emails and counts"""
+        
+        # Icons
+        icons = {
+            'summary': '📋 ' if not no_emoji else '',
+            'repos': '📦 ' if not no_emoji else '',
+            'people': '👥 ' if not no_emoji else '',
+            'emails': '📧 ' if not no_emoji else '',
+            'leads': '🎯 ' if not no_emoji else '',
+            'companies': '🏢 ' if not no_emoji else '',
+            'locations': '🌍 ' if not no_emoji else '',
+            'languages': '💻 ' if not no_emoji else '',
+            'quality': '⭐ ' if not no_emoji else '',
+            'success': '✅ ' if not no_emoji else '',
+            'warning': '⚠️ ' if not no_emoji else '',
+            'action': '🚀 ' if not no_emoji else '',
+        }
+        
+        # Extract data - check if data is nested under 'agent' key (from checkpoint structure)
+        agent_state = final_state.get('agent', final_state) if isinstance(final_state, dict) else final_state
+        repos = agent_state.get('repos', [])
+        candidates = agent_state.get('candidates', [])
+        leads = agent_state.get('leads', [])
+        icp = agent_state.get('icp', {})
+        
+        # Collect all emails found with detailed analysis
+        all_emails = set()
+        email_sources = {'profile': 0, 'commit': 0, 'public': 0, 'bio': 0, 'noreply': 0}
+        email_quality_scores = []
+        contactable_emails = []
+        
+        for lead in leads:
+            email = lead.get('email')
+            if email and '@' in email:
+                email_lower = email.lower()
+                
+                # Skip noreply emails but count them
+                if 'noreply' in email_lower or 'no-reply' in email_lower:
+                    email_sources['noreply'] += 1
+                    continue
+                
+                all_emails.add(email_lower)
+                contactable_emails.append({
+                    'email': email,
+                    'name': lead.get('name', lead.get('login', 'Unknown')),
+                    'company': lead.get('company', ''),
+                    'location': lead.get('location', ''),
+                    'followers': lead.get('followers', 0),
+                    'bio': lead.get('bio', '')
+                })
+                
+                # Track email source and quality
+                quality_score = 0
+                if lead.get('email_profile'):
+                    email_sources['profile'] += 1
+                    quality_score += 3  # Profile emails are high quality
+                elif 'gmail.com' in email_lower and lead.get('bio') and email_lower.split('@')[0] in lead.get('bio', ''):
+                    email_sources['bio'] += 1
+                    quality_score += 2  # Bio emails are medium quality
+                elif lead.get('email_public_commit') or lead.get('emails'):
+                    email_sources['commit'] += 1
+                    quality_score += 1  # Commit emails are lower quality
+                else:
+                    email_sources['public'] += 1
+                    quality_score += 2  # Public profile emails are medium quality
+                
+                # Bonus points for verification indicators
+                if lead.get('followers', 0) > 100:
+                    quality_score += 1
+                if lead.get('company'):
+                    quality_score += 1
+                
+                email_quality_scores.append(quality_score)
+        
+        # Build summary
+        lines = []
+        lines.append(f"\n{'='*60}")
+        lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
+        lines.append(f"{'='*60}")
+        
+        # Repository Summary
+        lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")
+        lines.append(f"   Total: {len(repos)}")
+        
+        # People Summary
+        lines.append(f"\n{icons['people']}PEOPLE DISCOVERED:")
+        lines.append(f"   Candidates: {len(candidates)}")
+        lines.append(f"   Leads (with email): {len([l for l in leads if l.get('email')])}")
+        
+        # Email Summary
+        lines.append(f"\n{icons['emails']}EMAIL DISCOVERY:")
+        lines.append(f"   {icons['success']}Contactable Emails: {len(all_emails)}")
+        lines.append(f"   {icons['warning']}Noreply/Blocked: {email_sources['noreply']}")
+        
+        # Top prospects
+        if contactable_emails:
+            lines.append(f"\n   {icons['action']}TOP PROSPECTS FOR OUTREACH:")
+            # Sort by followers (influence indicator)
+            sorted_contacts = sorted(contactable_emails, key=lambda x: x['followers'], reverse=True)[:5]
+            for i, contact in enumerate(sorted_contacts, 1):
+                name = contact['name']
+                company = f" @ {contact['company']}" if contact['company'] else ""
+                location = f" ({contact['location']})" if contact['location'] else ""
+                followers = contact['followers']
+                lines.append(f"    {i}. {name}{company}{location} • {followers} followers")
+                lines.append(f"       📧 {contact['email']}")
+        
+        # Email list for copy-paste
+        if all_emails:
+            lines.append(f"\n{icons['emails']}DISTINCT EMAIL ADDRESSES ({len(all_emails)} total):")
+            for i, email in enumerate(sorted(all_emails), 1):
+                lines.append(f"    {i}. {email}")
+            
+            lines.append(f"\n📋 COPY-PASTE FORMAT:")
+            lines.append(f"   {', '.join(sorted(all_emails))}")
+        
+        lines.append(f"{'='*60}")
+        
+        return "\n".join(lines)
 
     async def _heartbeat_loop(self):
         """Send periodic heartbeats to indicate worker health"""

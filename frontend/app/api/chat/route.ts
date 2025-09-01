@@ -17,7 +17,6 @@ function isConversationalMessage(text: string): boolean {
     /(python|javascript|react|go|rust) (maintainers|developers|contributors)/i,
     /(export|csv|leads|campaign|sequence)/i,
     /active.*(days?|months?)/i,
-    /(smoke test|self.test)/i
   ];
 
   // If it matches campaign patterns, it's probably a job goal
@@ -86,19 +85,19 @@ export async function POST(req: Request) {
       lastActivity: messageText.length > 50 ? messageText.substring(0, 50) + "..." : messageText
     });
 
-    // Normalize autonomy input to 'L0'..'L3' levels
+    // Normalize autonomy input to L0-L3 levels expected by AUTONOMY map
     const normalizeAutonomy = (val: any): AutonomyLevel => {
       if (!val || typeof val !== 'string') return 'L0';
-      const v = val.trim();
-      if (/^L[0-3]$/i.test(v)) return v.toUpperCase() as AutonomyLevel;
-      const map: Record<string, AutonomyLevel> = {
-        minimal: 'L0',
-        balanced: 'L1',
-        high: 'L2',
-        maximum: 'L3'
-      };
-      const key = v.toLowerCase();
-      return map[key] || 'L0';
+      const v = val.trim().toUpperCase();
+      if (/^L[0-3]$/.test(v)) {
+        return v as AutonomyLevel;
+      }
+      // Convert old names to new format
+      if (v === 'MINIMAL') return 'L0';
+      if (v === 'BALANCED') return 'L1';
+      if (v === 'HIGH') return 'L2';
+      if (v === 'MAXIMUM') return 'L3';
+      return 'L0';
     };
 
     const autonomyLevel: AutonomyLevel = normalizeAutonomy(options?.autonomy);
@@ -109,52 +108,16 @@ export async function POST(req: Request) {
     // Create a job in the CMO Agent backend
     if (process.env.API_URL) {
       try {
-        // Detect smoke test and, if so, build a pretty goal from YAML so chat matches CLI
-        let finalGoal = messageText;
-        const isSmokeTest = messageText.toLowerCase().includes('smoke test');
-        if (isSmokeTest) {
-          try {
-            const url = `${process.env.API_URL}/static/config/smoke_prompt.yaml`;
-            const resp = await fetch(url, { cache: "no-store" });
-            if (resp.ok) {
-              const textYaml = await resp.text();
-              const { load } = await import('js-yaml');
-              const doc: any = load(textYaml) || {};
-              const params = doc?.params || {};
-              const language = params.language || "Python";
-              const stars = params.stars_range || "300..2000";
-              const activity = Number(params.activity_days || 90);
-              let pushedSince = doc?.pushed_since;
-              if (!pushedSince) {
-                const d = new Date();
-                d.setDate(d.getDate() - activity);
-                pushedSince = d.toISOString().slice(0, 10);
-              }
-              const tpl = (doc?.goal_template as string) ||
-                "Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>={{pushed_since}}; prioritize active {{activity_days}} days; export CSV.";
-              finalGoal = tpl
-                .replace(/{{language}}/g, language)
-                .replace(/{{stars_range}}/g, stars)
-                .replace(/{{pushed_since}}/g, pushedSince)
-                .replace(/{{activity_days}}/g, String(activity))
-                .replace(/\s+/g, ' ')
-                .trim();
-            }
-          } catch {}
-        }
-
         const jobPayload = {
-          goal: finalGoal,
-          dryRun: false, // Always run real execution - autonomy level controls behavior, not dry run
-          // Route smoke-test to canonical YAML so backend runs identical config
-          config_path: isSmokeTest ? "cmo_agent/config/smoke_prompt.yaml" : null,
+          goal: messageText,
+          dryRun: false, // Always real execution
+          config_path: null,
           metadata: {
             threadId,
             autopilot_level: autopilot,
             autonomy_level: autonomyLevel,
             budget_per_day: options?.budget || 50,
             created_by: "chat_console",
-            // Removed test_type to ensure all jobs run full pipeline consistently
             created_at: new Date().toISOString()
           }
         };
@@ -187,7 +150,6 @@ export async function POST(req: Request) {
             jobId: actualJobId,
             threadId,
             message: `Job ${actualJobId} created and ${jobResult.status}. Streaming events...`,
-            goal: finalGoal,
             timestamp: new Date().toISOString()
           }), {
             status: 200,

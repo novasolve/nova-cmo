@@ -49,3 +49,4 @@ export function ErrorGroupCardView({ errors }: ErrorGroupCardViewProps) {
     </div>
   );
 }
+

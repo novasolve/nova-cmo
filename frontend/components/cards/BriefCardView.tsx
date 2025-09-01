@@ -48,3 +48,4 @@ export function BriefCardView({ brief }: BriefCardViewProps) {
     </div>
   );
 }
+

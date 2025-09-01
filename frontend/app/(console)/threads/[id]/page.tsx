@@ -16,7 +16,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   const { id } = params;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'connecting' | 'connected' | 'disconnected' | 'error'>('idle');
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const { jobState, updateJobState, setActiveThread } = useJobState();
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -160,8 +160,15 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     }, 100);
   }, [id, updateJobState]);
 
-  // Only establish SSE connection when there's an active job
-  const sseUrl = currentJobId ? `/api/threads/${id}/events?jobId=${currentJobId}` : null;
+  // Only establish SSE connection when there's an active job (proxy to job events)
+  const sseUrl = currentJobId ? `/api/jobs/${currentJobId}/events` : null;
+
+  // Reflect "idle" when there is no active job (avoid showing "Connecting...")
+  useEffect(() => {
+    if (!currentJobId) {
+      setConnectionStatus('idle');
+    }
+  }, [currentJobId]);
 
   const { connectionStatus: sseStatus } = useSSE<SSEEvent>(sseUrl, {
     onEvent: handleSSEEvent,
@@ -171,7 +178,23 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
   // Also subscribe directly to job events to catch terminal event and final sync
   useJobStream(currentJobId, {
     onProgress: (evt) => {
-      // No-op: thread SSE handles live progress UI
+      try {
+        const data: any = (evt && (evt.data || evt)) || {};
+        const stage = data.stage || data.node || data.event || "working";
+        const item = data.current_item || data.message || data.msg || "";
+
+        // Append a compact progress line into chat for visibility
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            threadId: id,
+            role: "tool",
+            createdAt: new Date().toISOString(),
+            text: `🟢 ${stage}${item ? ": " + item : ""}`,
+          } as any,
+        ]);
+      } catch {}
     },
     onFinalized: (status, summary, artifacts) => {
       // Update job state and surface a capsule message
@@ -318,7 +341,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
                       ? 'bg-yellow-500 animate-pulse'
                       : connectionStatus === 'error'
                       ? 'bg-red-500'
-                      : 'bg-gray-400'
+                      : 'bg-gray-300'
                   }`}
                 />
                 <span className="text-gray-600 font-medium">
@@ -326,6 +349,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
                   {connectionStatus === 'connecting' && 'Connecting...'}
                   {connectionStatus === 'error' && 'Reconnecting...'}
                   {connectionStatus === 'disconnected' && 'Disconnected'}
+                  {connectionStatus === 'idle' && 'Idle'}
                 </span>
               </div>
 

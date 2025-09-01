@@ -12,6 +12,15 @@ from pathlib import Path
 import re
 import time
 
+# Quiet noisy libraries
+for noisy in ("httpx", "openai", "urllib3", "asyncio", "aiohttp"):
+    logging.getLogger(noisy).setLevel(logging.WARNING)
+
+# Quiet periodic ticks at INFO
+logging.getLogger("cmo_agent.queue").setLevel(getattr(logging, os.getenv("QUEUE_STATS_LEVEL", "WARNING")))
+logging.getLogger("cmo_agent.workerpool").setLevel(getattr(logging, os.getenv("WORKER_STATS_LEVEL", "WARNING")))
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)  # Silence HTTP request logs
+
 # Try to import tqdm for better progress bars
 try:
     from tqdm import tqdm
