@@ -291,7 +291,7 @@ diag.smoke: ## Create a real job and stream SSE briefly, then fetch summary
 	@set -e; \
 	jid=$$(curl -sS -X POST "$(CMO_API_URL)/api/jobs" \
 	  -H 'Content-Type: application/json' \
-	  --data "$$(jq -n --arg g '$(GOAL)' '{goal:$$g, dryRun:false, config_path:null, metadata:{created_by:"doctor", test_type:"doctor", campaign_type:"smoke_test", max_leads:5}}')" \
+	  --data "$$(jq -n --arg g '$(GOAL)' '{goal:$$g, dryRun:false, config_path:null, metadata:{created_by:"doctor", max_leads:5}}')" \
 	  | jq -r '.id'); \
 	[ "$$jid" != "null" ] && [ -n "$$jid" ] || { echo "❌ failed to create job"; exit 1; }; \
 	echo "▶ Streaming SSE for job $$jid"; \

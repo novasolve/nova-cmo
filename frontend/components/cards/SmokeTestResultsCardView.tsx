@@ -1,6 +1,5 @@
 "use client";
-import { ActionButton } from "../ActionButton";
-import { ActionButton as ActionButtonType } from "@/types";
+import { ActionButton as UIButton } from "../ActionButton";
 
 export interface SmokeTestResultsCard {
   type: "smoke_test_results";
@@ -19,7 +18,7 @@ export interface SmokeTestResultsCard {
     draftsCount: number;
     budgetUsed: number;
   };
-  actions: ActionButtonType[];
+  actions: Array<{ id: string; label: string; variant?: 'primary' | 'secondary' | 'danger' | 'success' }>;
 }
 
 export function SmokeTestResultsCardView({ card }: { card: SmokeTestResultsCard }) {
@@ -137,7 +136,24 @@ export function SmokeTestResultsCardView({ card }: { card: SmokeTestResultsCard 
       {card.actions.length > 0 && (
         <div className="flex gap-2 pt-3 border-t">
           {card.actions.map((action) => (
-            <ActionButton key={action.id} action={action} threadId="current" />
+            <UIButton
+              key={action.id}
+              size="sm"
+              variant={action.variant || 'secondary'}
+              onClick={async () => {
+                try {
+                  await fetch('/api/actions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threadId: 'current', actionId: action.id })
+                  });
+                } catch (e) {
+                  console.warn('Action failed', e);
+                }
+              }}
+            >
+              {action.label}
+            </UIButton>
           ))}
         </div>
       )}

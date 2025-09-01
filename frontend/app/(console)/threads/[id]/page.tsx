@@ -5,12 +5,12 @@ import { ChatComposer } from "@/components/ChatComposer";
 import { MessageBubble } from "@/components/MessageBubble";
 import { useSSE } from "@/lib/useSSE";
 import { useJobStream } from "@/app/hooks/useJobStream";
-import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, autopilotToAutonomy, type AutonomyLevel } from "@/lib/autonomy";
+import { AUTONOMY, AUTONOMY_ICONS, AUTONOMY_COLORS, autonomyToAutopilot, type AutonomyLevel } from "@/lib/autonomy";
 import { getThread, createThread, updateThread } from "@/lib/threadStorage";
 import { useJobState } from "@/lib/jobContext";
 
 
-import { useSmokeTestEvaluator } from "@/lib/useSmokeTestEvaluator";
+// Removed smoke test evaluator
 
 export default function ThreadPage({ params }: { params: { id: string } }) {
   const { id } = params;
@@ -223,59 +223,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
     };
     setMessages((prev) => [...prev, userMessage]);
 
-    // Handle smoke test command locally
-    if (text.toLowerCase().includes("smoke test")) {
-      // Start smoke test
-      try {
-        const smokeRes = await fetch(`/api/smoke-test`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ threadId: id }),
-        });
-
-        const smokeResult = await smokeRes.json();
-
-        if (smokeRes.ok && smokeResult.success) {
-          // Set the current job ID for SSE streaming
-          setCurrentJobId(smokeResult.jobId);
-
-          // Initialize job state for smoke test
-          updateJobState({
-            status: 'running',
-            currentNode: 'smoke_test_start',
-            progress: 'Starting smoke test...',
-            autonomyLevel: 'L0',
-            budget: { used: 0, total: 10 },
-            currentJobId: smokeResult.jobId
-          });
-
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(),
-            threadId: id,
-            role: "assistant",
-            createdAt: new Date().toISOString(),
-            text: `🧪 **Real Smoke Test Started**: ${smokeResult.jobId}\n\nRunning live campaign validation with real GitHub data...\n\n**Mode**: 🤝 Co‑pilot (Real Run)\n**Daily Cap**: $10\n**Target**: 5 Python maintainers\n**Scope**: Last 30 days\n\n*This will make real GitHub API calls and show live progress in the Inspector →*`,
-          }]);
-        } else {
-          setMessages((prev) => [...prev, {
-            id: crypto.randomUUID(),
-            threadId: id,
-            role: "system",
-            createdAt: new Date().toISOString(),
-            text: `⚠️ Smoke Test Failed to Start: ${smokeResult.error}`,
-          }]);
-        }
-      } catch (error) {
-        setMessages((prev) => [...prev, {
-          id: crypto.randomUUID(),
-          threadId: id,
-          role: "system",
-          createdAt: new Date().toISOString(),
-          text: `🔌 Smoke Test Error: Unable to reach backend for smoke test`,
-        }]);
-      }
-      return;
-    }
+    // No special-casing: always go through chat API
 
 
 
@@ -308,7 +256,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
             threadId: id,
             role: "assistant",
             createdAt: new Date().toISOString(),
-            text: `🚀 **Job Started**: ${result.jobId}\n\n${result.message}\n\n**Autonomy Level**: ${options?.autonomy || 'L0'} ${options?.autonomy === 'L0' ? '(Dry Run)' : '(Live)'}  \n**Daily Cap**: $${options?.budget || 50}`,
+            text: `🚀 **Job Started**: ${result.jobId}\n\n**Goal**: ${result.goal || text}\n\n${result.message}\n\n**Autonomy Level**: ${options?.autonomy || 'L0'} ${options?.autonomy === 'L0' ? '(Dry Run)' : '(Live)'}  \n**Daily Cap**: $${options?.budget || 50}`,
           }]);
         }
       } else {
@@ -352,18 +300,7 @@ export default function ThreadPage({ params }: { params: { id: string } }) {
               </div>
             </div>
 
-            <div className="flex items-center gap-4">
-              <button
-                onClick={() => {
-                  const smokeTestGoal = "🧪 smoke test with beautiful logging and tqdm progress bars";
-                  onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
-                }}
-                className="text-sm px-4 py-2 bg-green-50 text-green-700 border border-green-200 rounded-md hover:bg-green-100 transition-colors font-medium"
-                title="Run enhanced smoke test with beautiful logging, tqdm progress bars, and live email counting"
-              >
-                Smoke Test
-              </button>
-            </div>
+            <div className="flex items-center gap-4" />
           </div>
         </div>
 

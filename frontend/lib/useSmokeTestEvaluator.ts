@@ -124,7 +124,7 @@ export function useSmokeTestEvaluator() {
             if (outboxCheck && message.card.samples) {
               const samples = message.card.samples;
               newMetrics.draftsCount = samples.length;
-              const validDrafts = samples.filter(s => s.score >= SMOKE_TEST_CRITERIA.min_draft_score);
+              const validDrafts = samples.filter((s: any) => s.score >= SMOKE_TEST_CRITERIA.min_draft_score);
 
               outboxCheck.passed = samples.length >= SMOKE_TEST_CRITERIA.min_drafts_count &&
                                  validDrafts.length >= SMOKE_TEST_CRITERIA.min_drafts_count;
@@ -235,9 +235,9 @@ export function useSmokeTestEvaluator() {
         checks: smokeTestState.checks,
         metrics: smokeTestState.metrics,
         actions: [
-          { id: "view-logs", label: "View Logs", style: "secondary" },
-          { id: "retry-smoke", label: "Retry", style: "primary" },
-          { id: "export-results", label: "Export", style: "secondary" }
+          { id: "view-logs", label: "View Logs", action: "view_logs", variant: "secondary" },
+          { id: "retry-smoke", label: "Retry", action: "retry_smoke", variant: "primary" },
+          { id: "export-results", label: "Export", action: "export_results", variant: "secondary" }
         ]
       };
     }

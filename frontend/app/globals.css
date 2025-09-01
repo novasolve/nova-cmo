@@ -3,27 +3,28 @@
 @tailwind utilities;
 
 :root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
-  }
+  --foreground-rgb: 17, 24, 39; /* gray-900 */
+  --background-rgb: 249, 250, 251; /* gray-50 */
 }
 
 body {
   color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
+  background: rgb(var(--background-rgb));
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
+    Ubuntu, Cantarell, "Helvetica Neue", Arial, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Improve readability of common typographic elements */
+@layer base {
+  h1 { @apply text-2xl font-semibold text-gray-900; }
+  h2 { @apply text-xl font-semibold text-gray-900; }
+  h3 { @apply text-lg font-semibold text-gray-900; }
+  p  { @apply text-sm text-gray-800; }
+  code { @apply text-xs bg-gray-100 px-1 py-0.5 rounded; }
 }
 
 @layer utilities {

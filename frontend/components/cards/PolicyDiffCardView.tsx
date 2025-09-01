@@ -3,6 +3,7 @@ import { PolicyDiffCard } from "@/types";
 import { ActionButton } from "../ActionButton";
 
 export function PolicyDiffCardView({ card }: { card: PolicyDiffCard }) {
+  const actions = card.actions || [];
   return (
     <div className="border border-orange-200 rounded-lg p-4 bg-orange-50">
       <h3 className="font-semibold text-orange-900 mb-3">
@@ -38,10 +39,27 @@ export function PolicyDiffCardView({ card }: { card: PolicyDiffCard }) {
         ))}
       </div>
 
-      {card.actions.length > 0 && (
+      {actions.length > 0 && (
         <div className="flex gap-2 pt-3 border-t border-orange-200">
-          {card.actions.map((action) => (
-            <ActionButton key={action.id} action={action} threadId="current" />
+          {actions.map((action) => (
+            <ActionButton
+              key={action.id}
+              size="sm"
+              variant={action.variant || 'secondary'}
+              onClick={async () => {
+                try {
+                  await fetch('/api/actions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ threadId: 'current', actionId: action.id })
+                  });
+                } catch (e) {
+                  console.warn('Action failed', e);
+                }
+              }}
+            >
+              {action.label}
+            </ActionButton>
           ))}
         </div>
       )}

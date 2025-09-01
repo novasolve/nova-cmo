@@ -166,3 +166,21 @@ node_modules/
 !tsconfig.json
 !**/package.json
 !**/tsconfig.json
+
+# Test and demo files
+*test*.py
+*demo*.py
+*smoke*.py
+test_*.csv
+demo_*.json
+smoke_*.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Generated data
+*/data/jobs/
+*/data/raw/demo_*
+*/data/metadata/demo_*

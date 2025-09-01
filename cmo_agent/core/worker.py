@@ -131,32 +131,7 @@ class JobWorker:
         start_time = datetime.now()
 
         try:
-            # Fast-path: smoke test jobs run a synthetic pipeline
-            try:
-                test_type = str(job.metadata.get("test_type", "")).lower()
-                if test_type in ("smoke_test", "smoke_test_mock", "smoke_test_real"):
-                    mode = job.metadata.get("mode") or ("live-lite" if test_type == "smoke_test_real" else "mock")
-                    result = await self._run_smoke_job(job, mode=str(mode))
-                    # Decide and update status similar to normal flow
-                    if result and result.get('success') is False:
-                        await self.queue.update_job_status(job.id, JobStatus.FAILED)
-                        self.failed_jobs += 1
-                        logger.info(f"Worker {self.worker_id} marked smoke job {job.id} as FAILED")
-                    else:
-                        await self.queue.update_job_status(job.id, JobStatus.COMPLETED)
-                        self.processed_jobs += 1
-                        logger.info(f"Worker {self.worker_id} completed smoke job {job.id}")
-
-                    # Store artifacts if any
-                    if result.get('artifacts'):
-                        for artifact in result['artifacts']:
-                            job.add_artifact(artifact)
-                    # Store final state
-                    if result.get('final_state'):
-                        job.run_state = result['final_state']
-                    return result
-            except Exception as e:
-                logger.warning(f"Smoke test fast-path failed for job {job.id}, falling back to agent: {e}")
+            # Removed synthetic smoke paths: all jobs run the full pipeline
 
             # Assign this worker to the job for crash recovery
             job.metadata["assigned_worker"] = self.worker_id
@@ -318,79 +293,7 @@ class JobWorker:
             record_error("worker")
             raise
 
-    async def _run_smoke_job(self, job: Job, mode: str = "mock") -> Dict[str, Any]:
-        """Run a fast synthetic pipeline for smoke tests with optional live-lite probes."""
-        import asyncio
-        mode = (mode or "mock").lower()
 
-        async def step(name: str, delay_ms: int = 300, metrics: Optional[Dict[str, Any]] = None, note: Optional[str] = None):
-            # Update progress before and after step
-            job.update_progress(stage=name, current_item=note or name)
-            if job.id in self.queue._progress_streams:
-                try:
-                    await self.queue._progress_streams[job.id].put(job.progress)
-                except Exception:
-                    pass
-            await asyncio.sleep(max(0, delay_ms) / 1000)
-            # Attach metrics
-            if metrics:
-                job.update_progress(metrics=metrics)
-                if job.id in self.queue._progress_streams:
-                    try:
-                        await self.queue._progress_streams[job.id].put(job.progress)
-                    except Exception:
-                        pass
-
-        # Initial progress
-        job.update_progress(stage="starting", step=0)
-        if job.id in self.queue._progress_streams:
-            try:
-                await self.queue._progress_streams[job.id].put(job.progress)
-            except Exception:
-                pass
-
-        # Optional probes
-        if mode == "live-lite":
-            await step("probe_openai", 300, {"api_calls": 1, "tokens_used": 128})
-            await step("probe_github", 350, {"repos_found": 3})
-
-        # Mock pipeline
-        await step("search_github_repos", 350, {"repos_found": 12})
-        await step("extract_people", 300, {"candidates_found": 5})
-        leads = [
-            {"name": "Ada", "email": "ada@example.com"},
-            {"name": "Lin", "email": "lin@example.com"},
-            {"name": "Sam", "email": "sam@example.com"},
-        ]
-        await step("enrich_and_email_lookup", 300, {"leads_enriched": len(leads)})
-
-        # Build final state and artifacts (mock)
-        final_state = {
-            "counters": {"steps": 4},
-            "repos": ["r1", "r2"],
-            "leads": leads,
-            "candidates": ["c1", "c2", "c3", "c4", "c5"],
-            "report": {"summary": {"text": "Smoke completed with 3 leads"}},
-        }
-
-        # Record artifacts as logical paths (optionally write files in future)
-        artifacts = [
-            "artifacts/smoke_repos.json",
-            "artifacts/smoke_candidates.json",
-            "artifacts/smoke_leads.json",
-        ]
-
-        # Emit a final progress snapshot
-        job.update_progress(stage="completed", items_processed=4, metrics={
-            "repos_found": 12, "candidates_found": 5, "leads_enriched": 3
-        })
-        if job.id in self.queue._progress_streams:
-            try:
-                await self.queue._progress_streams[job.id].put(job.progress)
-            except Exception:
-                pass
-
-        return {"success": True, "final_state": final_state, "artifacts": artifacts}
 
     def get_stats(self) -> Dict[str, Any]:
         """Get worker statistics"""

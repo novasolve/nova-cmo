@@ -31,6 +31,55 @@ warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
+# Ensure required Python and Node modules are installed
+ensure_python_deps() {
+    log "Checking Python dependencies..."
+    if ! python - <<'PY'
+import sys
+missing = []
+try:
+    import yaml  # PyYAML
+except Exception:
+    missing.append('PyYAML')
+try:
+    import jinja2  # Jinja2 (optional but preferred)
+except Exception:
+    missing.append('Jinja2')
+sys.exit(0 if not missing else 1)
+PY
+    then
+        # Install missing modules (best-effort, non-fatal if already satisfied)
+        if ! python -c 'import yaml' >/dev/null 2>&1; then
+            log "Installing PyYAML..."
+            pip install PyYAML >/dev/null 2>&1 || true
+        fi
+        if ! python -c 'import jinja2' >/dev/null 2>&1; then
+            log "Installing Jinja2 (for templating)..."
+            pip install "Jinja2>=3.0" >/dev/null 2>&1 || true
+        fi
+        success "Python dependencies checked"
+    else
+        success "Python dependencies OK"
+    fi
+}
+
+ensure_frontend_deps() {
+    if [[ -d "frontend" && -f "frontend/package.json" ]]; then
+        ( 
+            cd frontend
+            if [[ ! -d "node_modules" ]]; then
+                log "Installing frontend dependencies..."
+                npm install >/dev/null 2>&1 || true
+            fi
+            # Ensure js-yaml is present for YAML parsing in smoke test route
+            if ! npm ls js-yaml >/dev/null 2>&1; then
+                log "Installing js-yaml for frontend YAML parsing..."
+                npm install js-yaml --save >/dev/null 2>&1 || true
+            fi
+        )
+    fi
+}
+
 # Kill processes by port or PID
 kill_service() {
     local service=$1
@@ -66,6 +115,9 @@ start_api() {
     if [[ -z "$GITHUB_TOKEN" && -z "$OPENAI_API_KEY" ]]; then
         load_env
     fi
+
+    # Ensure required Python deps
+    ensure_python_deps
 
     # Start API server (environment already loaded)
     python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
@@ -136,6 +188,7 @@ start_dev() {
 
     # Start API in background (environment already loaded)
     log "🚀 Starting API server..."
+    ensure_python_deps
     python cmo_agent/scripts/run_web.py > /tmp/cmo_api.log 2>&1 &
     local api_pid=$!
     echo $api_pid > "$PIDFILE_API"
@@ -153,11 +206,8 @@ start_dev() {
     if [[ -d "frontend" && -f "frontend/package.json" ]]; then
         frontend_available=1
         log "🎨 Starting frontend..."
+        ensure_frontend_deps
         cd frontend
-        if [[ ! -d "node_modules" ]]; then
-            log "Installing dependencies..."
-            npm install
-        fi
         npm run dev > /tmp/cmo_frontend.log 2>&1 &
         local frontend_pid=$!
         echo $frontend_pid > "$PIDFILE_FRONTEND"
@@ -205,10 +255,7 @@ start_frontend() {
     cd "$(dirname "$0")/frontend"
 
     # Install deps if needed
-    if [[ ! -d "node_modules" ]]; then
-        log "Installing frontend dependencies..."
-        npm install
-    fi
+    ensure_frontend_deps
 
     nohup npm run dev > /tmp/cmo_frontend.log 2>&1 &
     echo $! > "$PIDFILE_FRONTEND"

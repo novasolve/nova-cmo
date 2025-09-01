@@ -30,7 +30,7 @@ export function ChatComposer({
                 : "bg-white text-gray-700 hover:bg-gray-50 border-gray-300"
             }`}
           >
-{AUTONOMY_ICONS[level]} {AUTONOMY[level].chip}
+            {AUTONOMY_ICONS[level]} {AUTONOMY[level].chip}
           </button>
         ))}
         <label htmlFor="budget-input" className="text-xs ml-3 text-gray-600">Daily Cap ($):</label>
@@ -48,18 +48,11 @@ export function ChatComposer({
           }
         />
         <div className="ml-auto flex gap-1">
-          {Object.values(QUICK_ACTIONS).map((action) => (
+          {Object.values(QUICK_ACTIONS).filter((a: any) => a.id !== 'smoke_test').map((action: any) => (
             <button
               key={action.id}
               onClick={() => {
-                if (action.id === "smoke_test") {
-                  if (onSmokeTest) {
-                    onSmokeTest();
-                  } else {
-                    const smokeTestGoal = "🧪 Enhanced smoke test: Find maintainers of Python repos stars:1000..3000 pushed:>=2025-06-01; prioritize active 90 days; show tqdm progress; export CSV.";
-                    onSend(smokeTestGoal, { autonomy: "L0", budget: 1 });
-                  }
-                } else if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {
+                if (action.id === "plan" || action.id === "simulate" || action.id === "drafts" || action.id === "alerts") {
                   setText((prev) => (prev ? prev + " " : "") + action.label.toLowerCase());
                 } else {
                   // Handle guide and other actions

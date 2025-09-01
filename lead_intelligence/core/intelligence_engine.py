@@ -887,48 +887,7 @@ class IntelligenceEngine:
             'success': cycle_metadata.get('success', False)
         }
 
-    def _generate_demo_prospects(self) -> List[Prospect]:
-        """Generate sample prospects for demo purposes"""
-        from github_prospect_scraper import Prospect
 
-        # Create prospects with all required fields set to None initially
-        demo_prospects = []
-
-        # Demo prospect 1: John Doe
-        prospect1 = Prospect(
-            lead_id=12345,
-            login='johndoe',
-            id=123456,
-            node_id='MDQ6VXNlcjEyMzQ1Ng==',
-            name='John Doe',
-            company='TechCorp Inc',
-            email_public_commit=None,
-            email_profile='john.doe@techcorp.com',
-            location='San Francisco, CA',
-            bio='Senior Python Developer with 8+ years experience in machine learning and web development',
-            pronouns=None,
-            repo_full_name='johndoe/ml-framework',
-            repo_description='A comprehensive machine learning framework',
-            signal='Created comprehensive ML framework',
-            signal_type='repo_owner',
-            signal_at='2024-01-15T10:30:00Z',
-            topics='',
-            language='python',
-            stars=1200,
-            forks=None,
-            watchers=None,
-            github_user_url='https://github.com/johndoe',
-            github_repo_url='https://github.com/johndoe/ml-framework',
-            avatar_url='https://github.com/images/error/johndoe_happy.gif',
-            html_url='https://github.com/johndoe',
-            api_url='https://api.github.com/users/johndoe',
-            followers_url='https://api.github.com/users/johndoe/followers',
-            following_url='https://api.github.com/users/johndoe/following{/other_user}',
-            gists_url='https://api.github.com/users/johndoe/gists{/gist_id}',
-            starred_url='https://api.github.com/users/johndoe/starred{/owner}{/repo}',
-            subscriptions_url='https://api.github.com/users/johndoe/subscriptions',
-            organizations_url='https://api.github.com/users/johndoe/orgs',
-            repos_url='https://api.github.com/users/johndoe/repos',
             events_url='https://api.github.com/users/johndoe/events{/privacy}',
             received_events_url='https://api.github.com/users/johndoe/received_events',
             twitter_username=None,

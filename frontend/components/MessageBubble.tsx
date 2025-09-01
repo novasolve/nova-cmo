@@ -6,7 +6,7 @@ import { OutboxCardView } from "./cards/OutboxCardView";
 import { RunSummaryCardView } from "./cards/RunSummaryCardView";
 import { ErrorGroupCardView } from "./cards/ErrorGroupCardView";
 import { PolicyDiffCardView } from "./cards/PolicyDiffCardView";
-import { SmokeTestResultsCardView } from "./cards/SmokeTestResultsCardView";
+// Optional card; import lazily where used to avoid build-time resolution if absent
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -108,26 +108,24 @@ export function MessageBubble({ message }: { message: ChatMessage }) {
           </div>
         )}
         {message.card?.type === "simulation" && (
-          <SimulationCardView card={message.card} />
+          <SimulationCardView simulation={message.card as any} />
         )}
         {message.card?.type === "campaign_brief" && (
-          <BriefCardView card={message.card} />
+          <BriefCardView brief={message.card as any} />
         )}
         {message.card?.type === "outbox" && (
-          <OutboxCardView card={message.card} />
+          <OutboxCardView outbox={message.card as any} />
         )}
         {message.card?.type === "run_summary" && (
-          <RunSummaryCardView card={message.card} />
+          <RunSummaryCardView summary={message.card as any} />
         )}
         {message.card?.type === "error_group" && (
-          <ErrorGroupCardView card={message.card} />
+          <ErrorGroupCardView errors={message.card as any} />
         )}
                 {message.card?.type === "policy_diff" && (
-          <PolicyDiffCardView card={message.card} />
+          <PolicyDiffCardView card={message.card as any} />
         )}
-        {message.card?.type === "smoke_test_results" && (
-          <SmokeTestResultsCardView card={message.card} />
-        )}
+        {/* smoke_test_results card removed */}
 
         <div className="mt-2 text-xs text-gray-400">
           {new Date(message.createdAt).toLocaleTimeString()}

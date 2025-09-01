@@ -14,8 +14,9 @@ export interface PolicyDiffCard {
   description?: string;
   changes: Array<{
     field: string;
-    old_value: any;
-    new_value: any;
+    oldValue: any;
+    newValue: any;
+    impact?: string;
     type: 'added' | 'removed' | 'modified';
   }>;
   actions?: ActionButton[];
@@ -39,15 +40,36 @@ export interface SmokeTestResultsCard {
 
 export interface ChatMessage {
   id: string;
-  content: string;
-  role: 'user' | 'assistant' | 'system';
-  timestamp: string;
-  metadata?: {
-    threadId?: string;
-    jobId?: string;
-    type?: string;
+  threadId: string;
+  role: 'user' | 'assistant' | 'system' | 'tool';
+  createdAt: string;
+  text?: string;
+  content?: string; // backward compatibility
+  timestamp?: string; // backward compatibility
+  event?: {
+    node?: string;
+    status?: string;
+    latencyMs?: number;
+    costUSD?: number;
+    msg?: string;
   };
+  card?: { type: string; [key: string]: any };
 }
+
+export interface SSEEvent {
+  kind: 'message' | 'event' | 'status';
+  message?: ChatMessage;
+  event?: {
+    status?: string;
+    node?: string;
+    msg?: string;
+    costUSD?: number;
+    latencyMs?: number;
+  };
+  status?: { closed?: boolean };
+}
+
+export type LanggraphEvent = any;
 
 export interface JobEvent {
   type: string;

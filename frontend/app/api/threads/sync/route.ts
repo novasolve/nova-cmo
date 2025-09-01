@@ -4,19 +4,10 @@ import { createThread, updateThread, getThread } from "@/lib/threadStorage";
 
 export async function POST(req: Request) {
   try {
-    if (!process.env.API_URL) {
-      return new Response(JSON.stringify({
-        success: false,
-        error: "Backend not available",
-        timestamp: new Date().toISOString()
-      }), {
-        status: 503,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    const apiBase = process.env.API_URL || 'http://localhost:8000';
 
     // Fetch all jobs from backend
-    const jobsResp = await fetch(`${process.env.API_URL}/api/jobs`, {
+    const jobsResp = await fetch(`${apiBase}/api/jobs`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
@@ -42,9 +33,7 @@ export async function POST(req: Request) {
         if (!thread) {
           // Create new thread from job
           const threadName = generateThreadNameFromJob(job);
-          thread = createThread(threadId, threadName,
-            job.metadata?.test_type === 'smoke_test' ? 'smoke_test' : 'real_campaign'
-          );
+          thread = createThread(threadId, threadName, 'real_campaign');
           syncedCount++;
         }
 
@@ -97,7 +86,7 @@ function generateThreadNameFromJob(job: any): string {
   } else if (goal.toLowerCase().includes("react")) {
     return "React Developers";
   } else if (goal.toLowerCase().includes("smoke test")) {
-    return "🧪 Smoke Test";
+    return "Campaign";
   } else if (goal.toLowerCase().includes("test")) {
     return "🧪 Test Campaign";
   }
