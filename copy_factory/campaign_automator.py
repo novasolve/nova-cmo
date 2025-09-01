@@ -655,4 +655,3 @@ Provide as JSON:
                 self.logger.error(f"Failed to load campaign config: {e}")
 
         return None
-

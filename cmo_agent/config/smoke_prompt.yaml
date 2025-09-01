@@ -1,135 +1,23 @@
-# Enhanced Smoke Test Configuration with Beautiful Logging and tqdm Progress
-# This config enables the full beautiful logging experience with live progress bars
+version: 1
 
-max_steps: 40
-
-# Enable real execution to see tqdm progress bars
-features:
-  dry_run: false # Real execution for progress visibility
-  enable_auto_progress: true
-  enable_progress_streaming: true
-  enable_langfuse: false
-  enable_background_jobs: true
-  enable_rate_limiting: true
-  enable_distributed_workers: false
-  enable_fault_tolerance: true
-
-# Enhanced logging with beautiful console output and tqdm progress
-logging:
-  level: INFO
-  console: true
-  file: true
-  json_file: true
-  job_specific_files: true # Create separate log files per job
-  beautiful_console: true # Use beautiful console formatter with emojis
-  stage_logging: true # Enable automatic stage transition logging
-  progress_logging: true # Enable tqdm progress bars
-  correlation_ids: true # Ensure all logs have correlation IDs
-  metrics_snapshots: true # Log periodic metrics snapshots
-  alert_logging: true # Log alerts as they trigger
-  filename: "smoke_test.jsonl" # General log file name
-
-# Directory configuration
-directories:
-  logs: ./logs
-  checkpoints: ./checkpoints
-  artifacts: ./artifacts
-  exports: ./exports
-
-# Job configuration optimized for smoke tests
-job_config:
-  timeouts:
-    job_timeout: 600 # 10 minutes max for smoke test
-    step_timeout: 120 # 2 minutes max per step
-    api_timeout: 30 # 30 seconds max per API call
-  checkpoints:
-    enable_stage: true
-    time_interval: 300 # 5 minutes
-    step_interval: 10 # Every 10 steps for smoke test
-
-# Monitoring for smoke tests
-monitoring:
-  enabled: true
-  metrics_interval: 30 # More frequent metrics for smoke test
-  enable_prometheus: false
-
-# ICP for Python developers
-default_icp:
-  languages: ["python"]
+# Parameters used to render the smoke-test prompt and display plan
+params:
+  language: "Python"
   stars_range: "300..2000"
   activity_days: 90
-  exclude_topics: ["deprecated", "unmaintained"]
-  include_topics: ["ci", "testing", "pytest", "devtools"]
+  target_leads: 20
+  budget_per_day: 10
 
-# Email discovery configuration for smoke test
-email_search:
-  days: 180 # Look back 6 months for commits
-  batch_size: 10 # Users processed per batch
-  repos_per_user: 12 # Max repos per user to scan
-  commits_per_repo: 50 # Max commits per repo to fetch
-  include_committer_email: true
-  noop_streak_threshold: 2 # Stop after 2 failed attempts
+# If provided, overrides computed pushed_since; otherwise computed as today - activity_days
+pushed_since: null # e.g., "2025-06-01"
 
-# Smoke test specific limits
-max_repos: 50
-max_people: 100
-max_leads: 25
+# Goal template rendered into the job "goal" sent to the agent
+goal_template: |
+  Find maintainers of {{language}} repos stars:{{stars_range}} pushed:>= {{pushed_since}}; prioritize active {{activity_days}} days; export CSV.
 
-# Rate limits (CRITICAL - missing from original)
-rate_limits:
-  github_per_hour: 5000
-  instantly_per_inbox_daily: 50
-  attio_per_minute: 60
-  linear_per_minute: 30
-
-# Timeouts (CRITICAL - missing from original)
-timeouts:
-  github_api: 15
-  instantly_api: 30
-  attio_api: 20
-  linear_api: 20
-
-# Retries configuration (CRITICAL - missing from original)
-retries:
-  max_attempts: 3
-  backoff_multiplier: 2.0
-  jitter: true
-  max_backoff_seconds: 300
-  rate_limit_retry_after: 60
-
-# Error handling (CRITICAL - missing from original)
-error_handling:
-  retryable_errors:
-    - "ConnectionError"
-    - "TimeoutError"
-    - "httpx.ConnectTimeout"
-    - "httpx.ReadTimeout"
-    - "httpx.PoolTimeout"
-    - "aiohttp.ClientConnectorError"
-  rate_limit_errors:
-    - "RateLimitError"
-    - "TooManyRequests"
-    - "GitHubRateLimitError"
-    - "CircuitBreakerOpenError"
-  permanent_errors:
-    - "AuthenticationError"
-    - "AuthorizationError"
-    - "NotFoundError"
-    - "ValidationError"
-  circuit_breaker:
-    failure_threshold: 5
-    recovery_timeout: 300
-    expected_exception: Exception
-
-# Export configuration
-export_dir: "./exports"
-checkpoint_every: 200
-
-# Artifact management
-artifacts:
-  cleanup_interval_seconds: 3600
-  retention_days: 30
-  max_per_job: 20
-  compress_large_datasets: true
-  auto_cleanup: true
-  storage_backend: filesystem
+# Assistant intro template for the chat UI (frontend may use this to show a friendly banner)
+assistant_intro_template: |
+  🧪 Real Smoke Test Started: {{job_id}}
+  Running live campaign validation with real GitHub data...
+  Mode: 🤝 Co‑pilot (Real Run)  Daily Cap: ${{budget_per_day}}  Target: {{target_leads}} {{language}} maintainers  Scope: Last {{activity_days}} days
+  This will make real GitHub API calls and show live progress in the Inspector →

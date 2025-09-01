@@ -20,6 +20,12 @@ timeouts:
   instantly_api: 30
   attio_api: 20
   linear_api: 20
+  openai_llm: 60
+
+# LLM settings
+llm:
+  model: "gpt-4o-mini"
+  temperature: 0.0
 
 # Retry configuration
 retries:
@@ -138,6 +144,10 @@ job_config:
     volume_interval: 1000 # Every 1000 leads
     enabled: true
     adaptive: true # Use adaptive checkpointing based on job progress
+    # New: control stage-based checkpointing frequency
+    enable_stage: true
+    stage_min_interval: 180 # Minimum seconds between stage-triggered checkpoints
+    # stages: ["enrichment", "validation", "completed"] # Optional allowlist
 
 # Monitoring and metrics
 monitoring:
@@ -155,3 +165,13 @@ features:
   enable_distributed_workers: false
   enable_fault_tolerance: true
   enable_progress_streaming: true
+  enable_auto_progress: true
+
+# Email discovery configuration
+email_search:
+  days: 365 # look back window for commits
+  batch_size: 10 # users processed per batch
+  repos_per_user: 12 # max repos per user to scan
+  commits_per_repo: 50 # max commits per repo to fetch
+  include_committer_email: true # also consider committer.email in addition to author.email
+  noop_streak_threshold: 4 # attempts with no new emails before marking exhausted

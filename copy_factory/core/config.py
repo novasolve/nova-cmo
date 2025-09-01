@@ -242,4 +242,3 @@ def init_config() -> CopyFactoryConfig:
     config = get_config()
     config.create_default_config()
     return config
-

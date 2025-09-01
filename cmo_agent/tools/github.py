@@ -5,7 +5,7 @@ import logging
 import sys
 import os
 from typing import List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Add current directory to path for imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -76,6 +76,11 @@ class SearchGitHubRepos(GitHubTool):
         try:
             raw_q = (q or "").strip()
 
+            # Optional structured constraints (when ICP was not inlined in q)
+            language: str = (kwargs.get("language") or "").strip()
+            stars_range: str = (kwargs.get("stars_range") or "").strip()
+            activity_days: int = int(kwargs.get("activity_days", 90))
+
             # Add default qualifiers only if the caller didn't specify them
             def _ensure(qualifier: str) -> None:
                 nonlocal raw_q
@@ -87,10 +92,17 @@ class SearchGitHubRepos(GitHubTool):
             _ensure("archived:false")
             _ensure("fork:false")
 
-            # Sorting: stars desc for stability unless caller specified sort/order in q
-            # GitHub allows sort:stars as an inline qualifier in q
-            if "sort:" not in raw_q:
-                raw_q += " sort:stars"
+            # Apply structured qualifiers only if caller didn't provide them
+            if language and ("language:" not in raw_q):
+                raw_q += (" " if raw_q else "") + f"language:{language}"
+            if stars_range and ("stars:" not in raw_q):
+                raw_q += (" " if raw_q else "") + f"stars:{stars_range}"
+            if ("pushed:" not in raw_q) and ("created:" not in raw_q):
+                try:
+                    cutoff = (datetime.now(timezone.utc) - timedelta(days=max(1, activity_days))).date().isoformat()
+                    raw_q += (" " if raw_q else "") + f"pushed:>={cutoff}"
+                except Exception:
+                    pass
 
             params = {
                 "q": raw_q,
@@ -102,9 +114,24 @@ class SearchGitHubRepos(GitHubTool):
             repos = []
             page = 1
 
+            # Simple retry/backoff wrapper for GitHub requests
+            async def _safe_search(params: Dict[str, Any]):
+                import asyncio
+                last_err = None
+                for attempt in range(3):
+                    try:
+                        result = await self._github_request("/search/repositories", params=params)
+                        record_api_call()
+                        return result
+                    except Exception as e:
+                        last_err = e
+                        await asyncio.sleep(0.5 * (2 ** attempt))
+                record_error("github_search")
+                raise last_err
+
             while len(repos) < max_repos:
                 params["page"] = page
-                result = await self._github_request("/search/repositories", params=params)
+                result = await _safe_search(params)
 
                 if not result.get("items"):
                     break
@@ -132,6 +159,11 @@ class SearchGitHubRepos(GitHubTool):
                         "is_archived": item["archived"],
                         "is_fork": item["fork"],
                     }
+                    # Post-filter obvious non-target/meta repos
+                    if language and repo_data.get("language") and str(repo_data.get("language")).lower() != language.lower():
+                        continue
+                    if str(repo_data.get("name") or "").lower() == ".github":
+                        continue
                     repos.append(repo_data)
 
                 page += 1
@@ -172,32 +204,57 @@ class ExtractPeople(GitHubTool):
 
             for repo in repos[:50]:  # Limit to avoid rate limits
                 try:
+                    # Tolerate minimal/malformed repo inputs
+                    repo_full_name = repo.get("full_name") or repo.get("repo_full_name")
+                    if not repo_full_name:
+                        continue
+                    repo_name = repo.get("name") or repo_full_name.split("/")[-1]
+                    repo_stars = repo.get("stars", 0)
+                    repo_language = repo.get("language")
+                    repo_topics = repo.get("topics", []) or []
+
                     # Get contributors for this repo
-                    contributors = await self._github_request(
-                        f"/repos/{repo['full_name']}/contributors",
+                    contributors_response = await self._github_request(
+                        f"/repos/{repo_full_name}/contributors",
                         params={"per_page": top_authors_per_repo * 2}  # Get more to filter bots
                     )
+
+                    # Handle empty or malformed responses
+                    if not contributors_response or not isinstance(contributors_response, (list, dict)):
+                        logger.warning(f"Empty or invalid contributors response for {repo_full_name}")
+                        continue
+
+                    # If response is a dict (e.g., error response), extract list if available
+                    contributors = contributors_response if isinstance(contributors_response, list) else contributors_response.get("contributors", [])
+
+                    if not contributors:
+                        logger.info(f"No contributors found for {repo_full_name}")
+                        continue
 
                     # Filter out bots and get top contributors
                     human_contributors = [
                         c for c in contributors
-                        if not c["login"].endswith("[bot]") and not c["login"].endswith("-bot")
+                        if isinstance(c, dict)
+                        and isinstance(c.get("login", ""), str)
+                        and (c.get("type") == "User")
+                        and not c["login"].endswith("[bot]")
+                        and not c["login"].endswith("-bot")
                     ][:top_authors_per_repo]
 
                     for contributor in human_contributors:
                         candidate = {
                             "login": contributor["login"],
-                            "from_repo": repo["full_name"],
-                            "signal": f"contributor to {repo['name']}",
-                            "contributions": contributor["contributions"],
-                            "repo_stars": repo["stars"],
-                            "repo_language": repo.get("language"),
-                            "repo_topics": repo.get("topics", []),
+                            "from_repo": repo_full_name,
+                            "signal": f"contributor to {repo_name}",
+                            "contributions": contributor.get("contributions", 0),
+                            "repo_stars": repo_stars,
+                            "repo_language": repo_language,
+                            "repo_topics": repo_topics,
                         }
                         all_candidates.append(candidate)
 
                 except Exception as e:
-                    logger.warning(f"Failed to get contributors for {repo['full_name']}: {e}")
+                    logger.warning(f"Failed to get contributors for {repo_full_name or 'unknown'}: {e}")
                     continue
 
             # Remove duplicates by login
@@ -208,9 +265,19 @@ class ExtractPeople(GitHubTool):
                     unique_candidates.append(candidate)
                     seen_logins.add(candidate["login"])
 
+            # Also return user-repo pairs for downstream email discovery
+            user_repo_pairs = [
+                {"login": c["login"], "repo_full_name": c["from_repo"]}
+                for c in unique_candidates
+            ]
+
             return ToolResult(
                 success=True,
-                data={"candidates": unique_candidates, "count": len(unique_candidates)},
+                data={
+                    "candidates": unique_candidates,
+                    "count": len(unique_candidates),
+                    "user_repo_pairs": user_repo_pairs,
+                },
                 metadata={"repos_processed": len(repos), "duplicates_removed": len(all_candidates) - len(unique_candidates)}
             )
 
@@ -255,7 +322,7 @@ class EnrichGitHubUser(GitHubTool):
                 "api_url": user_data["url"],
             }
 
-            return ToolResult(success=True, data={"profile": profile})
+            return ToolResult(success=True, data={"profile": {**profile, "enriched": True}})
 
         except Exception as e:
             logger.error(f"User enrichment failed for {login}: {e}")
@@ -276,29 +343,54 @@ class FindCommitEmails(GitHubTool):
         """Find commit emails"""
         try:
             emails = set()
-            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
+            noreply_suffix = "@users.noreply.github.com"
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+            include_committer_email = bool(kwargs.get("include_committer_email", True))
 
-            # Process repos this user contributed to
-            user_repos = [r for r in repos if any(c.get("login") == login for c in r.get("contributors", []))]
+            # Process all provided repos, don't rely on contributors attachment
+            user_repos = []
+            for r in repos:
+                repo_full_name = r.get("full_name") or r.get("repo_full_name")
+                if isinstance(repo_full_name, str):
+                    user_repos.append({"full_name": repo_full_name})
 
-            for repo in user_repos[:10]:  # Limit to avoid rate limits
+            # Prefer recently pushed repos; expand surface area modestly
+            try:
+                user_repos.sort(key=lambda r: r.get("pushed_at", ""), reverse=True)
+            except Exception:
+                pass
+            user_repos = user_repos[:15]  # Slightly larger surface area
+
+            for repo in user_repos:
                 try:
-                    # Get recent commits from this user
-                    commits = await self._github_request(
-                        f"/repos/{repo['full_name']}/commits",
-                        params={
-                            "author": login,
-                            "since": cutoff_date,
-                            "per_page": 20
-                        }
-                    )
-
-                    for commit in commits:
-                        if commit.get("commit", {}).get("author", {}).get("email"):
-                            email = commit["commit"]["author"]["email"]
-                            if "@" in email and not email.endswith("@users.noreply.github.com"):
-                                emails.add(email)
-
+                    # Page through commits, try author then committer
+                    for mode in (("author", login), ("committer", login)):
+                        page = 1
+                        while True:
+                            params = {
+                                mode[0]: mode[1],
+                                "since": cutoff_date,
+                                "per_page": 50,
+                                "page": page,
+                            }
+                            commits = await self._github_request(
+                                f"/repos/{repo['full_name']}/commits", params=params
+                            )
+                            if not commits:
+                                break
+                            for commit in commits:
+                                c = commit.get("commit", {})
+                                a = (c.get("author") or {})
+                                m = (c.get("committer") or {})
+                                ae = a.get("email")
+                                me = m.get("email")
+                                if ae and "@" in ae and not ae.endswith(noreply_suffix):
+                                    emails.add(ae.strip().lower())
+                                if include_committer_email and me and "@" in me and not me.endswith(noreply_suffix):
+                                    emails.add(me.strip().lower())
+                            if len(commits) < params["per_page"]:
+                                break
+                            page += 1
                 except Exception as e:
                     logger.warning(f"Failed to get commits for {repo['full_name']}: {e}")
                     continue
@@ -393,12 +485,17 @@ class FindCommitEmailsBatch(GitHubTool):
     async def execute(self, user_repo_pairs: List[Dict[str, Any]], days: int = 90, **kwargs) -> ToolResult:
         """Find commit emails for multiple users across their repos"""
         try:
-            user_emails = {}
-            cutoff_date = (datetime.now() - timedelta(days=days)).isoformat()
-            batch_size = kwargs.get("batch_size", 5)  # Process fewer users at once
+            user_emails: Dict[str, Any] = {}
+            cutoff_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat().replace("+00:00", "Z")
+            batch_size = int(kwargs.get("batch_size", 5))          # users per batch
+            repos_per_user = int(kwargs.get("repos_per_user", 8))  # repos per user (slightly higher)
+            max_commits = int(kwargs.get("commits_per_repo", 100))  # scan deeper per repo
+            include_committer_email = bool(kwargs.get("include_committer_email", True))
+            also_try_committer = bool(kwargs.get("also_try_committer", True))
+            noreply_suffix = "@users.noreply.github.com"
 
             # Group by user to avoid duplicate work
-            user_to_repos = {}
+            user_to_repos: Dict[str, List[str]] = {}
             for pair in user_repo_pairs:
                 login = pair["login"]
                 repo_full_name = pair["repo_full_name"]
@@ -413,26 +510,66 @@ class FindCommitEmailsBatch(GitHubTool):
 
                 for login in batch_logins:
                     try:
-                        emails = set()
-                        repos = user_to_repos[login][:5]  # Limit repos per user
+                        emails: set = set()
+                        stats = {
+                            "repos_scanned": 0,
+                            "pages_scanned": 0,
+                            "noreply_skipped": 0,
+                            "author_mode_hits": 0,
+                            "committer_mode_hits": 0,
+                        }
+                        # Prefer recently pushed repos first
+                        repos = user_to_repos[login][:]
+                        try:
+                            # If we have pushed_at info in pairs, sort; otherwise keep insertion
+                            repos.sort(key=lambda rn: 0, reverse=True)  # placeholder sort stable
+                        except Exception:
+                            pass
+                        repos = repos[:repos_per_user]
 
                         for repo_full_name in repos:
                             try:
-                                # Get recent commits from this user in this repo
-                                commits = await self._github_request(
-                                    f"/repos/{repo_full_name}/commits",
-                                    params={
-                                        "author": login,
-                                        "since": cutoff_date,
-                                        "per_page": 10  # Fewer commits per repo
-                                    }
-                                )
-
-                                for commit in commits:
-                                    if commit.get("commit", {}).get("author", {}).get("email"):
-                                        email = commit["commit"]["author"]["email"]
-                                        if "@" in email and not email.endswith("@users.noreply.github.com"):
-                                            emails.add(email)
+                                stats["repos_scanned"] += 1
+                                scanned = 0
+                                # Try author mode then optional committer mode
+                                modes = [("author", login)] + (([("committer", login)]) if also_try_committer else [])
+                                for mode in modes:
+                                    page = 1
+                                    while scanned < max_commits:
+                                        params = {
+                                            mode[0]: mode[1],
+                                            "since": cutoff_date,
+                                            "per_page": min(100, max_commits - scanned),
+                                            "page": page,
+                                        }
+                                        commits = await self._github_request(
+                                            f"/repos/{repo_full_name}/commits", params=params
+                                        )
+                                        if not commits:
+                                            break
+                                        stats["pages_scanned"] += 1
+                                        for commit in commits:
+                                            c = commit.get("commit", {})
+                                            a = (c.get("author") or {})
+                                            m = (c.get("committer") or {})
+                                            ae = a.get("email")
+                                            me = m.get("email")
+                                            if ae and "@" in ae:
+                                                if ae.endswith(noreply_suffix):
+                                                    stats["noreply_skipped"] += 1
+                                                else:
+                                                    emails.add(ae.strip().lower())
+                                                    stats["author_mode_hits"] += 1
+                                            if include_committer_email and me and "@" in me:
+                                                if me.endswith(noreply_suffix):
+                                                    stats["noreply_skipped"] += 1
+                                                else:
+                                                    emails.add(me.strip().lower())
+                                                    stats["committer_mode_hits"] += 1
+                                        scanned += len(commits)
+                                        if len(commits) < params["per_page"]:
+                                            break
+                                        page += 1
 
                             except Exception as e:
                                 logger.warning(f"Failed to get commits for {login} in {repo_full_name}: {e}")
@@ -441,7 +578,8 @@ class FindCommitEmailsBatch(GitHubTool):
                         user_emails[login] = {
                             "emails": list(emails),
                             "count": len(emails),
-                            "repos_searched": len(repos)
+                            "repos_searched": len(repos),
+                            "stats": stats,
                         }
 
                     except Exception as e:
@@ -452,7 +590,7 @@ class FindCommitEmailsBatch(GitHubTool):
             return ToolResult(
                 success=True,
                 data={"user_emails": user_emails, "total_users": len(logins)},
-                metadata={"days_back": days, "batch_size": batch_size}
+                metadata={"days_back": days, "batch_size": batch_size, "committer_fallback": also_try_committer}
             )
 
         except Exception as e:

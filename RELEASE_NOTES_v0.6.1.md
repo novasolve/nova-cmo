@@ -6,7 +6,7 @@ After battling the dreaded `422 Validation Failed` beast, we've emerged victorio
 
 ## 🐛 What Was Broken (And Now Isn't)
 
-### The GitHub Search API Rebellion 
+### The GitHub Search API Rebellion
 - **The Drama**: GitHub's API was throwing tantrums because it doesn't like `>=` in date filters
 - **The Hero Move**: We switched to `>` and suddenly GitHub became our friend again
 - **The Result**: No more 422 errors! The scraper actually scrapes now! 🎊
@@ -36,10 +36,10 @@ git pull
 ```
 
 ## 🎮 Testing Status
-✅ Scraper finds repos without throwing fits  
-✅ Date placeholders work like magic  
-✅ Successfully collected leads without errors  
-✅ Your sanity: Restored  
+✅ Scraper finds repos without throwing fits
+✅ Date placeholders work like magic
+✅ Successfully collected leads without errors
+✅ Your sanity: Restored
 
 ---
 

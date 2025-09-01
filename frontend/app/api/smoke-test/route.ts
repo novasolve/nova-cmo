@@ -59,9 +59,9 @@ export async function POST(req: Request) {
       try {
         const built = await buildSmokeGoalFromYaml();
         const smokeJobPayload = {
-          goal: "python developers with activity in the last 90 days", // Exact same goal as your command
+          goal: built.goal,
           dryRun: false, // Make it a REAL run so we can see live progress
-          config_path: "cmo_agent/config/smoke_prompt.yaml", // Use exact same config as your command
+          config_path: null, // Use default config for real execution
           metadata: {
             threadId,
             autopilot_level: 0, // L0 for safety but real execution
@@ -72,16 +72,7 @@ export async function POST(req: Request) {
             campaign_type: "smoke_test",
             max_leads: (built.params?.target ?? 5), // Limit scope for quick test
             created_at: new Date().toISOString()
-          },
-          // Pass prompt params to config so agent can early-stop when target met
-          config: built.params ? { prompt_params: {
-            target_leads: built.params.target,
-            language: built.params.language,
-            stars_range: built.params.stars,
-            activity_days: built.params.activity,
-            budget_per_day: built.params.budget,
-            pushed_since: built.params.pushedSince,
-          }} : undefined
+          }
         };
 
         console.log(`Creating smoke test job for thread: ${threadId}`);

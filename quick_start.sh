@@ -68,29 +68,29 @@ if [ -f "data/demo_prospects.csv" ]; then
     echo ""
     echo "📊 Scraping complete! Let's look at the results..."
     echo ""
-    
+
     # Show preview
     echo "First 5 prospects:"
     echo "=================="
     head -n 6 data/demo_prospects.csv | column -t -s, | head -20
     echo ""
-    
+
     # Count results
     TOTAL=$(tail -n +2 data/demo_prospects.csv | wc -l)
     echo "Total prospects found: $TOTAL"
     echo ""
-    
+
     # Enrich emails
     echo "📧 Running email enrichment..."
     python enrich_emails.py data/demo_prospects.csv -o data/demo_prospects_enriched.csv
     echo ""
-    
+
     # Create summary
     echo "📈 Summary of prospects by repository:"
     echo "====================================="
     tail -n +2 data/demo_prospects.csv | cut -d, -f6 | sort | uniq -c | sort -rn
     echo ""
-    
+
     echo "✅ Quick start complete!"
     echo ""
     echo "📁 Output files:"

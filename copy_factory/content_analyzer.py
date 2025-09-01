@@ -649,4 +649,3 @@ List specific pain points identified:
 
         self.logger.info(f"Analyzed {len(results)} prospects")
         return results
-

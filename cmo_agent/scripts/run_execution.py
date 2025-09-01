@@ -6,12 +6,17 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 # Add parent directory to path
 parent_dir = str(Path(__file__).parent.parent)
 sys.path.insert(0, parent_dir)
+# Also add project root to path to support absolute imports when invoked from subdir
+project_root = str(Path(__file__).resolve().parents[2])
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from core.job import JobManager, JobStatus, ProgressInfo
 from core.queue import InMemoryJobQueue, JobController
@@ -19,20 +24,57 @@ from core.persistent_queue import PersistentJobQueue
 from core.worker import WorkerPool
 from core.monitoring import record_job_submitted, MetricsLogger, get_global_collector
 try:
-    from agents.cmo_agent import CMOAgent
-except ImportError:
-    from ..agents.cmo_agent import CMOAgent
+    # Prefer absolute package import to ensure relative imports inside module resolve
+    from cmo_agent.agents.cmo_agent import CMOAgent
+except Exception:
+    try:
+        from agents.cmo_agent import CMOAgent
+    except Exception:
+        # Avoid relative import beyond top-level package - use absolute import instead
+        import sys
+        from pathlib import Path
+        project_root = str(Path(__file__).resolve().parents[2])
+        if project_root not in sys.path:
+            sys.path.insert(0, project_root)
+        from cmo_agent.agents.cmo_agent import CMOAgent
 from core.state import DEFAULT_CONFIG
+from dotenv import load_dotenv
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('./logs/execution_engine.log', mode='a')
-    ]
-)
+# Load environment variables from .env if present
+load_dotenv()
+
+# Setup logging (configurable)
+from core.monitoring import JsonExtraFormatter, configure_metrics_from_config
+from core.state import DEFAULT_CONFIG as _DEF
+
+def _setup_logging_from_config(cfg: dict):
+    log_cfg = cfg.get("logging", {}) if isinstance(cfg.get("logging"), dict) else {}
+    log_level = getattr(logging, str(log_cfg.get("level", "INFO")).upper(), logging.INFO)
+    logs_dir = Path(cfg.get("directories", _DEF.get("directories", {})).get("logs", "./logs"))
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    # Clear existing handlers to avoid duplicates in repeated CLI invocations
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
+    # Console handler (human-readable)
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    ch.setFormatter(logging.Formatter(log_cfg.get("console_format", "%(asctime)s %(levelname)-4s %(message)s")))
+    root.addHandler(ch)
+
+    # File handler (JSON lines with extras)
+    if log_cfg.get("json_file", True):
+        fh_path = logs_dir / log_cfg.get("execution_log_file", "execution_engine.jsonl")
+        fh = logging.FileHandler(str(fh_path), encoding="utf-8")
+        fh.setLevel(log_level)
+        fh.setFormatter(JsonExtraFormatter())
+        root.addHandler(fh)
+
+_setup_logging_from_config(DEFAULT_CONFIG)
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +95,10 @@ class ExecutionEngine:
         # State
         self.is_running = False
         self._shutdown_event = asyncio.Event()
+        # Throttled queue logging state
+        self._last_queue_log_ts: float = 0.0
+        self._last_queue_stats: Optional[dict] = None
+        self._queue_log_interval_seconds: int = 60
 
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -74,6 +120,58 @@ class ExecutionEngine:
                     file_config = yaml.safe_load(f)
                     config.update(file_config)
 
+            # Overlay environment variables (take precedence over file)
+            env_mapping = {
+                'GITHUB_TOKEN': 'GITHUB_TOKEN',
+                'INSTANTLY_API_KEY': 'INSTANTLY_API_KEY',
+                'ATTIO_API_KEY': 'ATTIO_API_KEY',
+                'ATTIO_WORKSPACE_ID': 'ATTIO_WORKSPACE_ID',
+                'LINEAR_API_KEY': 'LINEAR_API_KEY',
+                'OPENAI_API_KEY': 'OPENAI_API_KEY',
+                # Optional extras referenced in README
+                'STATE_DB_URL': 'STATE_DB_URL',
+                'BLOB_DIR': 'BLOB_DIR',
+                'LANGFUSE_SERVER_URL': 'LANGFUSE_SERVER_URL',
+                'LANGFUSE_PUBLIC_KEY': 'LANGFUSE_PUBLIC_KEY',
+                'LANGFUSE_SECRET_KEY': 'LANGFUSE_SECRET_KEY',
+            }
+            for config_key, env_var in env_mapping.items():
+                env_val = os.getenv(env_var)
+                if env_val:
+                    config[config_key] = env_val
+
+            # Ensure directories exist (logs, checkpoints, artifacts, exports)
+            from core.state import DEFAULT_CONFIG as _DEF
+            dirs = config.get("directories", _DEF.get("directories", {}))
+            for key in ["logs", "checkpoints", "artifacts", "exports"]:
+                try:
+                    path = Path(dirs.get(key, _DEF["directories"].get(key, f"./{key}")))
+                    path.mkdir(parents=True, exist_ok=True)
+                except Exception as e:
+                    logger.warning(f"Failed to ensure directory for {key}: {e}")
+
+            # Reconfigure logging with loaded config
+            _setup_logging_from_config(config)
+            # Apply monitoring thresholds
+            configure_metrics_from_config(config)
+
+            # Configure queue stats logging interval from monitoring if present
+            try:
+                monitoring_cfg = config.get("monitoring", {}) if isinstance(config.get("monitoring"), dict) else {}
+                interval = int(monitoring_cfg.get("metrics_interval", 60))
+                # Use same interval for queue stats to avoid noise; minimum 5s
+                self._queue_log_interval_seconds = max(5, interval)
+            except Exception:
+                self._queue_log_interval_seconds = 60
+
+            # Initialize queue with configured storage dir if provided
+            try:
+                q_cfg = config.get("queue", {})
+                storage_dir = q_cfg.get("storage_dir", "./data/jobs")
+                self.queue = PersistentJobQueue(storage_dir=storage_dir)
+            except Exception as e:
+                logger.warning(f"Falling back to default PersistentJobQueue: {e}")
+
             # Initialize CMO Agent
             self.agent = CMOAgent(config)
             logger.info("CMO Agent initialized")
@@ -85,6 +183,17 @@ class ExecutionEngine:
                 agent=self.agent
             )
             logger.info(f"Worker pool initialized with {self.num_workers} workers")
+
+            # Start artifact cleanup task if enabled
+            try:
+                from core.artifacts import get_artifact_manager
+                self._artifact_manager = get_artifact_manager(config)
+                artifacts_cfg = config.get("artifacts", {})
+                if artifacts_cfg.get("auto_cleanup", True):
+                    await self._artifact_manager.start_cleanup_task()
+                    logger.info("Artifact cleanup task started")
+            except Exception as e:
+                logger.warning(f"Artifact cleanup task not started: {e}")
 
             return True
 
@@ -104,9 +213,20 @@ class ExecutionEngine:
             # Start worker pool
             await self.worker_pool.start(self.agent)
 
-            # Start metrics logger
-            self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=60)
-            asyncio.create_task(self.metrics_logger.start_logging())
+            # Start metrics logger based on config
+            monitoring_cfg = getattr(self.agent, "config", {}).get("monitoring", {})
+            if monitoring_cfg.get("enabled", True):
+                interval = int(monitoring_cfg.get("metrics_interval", 60))
+                self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=interval)
+                # Optional Prometheus exporter
+                if monitoring_cfg.get("enable_prometheus", False):
+                    port = int(monitoring_cfg.get("prometheus_port", 8000))
+                    try:
+                        self.metrics_logger.enable_prometheus(port)
+                    except Exception as e:
+                        logger.warning(f"Prometheus exporter not enabled: {e}")
+                asyncio.create_task(self.metrics_logger.start_logging())
+                logger.info(f"Metrics logger started (interval={interval}s)")
 
             # Start job processing loop
             await self._run_main_loop()
@@ -119,6 +239,12 @@ class ExecutionEngine:
                 await self.worker_pool.stop()
             if self.metrics_logger:
                 self.metrics_logger.stop_logging()
+            # Stop artifact cleanup task
+            try:
+                if hasattr(self, "_artifact_manager") and self._artifact_manager:
+                    await self._artifact_manager.stop_cleanup_task()
+            except Exception:
+                pass
             self.is_running = False
             logger.info("Execution engine stopped")
 
@@ -146,27 +272,55 @@ class ExecutionEngine:
         # - Processing completed jobs
         # - Logging statistics
 
-        # For now, just log stats periodically
+        # For now, just log stats with throttling to avoid noise
         stats = await self.queue.get_queue_stats()
-        if stats["total_jobs"] > 0:
-            logger.info(f"Queue stats: {stats}")
+        if stats.get("total_jobs", 0) > 0:
+            import time
+            now = time.monotonic()
+            should_log = False
 
-    async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0) -> str:
+            # Log on significant change (e.g., queue depth or running count changes)
+            try:
+                last = self._last_queue_stats or {}
+                key_fields = (
+                    stats.get("queued_jobs"),
+                    stats.get("jobs_by_status", {}),
+                    stats.get("active_streams"),
+                )
+                last_key_fields = (
+                    last.get("queued_jobs"),
+                    last.get("jobs_by_status", {}),
+                    last.get("active_streams"),
+                )
+                if key_fields != last_key_fields:
+                    should_log = True
+            except Exception:
+                # On any comparison issue, fall back to interval-based logging
+                pass
+
+            # Also log at a fixed interval
+            if now - self._last_queue_log_ts >= self._queue_log_interval_seconds:
+                should_log = True
+
+            if should_log:
+                logger.info(f"Queue stats: {stats}")
+                self._last_queue_log_ts = now
+                self._last_queue_stats = stats
+            else:
+                # Debug-level for per-second loop to aid diagnostics when needed
+                logger.debug(f"Queue stats (throttled): {stats}")
+
+    async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0, metadata: Dict[str, Any] = None, config_path: str = None) -> str:
         """Submit a new job for execution"""
         try:
-            # Create job
-            job = self.job_manager.create_job(goal, created_by)
+            # Create job with metadata
+            job = self.job_manager.create_job(goal, created_by, metadata=metadata, config_path=config_path)
 
             # Record job submission
             record_job_submitted()
 
-            # Add progress callback
-            async def progress_callback(progress_info):
-                job.update_progress(**progress_info)
-
-            # Set progress callback on agent (if supported)
-            if hasattr(self.agent, 'set_progress_callback'):
-                self.agent.set_progress_callback(progress_callback)
+            # Note: Progress callbacks are handled by individual workers
+            # Don't set global progress callback here as it conflicts with worker callbacks
 
             # Enqueue job
             job_id = await self.queue.enqueue_job(job, priority)
@@ -196,6 +350,7 @@ class ExecutionEngine:
             "updated_at": job.updated_at.isoformat(),
             "progress": progress.to_dict() if progress else None,
             "artifacts": job.artifacts,
+            "metadata": job.metadata,
         }
 
     async def list_jobs(self, status_filter: Optional[JobStatus] = None) -> list:
@@ -204,9 +359,18 @@ class ExecutionEngine:
         jobs = await self.queue.list_jobs(status_filter)
         result = []
         for job in jobs:
-            status = await self.get_job_status(job.id)
-            if status:
-                result.append(status)
+            progress = await self.queue.get_job_progress(job.id)
+            job_data = {
+                "job_id": job.id,
+                "status": job.status.value,
+                "goal": job.goal,
+                "created_at": job.created_at.isoformat(),
+                "updated_at": job.updated_at.isoformat(),
+                "progress": progress.to_dict() if progress else None,
+                "artifacts": job.artifacts,
+                "metadata": job.metadata,
+            }
+            result.append(job_data)
         return result
 
     async def pause_job(self, job_id: str) -> bool:

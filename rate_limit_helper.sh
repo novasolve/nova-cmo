@@ -32,7 +32,7 @@ wait_for_reset() {
         RESPONSE=$(curl -s -H "Authorization: token $TOKEN" https://api.github.com/rate_limit)
         REMAINING=$(echo "$RESPONSE" | grep -o '"remaining":[0-9]*' | head -1 | cut -d: -f2)
         RESET=$(echo "$RESPONSE" | grep -o '"reset":[0-9]*' | head -1 | cut -d: -f2)
-        
+
         if [ "$REMAINING" -gt "0" ]; then
             echo -e "\n✅ Rate limit reset! You have $REMAINING API calls available."
             break
@@ -40,7 +40,7 @@ wait_for_reset() {
             CURRENT_TIME=$(date +%s)
             WAIT_TIME=$((RESET - CURRENT_TIME))
             WAIT_MINUTES=$((WAIT_TIME / 60))
-            
+
             echo -ne "\r⏳ Waiting for rate limit reset... ${WAIT_MINUTES} minutes remaining"
             sleep 30
         fi
@@ -54,9 +54,9 @@ while true; do
     echo "2. Wait for rate limit reset"
     echo "3. Run scraper with smart rate limit handling"
     echo "4. Exit"
-    
+
     read -p "Enter your choice (1-4): " choice
-    
+
     case $choice in
         1)
             check_rate_limit
@@ -68,12 +68,12 @@ while true; do
             echo -e "\n🚀 Running scraper with rate limit awareness..."
             # Check rate limit first
             REMAINING=$(curl -s -H "Authorization: token $TOKEN" https://api.github.com/rate_limit | grep -o '"remaining":[0-9]*' | head -1 | cut -d: -f2)
-            
+
             if [ "$REMAINING" -lt "100" ]; then
                 echo "⚠️  Low on API calls ($REMAINING remaining). Waiting for reset..."
                 wait_for_reset
             fi
-            
+
             # Run with conservative settings
             echo "Running with conservative settings to avoid rate limits..."
             python lead_intelligence/scripts/run_intelligence.py \

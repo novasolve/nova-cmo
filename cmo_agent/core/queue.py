@@ -219,6 +219,14 @@ class InMemoryJobQueue(JobQueue):
                     except Exception:
                         pass  # Stream might be closed
 
+                # If job reached a terminal state, close the progress stream
+                if status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                    if job_id in self._progress_streams:
+                        try:
+                            await self._progress_streams[job_id].put(None)
+                        except Exception:
+                            pass
+
     async def get_job_progress(self, job_id: str) -> Optional[ProgressInfo]:
         """Get job progress information"""
         job = self._jobs.get(job_id)

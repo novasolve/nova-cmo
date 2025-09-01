@@ -110,14 +110,17 @@ class Job:
         return cls(**data)
 
     @classmethod
-    def create(cls, goal: str, created_by: str = "user", config: Dict[str, Any] = None) -> 'Job':
+    def create(cls, goal: str, created_by: str = "user", config: Dict[str, Any] = None, metadata: Dict[str, Any] = None) -> 'Job':
         """Create a new job"""
         job_id = f"cmo-{uuid.uuid4().hex[:8]}"
-        metadata = {
+        base_metadata = {
             "created_by": created_by,
             "priority": "normal",
             "tags": [],
         }
+        # Merge provided metadata with base metadata
+        if metadata:
+            base_metadata.update(metadata)
         config = config or {}
 
         return cls(
@@ -125,7 +128,7 @@ class Job:
             goal=goal,
             status=JobStatus.QUEUED,
             config=config,
-            metadata=metadata,
+            metadata=base_metadata,
             progress=ProgressInfo(job_id=job_id, stage="created"),
         )
 
@@ -205,9 +208,23 @@ class JobManager:
         self.jobs: Dict[str, Job] = {}
         self._listeners: List[callable] = []
 
-    def create_job(self, goal: str, created_by: str = "user", config: Dict[str, Any] = None) -> Job:
+    def create_job(self, goal: str, created_by: str = "user", config: Dict[str, Any] = None, metadata: Dict[str, Any] = None, config_path: str = None) -> Job:
         """Create a new job"""
-        job = Job.create(goal, created_by, config)
+        # If config_path is provided, load config from file
+        if config_path and not config:
+            try:
+                import yaml
+                from pathlib import Path
+                config_file = Path(config_path)
+                if config_file.exists():
+                    with open(config_file, 'r') as f:
+                        config = yaml.safe_load(f)
+            except Exception as e:
+                # Log warning but continue with default config
+                import logging
+                logging.getLogger(__name__).warning(f"Failed to load config from {config_path}: {e}")
+
+        job = Job.create(goal, created_by, config=config, metadata=metadata)
         self.jobs[job.id] = job
         self._notify_listeners("job_created", job)
         return job

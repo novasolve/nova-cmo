@@ -31,18 +31,18 @@ if [ -f "$OUTPUT" ]; then
     ln -sf "$(basename "$OUTPUT")" "$LATEST_LINK"
     echo ""
     echo "✅ Created symlink: $LATEST_LINK -> $(basename "$OUTPUT")"
-    
+
     # Show summary stats
     echo ""
     echo "📊 Quick Stats:"
     TOTAL_REPOS=$(tail -n +2 "$OUTPUT" | wc -l | tr -d ' ')
     echo "   Total repositories: $TOTAL_REPOS"
-    
+
     if [ "$TOTAL_REPOS" -gt 0 ]; then
         # Count repos with topics
         WITH_TOPICS=$(awk -F',' 'NR>1 && $6!=""' "$OUTPUT" | wc -l | tr -d ' ')
         echo "   With topics: $WITH_TOPICS"
-        
+
         # Count repos by language (top 5)
         echo ""
         echo "   Top languages:"

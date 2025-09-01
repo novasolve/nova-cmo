@@ -277,4 +277,3 @@ class ConcurrentProcessor:
             'total_size_mb': total_size / (1024 * 1024),
             'cache_dir': str(self.cache_dir)
         }
-

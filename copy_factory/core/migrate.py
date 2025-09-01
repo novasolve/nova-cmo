@@ -368,4 +368,3 @@ if __name__ == '__main__':
 
     else:
         migrate_to_database(force=args.force)
-
