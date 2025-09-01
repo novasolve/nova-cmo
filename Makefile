@@ -439,6 +439,12 @@ check-entrypoints: ## Check that critical entrypoints exist
 smoke-test: ## Run smoke tests to verify critical functionality
 	PYTHONPATH=. python tests/test_smoke.py
 
+check-env: ## Validate environment variables
+	python tools/check_env.py
+
+check-env-dry: ## Validate environment for dry-run mode only
+	python tools/check_env.py --dry-run
+
 # Catch-all target to prevent "make: *** No rule to make target" errors
 %:
 	@:

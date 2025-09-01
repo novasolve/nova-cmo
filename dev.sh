@@ -81,6 +81,18 @@ start_api() {
 # Start everything in foreground with live logs
 start_dev() {
     log "Starting development environment..."
+    
+    # Validate environment first
+    log "🔍 Checking environment..."
+    if [[ -f "tools/check_env.py" ]]; then
+        if ! python tools/check_env.py --dry-run; then
+            error "Environment validation failed. Please fix the issues above."
+            exit 1
+        fi
+    else
+        warn "Environment checker not found, skipping validation"
+    fi
+    
     stop_all
 
     cd "$(dirname "$0")"

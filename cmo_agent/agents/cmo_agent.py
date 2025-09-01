@@ -450,6 +450,47 @@ class CMOAgent:
 
         return tool_schemas
 
+    async def _validate_github_token(self) -> None:
+        """Validate GitHub token with a simple API call"""
+        if not self.config.get("GITHUB_TOKEN"):
+            raise ValueError("GITHUB_TOKEN is required but not provided")
+        
+        import aiohttp
+        token = self.config["GITHUB_TOKEN"]
+        
+        try:
+            async with aiohttp.ClientSession() as session:
+                headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Accept": "application/vnd.github.v3+json",
+                    "User-Agent": "CMO-Agent/1.0"
+                }
+                
+                # Test with a simple rate limit check call
+                async with session.get("https://api.github.com/rate_limit", headers=headers) as response:
+                    if response.status == 401:
+                        raise ValueError(f"GitHub authentication failed: Invalid token. Please check your GITHUB_TOKEN.")
+                    elif response.status == 403:
+                        raise ValueError(f"GitHub authentication failed: Access forbidden. Token may lack required permissions.")
+                    elif response.status != 200:
+                        raise ValueError(f"GitHub API error: HTTP {response.status}")
+                    
+                    # Check if we have any remaining requests
+                    data = await response.json()
+                    remaining = data.get("rate", {}).get("remaining", 0)
+                    if remaining == 0:
+                        reset_time = data.get("rate", {}).get("reset", 0)
+                        logger.warning(f"GitHub API rate limit exhausted. Resets at {reset_time}")
+                    else:
+                        logger.info(f"GitHub API validated successfully. {remaining} requests remaining.")
+                        
+        except aiohttp.ClientError as e:
+            raise ValueError(f"GitHub API connection failed: {e}")
+        except Exception as e:
+            if "Invalid token" in str(e) or "authentication failed" in str(e):
+                raise e
+            raise ValueError(f"GitHub token validation failed: {e}")
+
     def _initialize_tools(self) -> Dict[str, Any]:
         """Initialize all tools with configuration"""
         tools = {}
@@ -469,8 +510,8 @@ class CMOAgent:
         tools["score_icp"] = ICPScores()
 
         # Personalization tools
+        tools["render_copy"] = RenderCopy()
         if self.config.get("INSTANTLY_API_KEY"):
-            tools["render_copy"] = RenderCopy()
             tools["send_instantly"] = SendInstantly(self.config["INSTANTLY_API_KEY"])
 
         # CRM tools
@@ -655,6 +696,20 @@ class CMOAgent:
 
                     except Exception as e:
                         logger.error(f"Tool {tool_name} execution failed: {e}")
+                        
+                        # Check if this is a GitHub authentication error - fail fast
+                        error_str = str(e).lower()
+                        if ("github authentication failed" in error_str or 
+                            "invalid or expired token" in error_str or
+                            "github permissions error" in error_str or
+                            ("401" in error_str and "github" in error_str)):
+                            logger.error(f"GitHub authentication failure detected - stopping execution")
+                            state["ended"] = True
+                            state["end_reason"] = f"GitHub authentication error: {e}"
+                            error_result = ToolResult(success=False, error=str(e))
+                            state = self._reduce_tool_result(state, tool_name, error_result)
+                            return state
+                        
                         error_result = ToolResult(success=False, error=str(e))
                         state = self._reduce_tool_result(state, tool_name, error_result)
                         self.stats["errors_encountered"] += 1
@@ -791,11 +846,35 @@ class CMOAgent:
                                 except Exception as e:
                                     logger.warning(f"Auto-progress find_commit_emails_batch failed: {e}")
 
-                    # Auto-finalization: if we have leads with emails, export and finish if LLM doesn't
+                    # Auto-finalization: if we have leads with emails, render copy, export and finish if LLM doesn't
                     leads_with_email = [l for l in state.get("leads", []) if l.get("email")]
                     if leads_with_email and not state.get("ended"):
                         try:
-                            # Attempt simple personalization (optional) - skip if not available
+                            # Attempt personalization: render copy for leads with emails if tool is available
+                            if "render_copy" in self.tools:
+                                try:
+                                    # Render only for leads that don't already have prepared messages
+                                    existing_to_send = state.get("to_send", [])
+                                    def lead_email(lead):
+                                        return lead.get("best_email") or lead.get("email")
+                                    already_prepared_emails = set(
+                                        [item.get("email") for item in existing_to_send if isinstance(item, dict) and item.get("email")]
+                                    )
+
+                                    leads_to_render = [
+                                        l for l in leads_with_email
+                                        if (lead_email(l) and lead_email(l) not in already_prepared_emails)
+                                    ]
+
+                                    # Cap auto-rendering to a reasonable batch size
+                                    for lead in leads_to_render[:25]:
+                                        rc_tool = self.tools["render_copy"]
+                                        rc_result = await rc_tool.execute(lead=lead)
+                                        state = self._reduce_tool_result(state, "render_copy", rc_result)
+                                        self.stats["tools_executed"] += 1
+                                except Exception as e:
+                                    logger.warning(f"Auto-personalization (render_copy) failed: {e}")
+
                             # Export leads with email
                             if "export_csv" in self.tools:
                                 export_tool = self.tools["export_csv"]
@@ -1298,6 +1377,14 @@ Available tools: {', '.join(self.tools.keys())}
         try:
             # Create job metadata
             job_meta = JobMetadata(goal, created_by)
+            
+            # Validate GitHub token early to fail fast
+            if self.config.get("GITHUB_TOKEN") and not self.config.get("features", {}).get("dry_run", False):
+                try:
+                    await self._validate_github_token()
+                except ValueError as e:
+                    logger.error(f"GitHub validation failed: {e}")
+                    raise Exception(f"GitHub setup error: {e}")
             
             # Initialize beautiful logging for this job
             try:

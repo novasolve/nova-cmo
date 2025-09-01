@@ -141,25 +141,41 @@ class GitHubTool(BaseTool):
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.request(method, url, headers=headers, **kwargs) as response:
-                    if response.status == 403:
-                        # Respect rate-limit reset header when present
-                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
-                        reset_datetime = datetime.fromtimestamp(reset_time) if reset_time else None
+                    if response.status == 401:
+                        # Authentication failure - fail fast, don't retry
                         if record_api_call_attempted:
                             record_api_call(False)
-                        # Sleep until reset (bounded) before raising to allow retry wrappers to proceed
-                        try:
-                            if reset_time:
-                                now = time.time()
-                                wait_seconds = max(0.0, reset_time - now)
-                                # Bound the wait to a reasonable maximum per config patterns (5 minutes)
-                                bounded_wait = min(wait_seconds, 300.0)
-                                if bounded_wait > 0:
-                                    logger.warning(f"GitHub rate limited. Waiting {bounded_wait:.1f}s until reset at {reset_datetime}")
-                                    await asyncio.sleep(bounded_wait)
-                        except Exception:
-                            pass
-                        raise Exception(f"Rate limited until {reset_datetime or 'later'}")
+                        error_text = await response.text()
+                        raise ValueError(f"GitHub authentication failed (401): Invalid or expired token. {error_text}")
+                    
+                    if response.status == 403:
+                        # Could be rate limit or permissions issue
+                        error_text = await response.text()
+                        
+                        # Check if it's a rate limit (has reset header)
+                        reset_time = int(response.headers.get("X-RateLimit-Reset", 0))
+                        if reset_time:
+                            reset_datetime = datetime.fromtimestamp(reset_time) if reset_time else None
+                            if record_api_call_attempted:
+                                record_api_call(False)
+                            # Sleep until reset (bounded) before raising to allow retry wrappers to proceed
+                            try:
+                                if reset_time:
+                                    now = time.time()
+                                    wait_seconds = max(0.0, reset_time - now)
+                                    # Bound the wait to a reasonable maximum per config patterns (5 minutes)
+                                    bounded_wait = min(wait_seconds, 300.0)
+                                    if bounded_wait > 0:
+                                        logger.warning(f"GitHub rate limited. Waiting {bounded_wait:.1f}s until reset at {reset_datetime}")
+                                        await asyncio.sleep(bounded_wait)
+                            except Exception:
+                                pass
+                            raise Exception(f"Rate limited until {reset_datetime or 'later'}")
+                        else:
+                            # Permissions issue - fail fast
+                            if record_api_call_attempted:
+                                record_api_call(False)
+                            raise ValueError(f"GitHub permissions error (403): Token lacks required permissions. {error_text}")
 
                     response.raise_for_status()
 

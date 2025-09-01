@@ -78,6 +78,25 @@ def test_monitoring_function_exists():
         raise AssertionError(f"Failed to import configure_metrics_from_config: {e}")
 
 
+def test_env_checker_exists():
+    """Test that the environment checker tool exists and works."""
+    env_checker_path = Path("tools/check_env.py")
+    if not env_checker_path.exists():
+        raise AssertionError("Environment checker tools/check_env.py not found")
+    
+    # Test that it's importable
+    import sys
+    sys.path.insert(0, str(Path("tools")))
+    try:
+        import check_env
+        assert hasattr(check_env, "check_environment"), "check_environment function not found"
+        assert callable(check_env.check_environment), "check_environment should be callable"
+    except ImportError as e:
+        raise AssertionError(f"Failed to import check_env module: {e}")
+    finally:
+        sys.path.pop(0)
+
+
 if __name__ == "__main__":
     # Simple test runner
     test_functions = [
@@ -86,7 +105,8 @@ if __name__ == "__main__":
         test_beautiful_logging_imports,
         test_tqdm_enabled_by_env,
         test_critical_files_exist,
-        test_monitoring_function_exists
+        test_monitoring_function_exists,
+        test_env_checker_exists
     ]
     
     passed = 0

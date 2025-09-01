@@ -100,15 +100,32 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
         _setup_logging_from_config(config)
         configure_metrics_from_config(config)
 
-        # Validate required credentials early to avoid noisy retries
-        github_token = str(config.get("GITHUB_TOKEN") or "").strip()
-        if not dry_run:
-            if not github_token:
-                logger.error("GITHUB_TOKEN is not set. Set it in your environment or .env, or pass --dry-run to skip external API calls.")
-                return {"success": False, "error": "Missing GITHUB_TOKEN"}
-            # Warn on suspicious token formats (best-effort; tokens may change format)
-            if not (github_token.startswith("ghp_") or github_token.startswith("github_pat_")):
-                logger.warning("GITHUB_TOKEN format doesn't match common patterns (ghp_*, github_pat_*). Continuing, but GitHub may return 401/403.")
+        # Validate environment early to fail fast with clear errors
+        from pathlib import Path
+        import sys
+        
+        # Add tools directory to path so we can import the env checker
+        tools_dir = Path(__file__).parent.parent.parent / "tools"
+        if tools_dir.exists():
+            sys.path.insert(0, str(tools_dir))
+            
+        try:
+            from check_env import check_environment
+            env_result = check_environment(dry_run=dry_run)
+            if env_result != 0:
+                logger.error("Environment validation failed. Fix the issues above and try again.")
+                return {"success": False, "error": "Environment validation failed"}
+        except ImportError:
+            # Fallback to basic validation if env checker isn't available
+            logger.warning("Environment checker not found, using basic validation")
+            github_token = str(config.get("GITHUB_TOKEN") or "").strip()
+            if not dry_run:
+                if not github_token:
+                    logger.error("GITHUB_TOKEN is not set. Set it in your environment or .env, or pass --dry-run to skip external API calls.")
+                    return {"success": False, "error": "Missing GITHUB_TOKEN"}
+                # Warn on suspicious token formats (best-effort; tokens may change format)
+                if not (github_token.startswith("ghp_") or github_token.startswith("github_pat_")):
+                    logger.warning("GITHUB_TOKEN format doesn't match common patterns (ghp_*, github_pat_*). Continuing, but GitHub may return 401/403.")
 
         # Initialize agent
         agent = CMOAgent(config)
@@ -150,6 +167,139 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                 # Fallback: empty
                 return {}
 
+            def _generate_campaign_summary(final_state: dict, no_emoji: bool = False) -> str:
+                """Generate a detailed campaign summary with distinct emails and counts"""
+                
+                # Icons
+                icons = {
+                    'summary': '📋 ' if not no_emoji else '',
+                    'repos': '📦 ' if not no_emoji else '',
+                    'people': '👥 ' if not no_emoji else '',
+                    'emails': '📧 ' if not no_emoji else '',
+                    'leads': '🎯 ' if not no_emoji else '',
+                    'companies': '🏢 ' if not no_emoji else '',
+                    'locations': '🌍 ' if not no_emoji else '',
+                    'languages': '💻 ' if not no_emoji else '',
+                }
+                
+                # Extract data
+                repos = final_state.get('repos', [])
+                candidates = final_state.get('candidates', [])
+                leads = final_state.get('leads', [])
+                icp = final_state.get('icp', {})
+                
+                # Collect all emails found
+                all_emails = set()
+                email_sources = {'profile': 0, 'commit': 0, 'public': 0}
+                
+                for lead in leads:
+                    email = lead.get('email')
+                    if email and '@' in email:
+                        all_emails.add(email.lower())
+                        # Track email source
+                        if lead.get('email_profile'):
+                            email_sources['profile'] += 1
+                        elif lead.get('email_public_commit') or lead.get('emails'):
+                            email_sources['commit'] += 1
+                        else:
+                            email_sources['public'] += 1
+                
+                # Collect companies
+                companies = set()
+                for lead in leads:
+                    company = lead.get('company')
+                    if company and company.strip():
+                        companies.add(company.strip())
+                
+                # Collect locations
+                locations = set()
+                for lead in leads:
+                    location = lead.get('location')
+                    if location and location.strip():
+                        locations.add(location.strip())
+                
+                # Collect languages from repos
+                repo_languages = set()
+                total_stars = 0
+                for repo in repos:
+                    lang = repo.get('primary_language') or repo.get('language')
+                    if lang:
+                        repo_languages.add(lang)
+                    stars = repo.get('stars', 0)
+                    if isinstance(stars, (int, float)):
+                        total_stars += int(stars)
+                
+                # Build summary
+                lines = []
+                lines.append(f"\n{'='*60}")
+                lines.append(f"{icons['summary']}CAMPAIGN SUMMARY")
+                lines.append(f"{'='*60}")
+                
+                # ICP Criteria
+                if icp:
+                    lines.append(f"\n🎯 TARGET PROFILE:")
+                    if icp.get('goal'):
+                        lines.append(f"   Goal: {icp['goal']}")
+                    if icp.get('languages'):
+                        lines.append(f"   Languages: {', '.join(icp['languages'])}")
+                    if icp.get('activity_days'):
+                        lines.append(f"   Activity: Last {icp['activity_days']} days")
+                    if icp.get('keywords'):
+                        lines.append(f"   Keywords: {', '.join(icp['keywords'])}")
+                
+                # Repository Summary
+                lines.append(f"\n{icons['repos']}REPOSITORIES ANALYZED:")
+                lines.append(f"   Total: {len(repos)}")
+                if repo_languages:
+                    lines.append(f"   Languages: {', '.join(sorted(repo_languages))}")
+                if total_stars > 0:
+                    lines.append(f"   Total Stars: {total_stars:,}")
+                
+                # People Summary
+                lines.append(f"\n{icons['people']}PEOPLE DISCOVERED:")
+                lines.append(f"   Candidates: {len(candidates)}")
+                lines.append(f"   Leads: {len(leads)}")
+                
+                # Email Summary (the main feature requested)
+                lines.append(f"\n{icons['emails']}EMAIL DISCOVERY:")
+                lines.append(f"   Distinct Emails: {len(all_emails)}")
+                lines.append(f"   Profile Emails: {email_sources['profile']}")
+                lines.append(f"   Commit Emails: {email_sources['commit']}")
+                lines.append(f"   Public Emails: {email_sources['public']}")
+                
+                if len(all_emails) > 0:
+                    lines.append(f"\n   📧 DISTINCT EMAIL LIST:")
+                    # Sort emails and show them
+                    sorted_emails = sorted(all_emails)
+                    for i, email in enumerate(sorted_emails[:20], 1):  # Show first 20
+                        lines.append(f"   {i:2d}. {email}")
+                    if len(sorted_emails) > 20:
+                        lines.append(f"   ... and {len(sorted_emails) - 20} more")
+                
+                # Company Summary
+                if companies:
+                    lines.append(f"\n{icons['companies']}COMPANIES REPRESENTED:")
+                    lines.append(f"   Distinct Companies: {len(companies)}")
+                    top_companies = sorted(companies)[:10]
+                    for company in top_companies:
+                        lines.append(f"   • {company}")
+                    if len(companies) > 10:
+                        lines.append(f"   ... and {len(companies) - 10} more")
+                
+                # Location Summary
+                if locations:
+                    lines.append(f"\n{icons['locations']}GEOGRAPHIC DISTRIBUTION:")
+                    lines.append(f"   Distinct Locations: {len(locations)}")
+                    top_locations = sorted(locations)[:10]
+                    for location in top_locations:
+                        lines.append(f"   • {location}")
+                    if len(locations) > 10:
+                        lines.append(f"   ... and {len(locations) - 10} more")
+                
+                lines.append(f"{'='*60}")
+                
+                return '\n'.join(lines)
+
             final_state = as_map(result.get('final_state'))
             report = as_map(result.get('report'))
             summary = as_map(report.get('summary'))
@@ -177,6 +327,11 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
             chart = "📊 " if not no_emoji else ""
             email_icon = "📧 " if not no_emoji else ""
             building = "🏢 " if not no_emoji else ""
+            
+            # Generate detailed campaign summary
+            campaign_summary = _generate_campaign_summary(final_state, no_emoji)
+            print(campaign_summary)
+            
             print(f"\n{party}Campaign completed successfully!")
             print(f"{chart}Stats: {stats}")
             print(f"{email_icon}Emails prepared: {stats['emails_prepared']}")
@@ -193,6 +348,12 @@ async def run_campaign(goal: str, config_path: Optional[str] = None, dry_run: bo
                     next_goal = input("Enter goal for next campaign: ")
                     return await run_campaign(next_goal, config_path=config_path, dry_run=dry_run, no_emoji=no_emoji, interactive=interactive)
         else:
+            # Show summary even for failed campaigns to show what was accomplished
+            final_state = as_map(result.get('final_state'))
+            if final_state:
+                campaign_summary = _generate_campaign_summary(final_state, no_emoji)
+                print(campaign_summary)
+            
             cross = "❌ " if not no_emoji else ""
             print(f"\n{cross}Campaign failed: {result.get('error', 'Unknown error')}")
 
