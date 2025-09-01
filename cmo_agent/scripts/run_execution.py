@@ -24,15 +24,38 @@ except ImportError:
     from ..agents.cmo_agent import CMOAgent
 from core.state import DEFAULT_CONFIG
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('./logs/execution_engine.log', mode='a')
-    ]
-)
+# Setup logging via config-driven JSON formatter
+from core.monitoring import JsonExtraFormatter, configure_metrics_from_config
+from core.state import DEFAULT_CONFIG as _DEF
+
+def _setup_logging_from_config(cfg: dict):
+    log_cfg = cfg.get("logging", {}) if isinstance(cfg.get("logging"), dict) else {}
+    log_level = getattr(logging, str(log_cfg.get("level", "INFO")).upper(), logging.INFO)
+    logs_dir = Path(cfg.get("directories", _DEF.get("directories", {})).get("logs", "./logs"))
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    # Clear existing handlers to avoid duplicates in repeated CLI invocations
+    for h in root.handlers[:]:
+        root.removeHandler(h)
+
+    # Console handler (human-readable)
+    ch = logging.StreamHandler()
+    ch.setLevel(log_level)
+    ch.setFormatter(logging.Formatter(log_cfg.get("console_format", "%(asctime)s %(levelname)-4s %(message)s")))
+    root.addHandler(ch)
+
+    # File handler (JSON lines with extras)
+    if log_cfg.get("json_file", True):
+        fh_path = logs_dir / log_cfg.get("execution_log_file", "execution_engine.jsonl")
+        fh = logging.FileHandler(str(fh_path), encoding="utf-8")
+        fh.setLevel(log_level)
+        fh.setFormatter(JsonExtraFormatter())
+        root.addHandler(fh)
+
+_setup_logging_from_config(DEFAULT_CONFIG)
 logger = logging.getLogger(__name__)
 
 
@@ -57,6 +80,10 @@ class ExecutionEngine:
         # Setup signal handlers for graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
+        # Throttled queue logging state
+        self._last_queue_log_ts: float = 0.0
+        self._last_queue_stats: Optional[dict] = None
+        self._queue_log_interval_seconds: int = 60
 
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals"""
@@ -104,7 +131,7 @@ class ExecutionEngine:
             # Start worker pool
             await self.worker_pool.start(self.agent)
 
-            # Start metrics logger
+            # Start metrics logger using configured interval if available
             self.metrics_logger = MetricsLogger(get_global_collector(), log_interval=60)
             asyncio.create_task(self.metrics_logger.start_logging())
 
@@ -146,10 +173,39 @@ class ExecutionEngine:
         # - Processing completed jobs
         # - Logging statistics
 
-        # For now, just log stats periodically
+        # For now, just log stats with throttling to avoid noise
         stats = await self.queue.get_queue_stats()
-        if stats["total_jobs"] > 0:
-            logger.info(f"Queue stats: {stats}")
+        if stats.get("total_jobs", 0) > 0:
+            import time
+            now = time.monotonic()
+            should_log = False
+
+            try:
+                last = self._last_queue_stats or {}
+                key_fields = (
+                    stats.get("queued_jobs"),
+                    stats.get("jobs_by_status", {}),
+                    stats.get("active_streams"),
+                )
+                last_key_fields = (
+                    last.get("queued_jobs"),
+                    last.get("jobs_by_status", {}),
+                    last.get("active_streams"),
+                )
+                if key_fields != last_key_fields:
+                    should_log = True
+            except Exception:
+                pass
+
+            if now - self._last_queue_log_ts >= self._queue_log_interval_seconds:
+                should_log = True
+
+            if should_log:
+                logger.info(f"Queue stats: {stats}")
+                self._last_queue_log_ts = now
+                self._last_queue_stats = stats
+            else:
+                logger.debug(f"Queue stats (throttled): {stats}")
 
     async def submit_job(self, goal: str, created_by: str = "user", priority: int = 0) -> str:
         """Submit a new job for execution"""
