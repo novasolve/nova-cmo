@@ -116,98 +116,72 @@ export async function POST(req: Request) {
     // Convert autonomy level to numeric autopilot for backend compatibility
     const autopilot = autonomyToAutopilot(autonomyLevel);
 
-    // Create a job in the CMO Agent backend; if no backend, return a friendly stub
-    if (process.env.API_URL) {
-      try {
-        const jobPayload = {
-          goal: messageText,
-          dryRun: false, // Always real execution
-          config_path: null,
-          metadata: {
-            threadId,
-            autopilot_level: autopilot,
-            autonomy_level: autonomyLevel,
-            budget_per_day: options?.budget || 50,
-            created_by: "chat_console",
-            created_at: new Date().toISOString()
-          }
-        };
-
-        console.log(`Creating job for thread: ${threadId}`);
-        // Redact sensitive information from job payload before logging
-        const redactedPayload = {
-          ...jobPayload,
-          goal: jobPayload.goal.length > 50 ? jobPayload.goal.substring(0, 50) + "..." : jobPayload.goal,
-          metadata: {
-            ...jobPayload.metadata,
-            threadId: "[REDACTED]", // Don't log thread IDs
-            created_by: "[REDACTED]", // Don't log user info
-          }
-        };
-        console.log(`Job payload:`, JSON.stringify(redactedPayload, null, 2));
-
-        // Use proxy route instead of direct backend access
-        const resp = await fetch(`/api/jobs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(jobPayload),
-        });
-
-        if (resp.ok) {
-          const jobResult = await resp.json();
-
-          // Store the mapping so the events endpoint knows which job to stream
-          const actualJobId = jobResult.job_id || jobResult.id;
-          console.log(`Job result:`, jobResult);
-          console.log(`Storing thread mapping: ${threadId} -> ${actualJobId}`);
-          storeThreadJobMapping(threadId, actualJobId);
-
-          // Update thread with job status
-          updateThread(threadId, {
-            lastActivity: `🚀 Job started: ${jobResult.id}`
-          });
-
-          return new Response(JSON.stringify({
-            success: true,
-            jobId: actualJobId,
-            threadId,
-            message: `Job ${actualJobId} created and ${jobResult.status}. Streaming events...`,
-            timestamp: new Date().toISOString()
-          }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          });
-        } else {
-          const errorText = await resp.text();
-          throw new Error(`Backend error: ${errorText}`);
-        }
-      } catch (error) {
-        console.error("Backend connection failed:", error);
-
-        // Return error response
-        return new Response(JSON.stringify({
-          success: false,
-          error: `Backend unavailable: ${error instanceof Error ? error.message : String(error)}`,
-          threadId,
-          timestamp: new Date().toISOString()
-        }), {
-          status: 503,
-          headers: { "Content-Type": "application/json" },
-        });
+    // Always go through proxy; it handles API_URL presence and returns helpful errors
+    const jobPayload = {
+      goal: messageText,
+      dryRun: false, // Always real execution
+      config_path: null,
+      metadata: {
+        threadId,
+        autopilot_level: autopilot,
+        autonomy_level: autonomyLevel,
+        budget_per_day: options?.budget || 50,
+        created_by: "chat_console",
+        created_at: new Date().toISOString()
       }
+    };
+
+    console.log(`Creating job for thread: ${threadId}`);
+    // Redact sensitive information from job payload before logging
+    const redactedPayload = {
+      ...jobPayload,
+      goal: jobPayload.goal.length > 50 ? jobPayload.goal.substring(0, 50) + "..." : jobPayload.goal,
+      metadata: {
+        ...jobPayload.metadata,
+        threadId: "[REDACTED]", // Don't log thread IDs
+        created_by: "[REDACTED]", // Don't log user info
+      }
+    };
+    console.log(`Job payload:`, JSON.stringify(redactedPayload, null, 2));
+
+    const resp = await fetch(`/api/jobs`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(jobPayload),
+    });
+
+    const textResp = await resp.text();
+
+    if (resp.ok) {
+      const jobResult = JSON.parse(textResp || '{}');
+
+      // Store the mapping so the events endpoint knows which job to stream
+      const actualJobId = jobResult.job_id || jobResult.id;
+      console.log(`Job result:`, jobResult);
+      console.log(`Storing thread mapping: ${threadId} -> ${actualJobId}`);
+      if (actualJobId) {
+        storeThreadJobMapping(threadId, actualJobId);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        jobId: actualJobId,
+        threadId,
+        message: jobResult.status ? `Job ${actualJobId} ${jobResult.status}. Streaming events...` : 'Job created.',
+        timestamp: new Date().toISOString()
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
-    // No backend configured: return OK stub to avoid UI 404s
+    // Not OK - bubble up a helpful error but avoid scary network text
     return new Response(JSON.stringify({
-      success: true,
-      ok: true,
-      note: "Chat is not implemented yet and no backend configured.",
+      success: false,
+      error: jobErrorMessage(textResp),
       threadId,
       timestamp: new Date().toISOString()
-    }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    }), { status: resp.status || 502, headers: { "Content-Type": "application/json" } });
 
   } catch (error) {
     console.error("Chat API error:", error);
@@ -223,4 +197,15 @@ export async function POST(req: Request) {
       }
     );
   }
+}
+
+function jobErrorMessage(text: string) {
+  try {
+    const obj = JSON.parse(text);
+    if (obj?.error) return obj.error;
+  } catch {}
+  if (!process.env.API_URL) {
+    return "Backend not configured. Start backend or set API_URL in .env.local.";
+  }
+  return text || "Backend error";
 }
