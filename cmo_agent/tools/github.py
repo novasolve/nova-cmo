@@ -146,127 +146,160 @@ class SearchGitHubRepos(GitHubTool):
                 record_error("github_search")
                 raise last_err
 
-            while len(repos) < max_repos and page <= max_pages:
-                params["page"] = page
+            # Optional sharding to avoid 1k-per-query cap
+            enable_sharding = (str(kwargs.get("enable_sharding") or os.getenv("GITHUB_ENABLE_SHARDING", "0")).strip() == "1")
+            shard_queries: List[str] = []
+            if enable_sharding:
+                try:
+                    import re as _re
+                    # Determine stars range
+                    sr_low, sr_high = None, None
+                    if "stars:" in raw_q:
+                        m = _re.search(r"stars:(\d+)\.\.(\d+)", raw_q)
+                        if m:
+                            sr_low, sr_high = int(m.group(1)), int(m.group(2))
+                    elif stars_range:
+                        m = _re.match(r"(\d+)\.\.(\d+)", stars_range)
+                        if m:
+                            sr_low, sr_high = int(m.group(1)), int(m.group(2))
+                    if sr_low is not None and sr_high is not None and sr_low < sr_high:
+                        bands = int(kwargs.get("star_shards") or int(os.getenv("GITHUB_STAR_SHARDS", "5")))
+                        step = max(1, (sr_high - sr_low + 1) // bands)
+                        base_no_stars = _re.sub(r"\s*stars:[^\s]+", "", raw_q).strip()
+                        cur = sr_low
+                        while cur <= sr_high:
+                            upper = min(sr_high, cur + step - 1)
+                            shard_q = (base_no_stars + (" " if base_no_stars else "") + f"stars:{cur}..{upper}").strip()
+                            shard_queries.append(shard_q)
+                            cur = upper + 1
+                except Exception:
+                    shard_queries = []
 
-                result = await _safe_search(params)
+            queries_to_run: List[str] = shard_queries if shard_queries else [raw_q]
 
-                # Track total available results from GitHub
-                if total_available is None and result.get("total_count") is not None:
-                    total_available = result["total_count"]
-                    logger.info(f"GitHub reports {total_available} total repositories available for query")
+            for qtext in queries_to_run:
+                if len(repos) >= max_repos:
+                    break
+                page = 1
+                while len(repos) < max_repos and page <= max_pages:
+                    params["q"] = qtext
+                    params["page"] = page
 
-                items = result.get("items", [])
-                if not items:
-                    low_yield_pages_in_a_row += 1
-                    # concise page log (no raw URL)
+                    result = await _safe_search(params)
+
+                    # Track total available results from GitHub
+                    if total_available is None and result.get("total_count") is not None:
+                        total_available = result["total_count"]
+                        logger.info(f"GitHub reports {total_available} total repositories available for query")
+
+                    items = result.get("items", [])
+                    if not items:
+                        low_yield_pages_in_a_row += 1
+                        # concise page log (no raw URL)
+                        try:
+                            logger.info(
+                                "🔎 GitHub search page=%d per_page=%d -> repos=%d (low_yield=%d)",
+                                page,
+                                params.get("per_page", 0),
+                                0,
+                                low_yield_pages_in_a_row,
+                                extra={
+                                    "structured": {
+                                        "event": "github_search",
+                                        "page": page,
+                                        "per_page": params.get("per_page", 0),
+                                        "repos": 0,
+                                        "q": qtext,
+                                        "low_yield": low_yield_pages_in_a_row,
+                                    }
+                                },
+                            )
+                        except Exception:
+                            pass
+                        # Break early if we've had multiple low-yield pages and met minimum
+                        if low_yield_pages_in_a_row >= 2 and page >= min_pages:
+                            logger.info("Stopping: low yield across multiple pages")
+                            break
+                        page += 1
+                        continue
+                    else:
+                        low_yield_pages_in_a_row = 0  # Reset on successful page
+
+                    repos_added_this_page = 0
+                    # concise page log with counts
                     try:
                         logger.info(
-                            "🔎 GitHub search page=%d per_page=%d -> repos=%d (low_yield=%d)",
+                            "🔎 GitHub search page=%d per_page=%d -> repos=%d",
                             page,
                             params.get("per_page", 0),
-                            0,
-                            low_yield_pages_in_a_row,
+                            len(items),
                             extra={
                                 "structured": {
                                     "event": "github_search",
                                     "page": page,
                                     "per_page": params.get("per_page", 0),
-                                    "repos": 0,
-                                    "q": raw_q,
-                                    "low_yield": low_yield_pages_in_a_row,
+                                    "repos": len(items),
+                                    "q": qtext,
                                 }
                             },
                         )
                     except Exception:
                         pass
-                    
-                    # Break early if we've had multiple low-yield pages and met minimum
-                    if low_yield_pages_in_a_row >= 2 and page >= min_pages:
-                        logger.info("Stopping: low yield across multiple pages")
-                        break
-                    
+
+                    for item in items:
+                        if len(repos) >= max_repos:
+                            break
+                        repo_data = {
+                            "id": item["id"],
+                            "full_name": item["full_name"],
+                            "name": item["name"],
+                            "owner_login": item["owner"]["login"],
+                            "description": item.get("description", ""),
+                            "topics": item.get("topics", []),
+                            "language": item.get("language"),
+                            "stars": item["stargazers_count"],
+                            "forks": item["forks_count"],
+                            "open_issues": item["open_issues_count"],
+                            "pushed_at": item["pushed_at"],
+                            "created_at": item["created_at"],
+                            "updated_at": item["updated_at"],
+                            "html_url": item["html_url"],
+                            "api_url": item["url"],
+                            "is_archived": item["archived"],
+                            "is_fork": item["fork"],
+                        }
+                        # Post-filter obvious non-target/meta repos
+                        if language and repo_data.get("language") and str(repo_data.get("language")).lower() != language.lower():
+                            continue
+                        if str(repo_data.get("name") or "").lower() == ".github":
+                            continue
+                        # De-duplicate by id
+                        if any(r.get("id") == repo_data["id"] for r in repos):
+                            continue
+                        repos.append(repo_data)
+                        repos_added_this_page += 1
+
+                    # Check if we should continue to next page
+                    if repos_added_this_page == 0:
+                        low_yield_pages_in_a_row += 1
+                        logger.info(f"No useful repos added from page {page}, low yield streak: {low_yield_pages_in_a_row}")
+                    else:
+                        low_yield_pages_in_a_row = 0
+                        logger.info(f"Added {repos_added_this_page} repos from page {page}")
+
                     page += 1
-                    continue
-                else:
-                    low_yield_pages_in_a_row = 0  # Reset on successful page
 
-                repos_added_this_page = 0
-                # concise page log with counts
-                try:
-                    logger.info(
-                        "🔎 GitHub search page=%d per_page=%d -> repos=%d",
-                        page,
-                        params.get("per_page", 0),
-                        len(items),
-                        extra={
-                            "structured": {
-                                "event": "github_search",
-                                "page": page,
-                                "per_page": params.get("per_page", 0),
-                                "repos": len(items),
-                                "q": raw_q,
-                            }
-                        },
-                    )
-                except Exception:
-                    pass
-
-                for item in items:
-                    if len(repos) >= max_repos:
+                    # Adaptive stopping conditions
+                    if low_yield_pages_in_a_row >= 2 and page > min_pages:
+                        logger.info(f"Stopping: {low_yield_pages_in_a_row} consecutive low-yield pages")
                         break
 
-                    repo_data = {
-                        "id": item["id"],
-                        "full_name": item["full_name"],
-                        "name": item["name"],
-                        "owner_login": item["owner"]["login"],
-                        "description": item.get("description", ""),
-                        "topics": item.get("topics", []),
-                        "language": item.get("language"),
-                        "stars": item["stargazers_count"],
-                        "forks": item["forks_count"],
-                        "open_issues": item["open_issues_count"],
-                        "pushed_at": item["pushed_at"],
-                        "created_at": item["created_at"],
-                        "updated_at": item["updated_at"],
-                        "html_url": item["html_url"],
-                        "api_url": item["url"],
-                        "is_archived": item["archived"],
-                        "is_fork": item["fork"],
-                    }
-                    # Post-filter obvious non-target/meta repos
-                    if language and repo_data.get("language") and str(repo_data.get("language")).lower() != language.lower():
-                        continue
-                    if str(repo_data.get("name") or "").lower() == ".github":
-                        continue
-                    # De-duplicate by id
-                    if any(r.get("id") == repo_data["id"] for r in repos):
-                        continue
-                    repos.append(repo_data)
-                    repos_added_this_page += 1
-
-                # Check if we should continue to next page
-                if repos_added_this_page == 0:
-                    low_yield_pages_in_a_row += 1
-                    logger.info(f"No useful repos added from page {page}, low yield streak: {low_yield_pages_in_a_row}")
-                else:
-                    low_yield_pages_in_a_row = 0
-                    logger.info(f"Added {repos_added_this_page} repos from page {page}")
-
-                page += 1
-                
-                # Adaptive stopping conditions
-                if low_yield_pages_in_a_row >= 2 and page > min_pages:
-                    logger.info(f"Stopping: {low_yield_pages_in_a_row} consecutive low-yield pages")
-                    break
-                
-                # Small pause between pages to avoid secondary rate limits
-                try:
-                    import asyncio
-                    await asyncio.sleep(0.2)
-                except Exception:
-                    pass
+                    # Small pause between pages to avoid secondary rate limits
+                    try:
+                        import asyncio
+                        await asyncio.sleep(0.2)
+                    except Exception:
+                        pass
 
             # Log final search statistics
             if total_available is not None:
@@ -278,7 +311,7 @@ class SearchGitHubRepos(GitHubTool):
                 success=True,
                 data={"repos": repos, "count": len(repos), "query": q},
                 metadata={
-                    "pages_searched": page - 1, 
+                    "pages_searched": page - 1,
                     "max_requested": max_repos,
                     "total_available": total_available,
                     "low_yield_pages": low_yield_pages_in_a_row
