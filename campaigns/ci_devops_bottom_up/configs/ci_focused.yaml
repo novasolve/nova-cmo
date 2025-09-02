@@ -1,0 +1,33 @@
+version: 1
+
+# CI-focused config for finding workflow maintainers
+
+search:
+  type: repositories
+  query: >
+    language:python stars:10..5000 is:public archived:false
+    path:.github/workflows pytest
+    pushed:>2024-06-01
+  sort: updated
+  order: desc
+  per_page: 50
+
+filters:
+  activity_days: 90
+  skip_without_email: false
+
+limits:
+  max_repos: 100
+  per_repo_prs: 20
+  per_repo_commits: 20
+  max_people: 30
+
+delay: 1.0
+
+enrichment:
+  pull:
+    repo_topics: true
+    releases: true
+    files_presence: true
+    pypi_metadata: false
+  recent_window_days: 90

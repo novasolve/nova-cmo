@@ -1,0 +1,83 @@
+campaign:
+  name: "CI/DevOps Bottom-up Lead Discovery"
+  version: "1.0"
+  description: "GitHub → Python repos with CI activity → map to people"
+
+target_market:
+  focus: "CI/DevOps practitioners and decision makers"
+  geography: "US-focused"
+  company_size: "10-10000 employees"
+
+search_strategy:
+  approach: "bottom-up"
+  source: "GitHub repositories"
+  activity_window: "90 days"
+
+  queries:
+    - "path:.github/workflows language:YAML pytest"
+    - "path:.github/workflows language:YAML tox"
+    - "filename:CODEOWNERS path:.github"
+    - "filename:CODEOWNERS tests"
+
+extraction_targets:
+  workflow_authors:
+    path: ".github/workflows/**"
+    lookback_days: 90
+    min_commits: 1
+
+  test_committers:
+    paths: ["tests/**", "test/**", "testing/**"]
+    lookback_days: 90
+    min_commits: 2
+
+  codeowners:
+    files: ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"]
+    focus_patterns: [".github/workflows", "tests/", "test/"]
+
+classification:
+  directors:
+    keywords:
+      ["cto", "director", "vp", "head of", "principal", "architect", "founder"]
+    signals: ["admin_permissions", "org_member", "high_influence"]
+
+  maintainers:
+    keywords: ["sre", "devops", "ci", "platform", "build", "maintainer"]
+    signals: ["committed_workflows", "committed_tests", "codeowner_workflows"]
+
+filtering:
+  bots:
+    exclude: ["[bot]", "bot", "actions-user", "dependabot", "weblate"]
+
+  contact_quality:
+    require_email: true
+    exclude_noreply: true
+
+  geographic:
+    us_indicators: ["USA", "United States", "California", "New York", "Texas"]
+    exclude_international: true
+
+output:
+  formats: ["csv", "json"]
+  separate_roles: true
+  include_linkedin_queries: true
+  include_signals: true
+
+enrichment:
+  apollo:
+    enabled: false # Set to true if APOLLO_API_KEY available
+    fields: ["phone", "verified_email", "linkedin_url", "company_domain"]
+
+  github:
+    profile_data: true
+    activity_metrics: true
+    organization_membership: true
+
+limits:
+  max_repos: 200
+  max_people_per_repo: 50
+  max_total_people: 2000
+
+rate_limiting:
+  github_delay: 1.0
+  apollo_delay: 0.5
+  respect_limits: true

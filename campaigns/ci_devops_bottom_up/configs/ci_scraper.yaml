@@ -1,0 +1,145 @@
+version: 1.0
+
+# GitHub CI/DevOps Lead Scraper Configuration
+# Focus: Bottom-up discovery of CI practitioners and decision makers
+
+# Search Configuration
+search:
+  # Primary search queries for CI-active repositories
+  queries:
+    - "path:.github/workflows language:YAML pytest pushed:>=2024-06-01"
+    - 'path:.github/workflows language:YAML "pytest -q" pushed:>=2024-06-01'
+    - "path:.github/workflows language:YAML tox pushed:>=2024-06-01"
+    - 'path:.github/workflows language:YAML "github-actions" pushed:>=2024-06-01'
+    - 'filename:CODEOWNERS ".github/workflows"'
+    - 'filename:CODEOWNERS "tests/"'
+
+  # Additional filters
+  min_stars: 10
+  max_stars: 10000
+  languages: ["Python", "TypeScript", "JavaScript", "Go", "Java"]
+
+  # Time window for activity
+  activity_window_days: 90
+  pushed_since: "2024-06-01"
+
+# Processing Limits
+limits:
+  max_repos: 200
+  max_leads_per_repo: 20
+  max_total_leads: 2000
+
+# Signal Extraction
+signals:
+  workflow_commits:
+    enabled: true
+    lookback_days: 90
+    min_commits: 1
+
+  test_commits:
+    enabled: true
+    lookback_days: 90
+    min_commits: 2
+    test_paths: ["tests/", "test/", "testing/", "__tests__/"]
+
+  codeowners:
+    enabled: true
+    ci_patterns: [".github/workflows", "tests/", "test/", "*.yml", "*.yaml"]
+
+# Scoring Configuration
+scoring:
+  ci_expertise:
+    workflow_commits_weight: 40
+    test_commits_weight: 30
+    codeowners_weight: 20
+    permissions_weight: 10
+
+  decision_maker:
+    admin_permission: 40
+    maintain_permission: 30
+    org_member: 20
+    follower_influence: 15
+    seniority_bio: 10
+
+  # Overall scoring weights
+  weights:
+    ci_expertise: 60
+    decision_maker: 40
+
+# Role Classification
+roles:
+  director:
+    min_decision_maker_score: 60
+    indicators: ["cto", "director", "vp", "head of", "principal", "architect"]
+
+  maintainer:
+    min_ci_expertise_score: 50
+    indicators: ["maintainer", "core contributor", "lead developer"]
+
+# Tier Thresholds
+tiers:
+  A: 70 # High-priority targets
+  B: 50 # Medium-priority targets
+  C: 0 # Lower-priority targets
+
+# Filtering
+filters:
+  # Exclude certain signal types
+  exclude_signals: []
+
+  # Minimum activity requirements
+  min_followers: 5
+  min_public_repos: 3
+
+  # Geographic filtering (if location available)
+  preferred_locations:
+    [
+      "United States",
+      "Canada",
+      "United Kingdom",
+      "Germany",
+      "Netherlands",
+      "Australia",
+    ]
+
+  # Company filtering
+  exclude_companies: ["GitHub", "Microsoft", "Google", "Amazon"] # Too big to target effectively
+
+  # Bot detection
+  exclude_bots: true
+  bot_indicators: ["bot", "automation", "[bot]", "dependabot"]
+
+# Rate Limiting
+rate_limiting:
+  delay_between_repos: 1.0
+  delay_between_users: 0.2
+  delay_between_requests: 0.1
+
+  # Backoff strategy
+  max_retries: 3
+  backoff_factor: 2.0
+
+# Output Configuration
+output:
+  include_fields: "all" # 'all', 'essential', 'minimal'
+
+  # Separate outputs by role
+  separate_by_role: true
+
+  # Export formats
+  formats: ["csv", "json"]
+
+  # LinkedIn query generation
+  generate_linkedin_queries: true
+
+# Compliance
+compliance:
+  respect_rate_limits: true
+  include_compliance_notes: true
+  gdpr_compliant: true
+
+# Cache Configuration
+cache:
+  enabled: true
+  ttl_hours: 24
+  cache_dir: ".cache/ci_scraper"
