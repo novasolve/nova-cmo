@@ -1,3 +1,6 @@
 [submodule "_nova-cmo"]
 	path = _nova-cmo
 	url = file:///Users/seb/leads/_nova-cmo_mirror.git
+[submodule "launch-campaign"]
+	path = launch-campaign
+	url = ./launch-campaign
