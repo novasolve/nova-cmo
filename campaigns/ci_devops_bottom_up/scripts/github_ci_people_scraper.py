@@ -646,7 +646,10 @@ def run(
     for repo in pbar:
         full = repo["full_name"]
         org = repo.get("owner", {}).get("login", "")
-        print(f"\n📦 {full}  ⭐ {repo.get('stargazers_count',0)}  ({repo.get('language')})")
+        
+        # Use tqdm.write() instead of print() to avoid messing up progress bars
+        if verbose:
+            tqdm.write(f"📦 {full}  ⭐ {repo.get('stargazers_count',0)}  ({repo.get('language')})")
 
         since_workflows_iso = to_iso(utc_now() - timedelta(days=90))
         since_tests_iso = to_iso(utc_now() - timedelta(days=180))
@@ -657,7 +660,7 @@ def run(
         codeowners = owners_from_codeowners(codeowners_raw) if codeowners_raw else set()
 
         if verbose:
-            print(f"  • workflow committers (90d): {len(wf_committers)}  |  top test committers (180d): {len(top_test)}  |  codeowners: {len(codeowners)}")
+            tqdm.write(f"  • workflow committers (90d): {len(wf_committers)}  |  top test committers (180d): {len(top_test)}  |  codeowners: {len(codeowners)}")
 
         signals: Dict[str, List[str]] = defaultdict(list)
         for u in wf_committers:
@@ -716,16 +719,18 @@ def run(
                     _tick_leads_bar(leads_with_email_count)
                 
                 if target_leads and len(unique_people_global) >= target_leads:
-                    print(f"\n✅ Target reached: {target_leads} unique people.")
+                    tqdm.write(f"\n✅ Target reached: {target_leads} unique people.")
                     leads_bar.close()
+                    pbar.close()
                     f.close()
                     return
 
         human_sleep(0.4)
 
     leads_bar.close()
+    pbar.close()
     f.close()
-    print(f"\n✅ Done. Wrote {out_csv}")
+    tqdm.write(f"\n✅ Done. Wrote {out_csv}")
 
 def main():
     p = argparse.ArgumentParser(description="Find CI maintainers/director-like contacts from GitHub only.")

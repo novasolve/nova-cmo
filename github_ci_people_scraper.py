@@ -297,6 +297,14 @@ def guess_role(bio: str, company: str) -> str:
 
 # ---------- AI/Python Detection Functions
 
+STAR_BUCKETS = [
+    (10000, "10k+"),
+    (5000, "5k–9.9k"),
+    (1000, "1k–4.9k"),
+    (100, "100–999"),
+    (0, "<100"),
+]
+
 AI_KEYWORDS = [
     "torch", "torchvision", "torchaudio", "transformers", "diffusers", "accelerate", "trl",
     "sentencepiece", "jax", "flax", "tensorflow", "keras", "onnx", "onnxruntime",
@@ -326,6 +334,168 @@ def repo_has_python_files(gh, full_name: str) -> bool:
             continue
     return False
 
+def _has_file(gh_session, headers, full_name: str, path: str) -> bool:
+    try:
+        r = gh_session.get(f"https://api.github.com/repos/{full_name}/contents/{path}", headers=headers, timeout=10)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+def _code_search_total(gh_session, headers, q: str) -> int:
+    try:
+        r = gh_session.get("https://api.github.com/search/code", headers=headers, params={"q": q, "per_page": 1}, timeout=10)
+        if r.status_code == 200:
+            return (r.json() or {}).get("total_count", 0)
+    except Exception:
+        pass
+    return 0
+
+def detect_dependabot(gh_session, headers, full_name: str) -> bool:
+    return _has_file(gh_session, headers, full_name, ".github/dependabot.yml")
+
+def detect_renovate(gh_session, headers, full_name: str) -> bool:
+    return (_has_file(gh_session, headers, full_name, "renovate.json") or 
+            _has_file(gh_session, headers, full_name, ".github/renovate.json") or 
+            _has_file(gh_session, headers, full_name, ".github/renovate.json5"))
+
+def detect_notebooks(gh_session, headers, full_name: str) -> bool:
+    q = f'repo:{full_name} extension:ipynb'
+    return _code_search_total(gh_session, headers, q) > 0
+
+def detect_gpu_ci_hints(gh_session, headers, full_name: str) -> bool:
+    q = (
+        f'repo:{full_name} path:.github/workflows '
+        f'(cuda OR "nvidia-smi" OR cudatoolkit OR "pip install torch --index-url")'
+    )
+    return _code_search_total(gh_session, headers, q) > 0
+
+def detect_ai_signals(gh_session, headers, full_name: str) -> int:
+    # count how many distinct AI keywords appear in common dependency files
+    kw_query = " OR ".join(AI_KEYWORDS)
+    q = (
+        f'repo:{full_name} '
+        f'filename:requirements.txt filename:pyproject.toml filename:setup.cfg filename:setup.py '
+        f'({kw_query})'
+    )
+    return min(10, _code_search_total(gh_session, headers, q))  # cap for sanity
+
+def detect_copilot_hint(gh_session, headers, full_name: str) -> bool:
+    # There's no public API to see Copilot enablement; use light heuristics.
+    q = f'repo:{full_name} (copilot) (in:file OR in:readme OR path:.github/workflows)'
+    return _code_search_total(gh_session, headers, q) > 0
+
+def score_repo(repo: dict, signals: dict) -> float:
+    # small, explainable score to rank preview list with AI/LLM bias
+    import math
+    stars = repo.get("stargazers_count", 0)
+    pushed = repo.get("pushed_at")
+    recency = 0.0
+    try:
+        if pushed:
+            dt = datetime.fromisoformat(pushed.replace("Z", "+00:00"))
+            days = max(1, (datetime.utcnow().replace(tzinfo=timezone.utc) - dt).days)
+            recency = 1.0 / math.log2(days + 1.5)  # more weight if recently pushed
+    except Exception:
+        pass
+    
+    base_score = (
+        1.8 * math.log10(max(1, stars)) +
+        2.2 * min(1, signals["ai_hits"]/3) +
+        1.0 * (1 if signals["gpu_ci"] else 0) +
+        0.5 * (1 if signals["notebooks"] else 0) +
+        0.4 * (1 if signals["dependabot"] else 0) +
+        0.2 * (1 if signals["renovate"] else 0) +
+        1.5 * recency
+    )
+    
+    # LLM stack weighting - extra bias toward LLM infra
+    llm_boost = 0
+    if signals["ai_hits"] >= 2:  # Strong AI signal
+        llm_boost = 0.5
+    
+    # Extra boost for high-value LLM keywords
+    llm_keywords = ["transformers", "vllm", "llama-index", "langchain", "bitsandbytes", "triton"]
+    # Note: In a real implementation, you'd re-check the repo content for these specific keywords
+    # For now, we'll use the ai_hits count as a proxy
+    if signals["ai_hits"] >= 3:  # Very strong AI signal likely includes LLM keywords
+        llm_boost += 0.3
+    
+    return base_score + llm_boost
+
+def discovery_preview(session, headers, repos, top_n=150):
+    rows = []
+    for r in repos[:top_n]:
+        full = r["full_name"]
+        sig = {
+            "dependabot": detect_dependabot(session, headers, full),
+            "renovate": detect_renovate(session, headers, full),
+            "notebooks": detect_notebooks(session, headers, full),
+            "gpu_ci": detect_gpu_ci_hints(session, headers, full),
+            "ai_hits": detect_ai_signals(session, headers, full),
+            "copilot_hint": detect_copilot_hint(session, headers, full),  # heuristic
+        }
+        s = score_repo(r, sig)
+        rows.append((s, r, sig))
+
+    # Rank by score
+    rows.sort(key=lambda x: x[0], reverse=True)
+
+    # Bucket by stars for display
+    buckets = {b[1]: [] for b in STAR_BUCKETS}
+    for score, repo, sig in rows:
+        st = repo.get("stargazers_count", 0)
+        label = "<100"
+        for thresh, name in STAR_BUCKETS:
+            if st >= thresh:
+                label = name
+                break
+        buckets[label].append((score, repo, sig))
+
+    print("\n🔎 Discovery preview (ranked within star buckets):")
+    for label in ["10k+", "5k–9.9k", "1k–4.9k", "100–999", "<100"]:
+        items = buckets[label][:15]  # show top few per bucket
+        if not items:
+            continue
+        print(f"\n⭐ {label} — {len(buckets[label])} repos")
+        for score, repo, sig in items:
+            lang = repo.get("language") or ""
+            stars = repo.get("stargazers_count", 0)
+            name = repo["full_name"]
+            flags = []
+            if sig["ai_hits"]: flags.append(f"AIx{sig['ai_hits']}")
+            if sig["gpu_ci"]: flags.append("GPU-CI")
+            if sig["notebooks"]: flags.append("NB")
+            if sig["dependabot"]: flags.append("Dependabot")
+            if sig["renovate"]: flags.append("Renovate")
+            if sig["copilot_hint"]: flags.append("Copilot(?)")
+            print(f"• {name:50} ⭐ {stars:>6}  ({lang})  [{', '.join(flags) or '—'}]")
+
+def write_discovery_csv(rows, path="data/discovery_repos.csv"):
+    import csv, os
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=[
+            "full_name","stars","language","updated_at","score",
+            "ai_hits","gpu_ci","notebooks","dependabot","renovate","copilot_hint","html_url"
+        ])
+        w.writeheader()
+        for score, repo, sig in rows:
+            w.writerow({
+                "full_name": repo["full_name"],
+                "stars": repo.get("stargazers_count", 0),
+                "language": repo.get("language") or "",
+                "updated_at": repo.get("pushed_at"),
+                "score": round(score, 3),
+                "ai_hits": sig["ai_hits"],
+                "gpu_ci": sig["gpu_ci"],
+                "notebooks": sig["notebooks"],
+                "dependabot": sig["dependabot"],
+                "renovate": sig["renovate"],
+                "copilot_hint": sig["copilot_hint"],
+                "html_url": repo.get("html_url"),
+            })
+    print(f"\n💾 Wrote discovery CSV → {path}")
+
 def repo_has_ai_signals(gh, full_name: str) -> bool:
     # Check dependency files for AI keywords (fast, low rate impact)
     for fname in DEP_FILES:
@@ -351,6 +521,8 @@ def run(
     find_emails: bool,
     verbose: bool,
     target_leads: int = 0,
+    discover_only: bool = False,
+    discover_top: int = 150,
 ):
     tokens = collect_tokens()
     gh = GHClient(tokens)
@@ -405,6 +577,36 @@ def run(
     picked = filtered[:max_repos]
     print(f"• After Python+AI filters: {len(picked)} repos")
 
+    # Discovery preview mode
+    if discover_only or discover_top:
+        print("\n🔍 Running discovery preview...")
+        # Build session for discovery functions
+        session = build_session()
+        headers = HEADERS.copy()
+        
+        # Build ranked rows for discovery
+        ranked = []
+        for r in picked[:discover_top]:
+            full = r["full_name"]
+            sig = {
+                "dependabot": detect_dependabot(session, headers, full),
+                "renovate": detect_renovate(session, headers, full),
+                "notebooks": detect_notebooks(session, headers, full),
+                "gpu_ci": detect_gpu_ci_hints(session, headers, full),
+                "ai_hits": detect_ai_signals(session, headers, full),
+                "copilot_hint": detect_copilot_hint(session, headers, full),
+            }
+            ranked.append((score_repo(r, sig), r, sig))
+
+        # Sort by score and show preview
+        ranked.sort(key=lambda x: x[0], reverse=True)
+        discovery_preview(session, headers, [r for _, r, _ in ranked], top_n=len(ranked))
+        write_discovery_csv(ranked, path="data/discovery_repos.csv")
+
+        if discover_only:
+            print("\n🏁 Discovery complete. Use without --discover-only to scrape people.")
+            return
+
     # Prepare CSV
     os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
     fieldnames = [
@@ -421,7 +623,18 @@ def run(
     people_seen_repo_user: Set[Tuple[str, str]] = set()  # (repo_full_name, login)
     unique_people_global: Set[str] = set()
 
-    pbar = tqdm(picked, desc=f"Processing repos ({len(picked)})", unit="repo")
+    # Initialize leads progress bar
+    leads_with_email_count = 0
+    target_for_progress = target_leads if target_leads > 0 else 100
+    leads_bar = tqdm(total=target_for_progress, desc="Leads 0%", position=0, leave=True)
+
+    def _tick_leads_bar(current):
+        pct = int(100 * min(1.0, current / max(1, target_for_progress)))
+        leads_bar.set_description(f"Leads {current}/{target_for_progress} ({pct}%)")
+        leads_bar.n = min(current, target_for_progress)
+        leads_bar.refresh()
+
+    pbar = tqdm(picked, desc=f"Processing repos ({len(picked)})", unit="repo", position=1)
 
     def _update_postfix():
         if target_leads and target_leads > 0:
@@ -433,7 +646,10 @@ def run(
     for repo in pbar:
         full = repo["full_name"]
         org = repo.get("owner", {}).get("login", "")
-        print(f"\n📦 {full}  ⭐ {repo.get('stargazers_count',0)}  ({repo.get('language')})")
+        
+        # Use tqdm.write() instead of print() to avoid messing up progress bars
+        if verbose:
+            tqdm.write(f"📦 {full}  ⭐ {repo.get('stargazers_count',0)}  ({repo.get('language')})")
 
         since_workflows_iso = to_iso(utc_now() - timedelta(days=90))
         since_tests_iso = to_iso(utc_now() - timedelta(days=180))
@@ -444,7 +660,7 @@ def run(
         codeowners = owners_from_codeowners(codeowners_raw) if codeowners_raw else set()
 
         if verbose:
-            print(f"  • workflow committers (90d): {len(wf_committers)}  |  top test committers (180d): {len(top_test)}  |  codeowners: {len(codeowners)}")
+            tqdm.write(f"  • workflow committers (90d): {len(wf_committers)}  |  top test committers (180d): {len(top_test)}  |  codeowners: {len(codeowners)}")
 
         signals: Dict[str, List[str]] = defaultdict(list)
         for u in wf_committers:
@@ -496,15 +712,25 @@ def run(
             if login not in unique_people_global:
                 unique_people_global.add(login)
                 _update_postfix()
+                
+                # Update leads with email progress
+                if email and email.strip() and 'noreply' not in email.lower():
+                    leads_with_email_count += 1
+                    _tick_leads_bar(leads_with_email_count)
+                
                 if target_leads and len(unique_people_global) >= target_leads:
-                    print(f"\n✅ Target reached: {target_leads} unique people.")
+                    tqdm.write(f"\n✅ Target reached: {target_leads} unique people.")
+                    leads_bar.close()
+                    pbar.close()
                     f.close()
                     return
 
         human_sleep(0.4)
 
+    leads_bar.close()
+    pbar.close()
     f.close()
-    print(f"\n✅ Done. Wrote {out_csv}")
+    tqdm.write(f"\n✅ Done. Wrote {out_csv}")
 
 def main():
     p = argparse.ArgumentParser(description="Find CI maintainers/director-like contacts from GitHub only.")
@@ -515,6 +741,8 @@ def main():
     p.add_argument("--min-stars", type=int, default=30, help="Minimum repo stars.")
     p.add_argument("--no-email", dest="find_emails", action="store_false", help="Do not try to pull commit/profile emails.")
     p.add_argument("--target-leads", type=int, default=0, help="Stop once this many unique people have been found (shows % progress).")
+    p.add_argument("--discover-only", action="store_true", help="Show AI/Python repo preview and exit")
+    p.add_argument("--discover-top", type=int, default=150, help="How many repos to preview before scraping people")
     p.add_argument("--verbose", action="store_true")
     args = p.parse_args()
 
@@ -528,6 +756,8 @@ def main():
         find_emails=args.find_emails,
         verbose=args.verbose,
         target_leads=args.target_leads,
+        discover_only=args.discover_only,
+        discover_top=args.discover_top,
     )
 
 if __name__ == "__main__":
