@@ -1,0 +1,246 @@
+- key: OS-4200
+  title: "Mid‑Market SaaS (100–1k emp) — Platform Engineers"
+  campaign_key: c11_platform_midmarket
+  labels: [Campaign, Outbound, platform, midmarket, saas]
+  description: |
+    Segment per Instantly SuperSearch:
+    - One lead/company; Skip already owned
+    - Titles contains: Platform, Developer Productivity, DevEx, Developer Experience, Developer Effectiveness, Developer Enablement, SRE, Build, Release, Engineering Manager
+    - Levels: Senior / Staff / Principal / Manager / Director
+    - Industries: Software & Internet, SaaS
+    - Exclude (Title/Company): Consultant, Contractor, Agency, Services, MSP, VAR, Staffing, Recruiter, Instructor, Training, Evangelist, Advocate, Partnerships, Partner
+  checklist:
+    - "Create c11 segment with filters and save in Instantly"
+    - "QA 25 random leads for title/seniority/industry fit"
+    - "Build tailored DevEx/Platform messaging (2-subject A/B)"
+    - "Seed send to 50 leads; verify ≥ 10% qualified replies"
+  acceptance: "Segment created and ≥ 10% qualified reply rate on seed."
+
+- key: OS-4200-1
+  parent_key: OS-4200
+  title: "Define Instantly segment & filters"
+  labels: [Campaign, Outbound, platform]
+  checklist:
+    - "Enable one lead/company and skip already owned."
+    - "Apply titles, seniority levels, industries, and exclusions."
+    - "Save as 'OS-4200 Platform Eng Mid‑Market' in Instantly."
+  acceptance: "Segment saved; sample count ≥ 2,000 with correct filters."
+
+- key: OS-4200-2
+  parent_key: OS-4200
+  title: "Validate 25 lead samples for title/fit correctness"
+  labels: [QA, Outbound]
+  checklist:
+    - "Randomize 25 entries; check titles include Platform/SRE/DevEx variants."
+    - "Confirm levels include Senior/Staff/Principal/Manager/Director."
+    - "Verify industry contains Software & Internet or SaaS."
+    - "Ensure exclusions are not present in title/company."
+  acceptance: "≥ 90% pass rate; document mismatches and adjust filters."
+
+- key: OS-4200-3
+  parent_key: OS-4200
+  title: "Prepare outreach sequence and personalization tokens"
+  labels: [Messaging, Outbound]
+  checklist:
+    - "Create 2 subject variants (DevEx vs Platform reliability)."
+    - "Draft body with CI flake mitigation value prop for platform teams."
+    - "Insert tokens: {{company}}, {{workflow}}, {{build_time}}, {{recent_signal}}."
+  acceptance: "Sequence ready; tokens validated in 5 previews."
+
+- key: OS-4200-4
+  parent_key: OS-4200
+  title: "Seed send to 50 leads"
+  labels: [Experiment, Outbound]
+  checklist:
+    - "Upload 50 qualified leads; verify dedupe and domain ownership."
+    - "Run send with strict rate limits and logging."
+    - "Track replies; categorize qualified vs out-of-ICP."
+  acceptance: ">= 10% qualified reply rate and <3% hard bounces."
+
+- key: OS-4200-5
+  parent_key: OS-4200
+  title: "Report results and finalize segment"
+  labels: [Reporting]
+  checklist:
+    - "Summarize open/reply/bounce rates; subject A/B winner."
+    - "Document ICP filter adjustments if needed."
+    - "Greenlight rollout to full volume."
+  acceptance: "Report delivered; segment approved or changes queued."
+
+version: 1
+defaults:
+  labels:
+    base: [Campaign, Outbound]
+issues:
+  - key: C1
+    title: 'Launch "Python‑GHA — PR Rescue"'
+    campaign_key: c1_python_pr_rescue
+    description: "Ship our flagship PR‑Rescue to Python teams with recent CI failures. Use c1_python_pr_rescue in campaigns.yaml."
+    labels: [Campaign, Outbound, python]
+    checklist:
+      - "Build audience slice: Python + Actions + failure signals (SuperSearch recipe)."
+      - "Run identity → research → AI pipeline; sanity‑check 25 samples."
+      - "QA opener gating (no evidence → neutral); QA link to repo."
+      - "Create Instantly campaign (A/B subjects); load step1/2/3."
+      - "Warmup seed send (25), review replies, fix edges, then scale."
+    acceptance: "≥ 10% reply‑rate on seed; at least 2 PR trial acceptances."
+
+  - key: C2
+    title: 'Launch "Python‑GHA — Thought Leader Demo"'
+    campaign_key: c2_python_thought_leader
+    labels: [Campaign, Outbound, python]
+    checklist:
+      - "Enable deep‑research + company‑asset fallback."
+      - "Validate 20 leads with non‑empty asset_opener_line."
+      - "Templates reference asset_opener_line; no pain claims."
+      - "Instantly campaign with softer CTA."
+    acceptance: "≥ 8% demo acceptance on seed set."
+
+  - key: C3
+    title: 'Launch "Node‑GHA — PR Rescue"'
+    campaign_key: c3_node_pr_rescue
+    labels: [Campaign, Outbound, node]
+    checklist:
+      - "Turn off python_preferred filter; add Node heuristics (package.json or Jest in workflows)."
+      - "QA 25 samples; verify failure gating."
+      - "Instantly campaign live."
+    acceptance: "Node reply‑rate within 2pp of Python (C1)."
+
+  - key: C4
+    title: 'Launch "Polyglot Monorepo — CI Pilot"'
+    campaign_key: c4_polyglot_monorepo
+    labels: [Campaign, Outbound, monorepo]
+    checklist:
+      - "Filter for CODEOWNERS + Actions + any pain."
+      - "Customize opener to scale context."
+      - "Create pilot‑offer variant email set."
+    acceptance: "≥ 5% pilot starts."
+
+  - key: C5
+    title: 'Launch "OSS Maintainer — PR Contribution"'
+    campaign_key: c5_oss_patch
+    labels: [Campaign, Outbound, oss]
+    checklist:
+      - "Slice for OSS (no company domain) + failures."
+      - 'Swap CTA to "free patch PR" + MIT OSS mention.'
+      - "Track merged PRs + stars."
+    acceptance: "3 merged PRs or 1 notable project."
+
+  - key: C6
+    title: 'Launch "DevOps Champion — CI Health Check"'
+    campaign_key: c6_devops_health_check
+    labels: [Campaign, Outbound, devops]
+    checklist:
+      - "Titles filter (DevOps, Platform, CI Lead)."
+      - "Org activity evidence (recent runs)."
+      - "Demo/brainstorm CTA; calendar link."
+    acceptance: "≥ 10% meetings booked on positives."
+
+  - key: C7
+    title: 'Launch "Flaky Tests — Flake Buster"'
+    campaign_key: c7_flake_buster
+    labels: [Campaign, Outbound, flaky]
+    checklist:
+      - "Target flake_reruns ≥ 1."
+      - "Flake‑focused opener + guide attachment (or link)."
+      - "Offer PR to stabilize + share 1‑pager."
+    acceptance: "≥ 3% flake‑fix trials."
+
+  - key: C8
+    title: 'Launch "Proactive Fit — Keep It Green"'
+    campaign_key: c8_proactive_fit
+    labels: [Campaign, Outbound, nurture]
+    checklist:
+      - "Fit + activity; exclude recent signals."
+      - "Neutral benefit opener; soft CTA."
+      - "Tag as nurture in CRM."
+    acceptance: "≥ 5% opt‑in demos or nurture replies."
+
+  - key: C9
+    title: 'Launch "High‑Reach Influencer — Beta Invite"'
+    campaign_key: c9_influencer_beta
+    labels: [Campaign, Outbound, influencer]
+    checklist:
+      - "Filter followers ≥ 1000 OR repo stars threshold."
+      - "Asset nod if present; exclusive beta tone."
+      - "Track quotes/feedback."
+    acceptance: "≥ 5 beta starts, 3 quotable takes."
+
+  - key: C10
+    title: 'Launch "Java/.NET — PR Offer"'
+    campaign_key: c10_jvm_dotnet_pr
+    labels: [Campaign, Outbound, java, dotnet]
+    checklist:
+      - "Non‑Python stacks; Actions + recent failures."
+      - "Swap language tokens in templates."
+      - "QA 20 samples for correct gating."
+    acceptance: "≥ 2 PR trials in first 200 sends."
+
+  - key: OS-4200
+    title: "Mid‑Market SaaS (100–1k emp) — Platform Engineers"
+    campaign_key: c11_platform_midmarket
+    labels: [Campaign, Outbound, platform, midmarket, saas]
+    description: |
+      Segment per Instantly SuperSearch:
+      - One lead/company; Skip already owned
+      - Titles contains: Platform, Developer Productivity, DevEx, Developer Experience, Developer Effectiveness, Developer Enablement, SRE, Build, Release, Engineering Manager
+      - Levels: Senior / Staff / Principal / Manager / Director
+      - Industries: Software & Internet, SaaS
+      - Exclude (Title/Company): Consultant, Contractor, Agency, Services, MSP, VAR, Staffing, Recruiter, Instructor, Training, Evangelist, Advocate, Partnerships, Partner
+      Source: https://linear.app/nova-solve/issue/OS-4200/mid-market-saas-100-1k-emp-platform-engineers
+    checklist:
+      - "Define Instantly segment with titles, levels, industries, and exclusions."
+      - "Enable one lead/company and skip already owned."
+      - "Run enrichment pipeline and QA 25 leads."
+      - "Create Instantly campaign with templates mapped to c11."
+    acceptance: "Segment created and ≥ 10% qualified reply rate on seed."
+
+  - key: OS-4200-1
+    parent_key: OS-4200
+    title: "Define Instantly segment & filters"
+    labels: [Campaign, Outbound, platform]
+    checklist:
+      - "Enable one lead/company and skip already owned."
+      - "Apply titles, seniority levels, industries, and exclusions."
+      - "Save as 'OS-4200 Platform Eng Mid‑Market' in Instantly."
+    acceptance: "Segment saved; sample count ≥ 2,000 with correct filters."
+
+  - key: OS-4200-2
+    parent_key: OS-4200
+    title: "Validate 25 lead samples for title/fit correctness"
+    labels: [QA, Outbound]
+    checklist:
+      - "Export 25 random leads from the segment."
+      - "Spot‑check titles, levels, industry; confirm exclusions work."
+      - "Adjust filters if false‑positives > 10%."
+    acceptance: "≤ 10% false‑positives; filters locked."
+
+  - key: OS-4200-3
+    parent_key: OS-4200
+    title: "Run enrichment pipeline and build merge tags"
+    labels: [Data, Pipeline]
+    checklist:
+      - "Normalize CSV to people.csv."
+      - "Run GitHub identity → opener_enricher → build_merge_tags."
+      - "Produce merge_tags.csv with repo‑aware fields."
+    acceptance: "merge_tags.csv generated; 90%+ leads contactable."
+
+  - key: OS-4200-4
+    parent_key: OS-4200
+    title: "Create Instantly sequence + templates for c11"
+    labels: [Campaign, Copy]
+    checklist:
+      - "Map subjects/body to c11 templates."
+      - "Load merge tags; verify previews for 10 leads."
+      - "Set warm‑up schedule and caps."
+    acceptance: "Sequence ready; previews look natural."
+
+  - key: OS-4200-5
+    parent_key: OS-4200
+    title: "Seed send (25) and iterate"
+    labels: [Execution]
+    checklist:
+      - "Send to 25 leads across inboxes."
+      - "Review replies; refine segment or copy if needed."
+      - "Prepare scale plan on success."
+    acceptance: "≥ 10% qualified replies on seed; go/no‑go decided."

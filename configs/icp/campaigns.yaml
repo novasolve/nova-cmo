@@ -1,0 +1,273 @@
+# Campaign segments
+
+- key: c11_platform_midmarket
+  name: "Mid‑Market SaaS — Platform Engineering (100–1k emp)"
+  icp:
+    uses_actions: true
+    company_size: "100-1000"
+    industries: ["Software & Internet", "SaaS"]
+    personas:
+      titles_contains:
+        - "Platform"
+        - "Developer Productivity"
+        - "DevEx"
+        - "Developer Experience"
+        - "Developer Effectiveness"
+        - "Developer Enablement"
+        - "SRE"
+        - "Build"
+        - "Release"
+        - "Engineering Manager"
+      levels: ["Senior", "Staff", "Principal", "Manager", "Director"]
+    exclude_title_or_company:
+      - "Consultant"
+      - "Contractor"
+      - "Agency"
+      - "Services"
+      - "MSP"
+      - "VAR"
+      - "Staffing"
+      - "Recruiter"
+      - "Instructor"
+      - "Training"
+      - "Evangelist"
+      - "Advocate"
+      - "Partnerships"
+      - "Partner"
+  instantly:
+    one_lead_per_company: true
+    skip_already_owned: true
+    saved_segment_name: "OS-4200 Platform Eng Mid‑Market"
+  offer: "AlwaysGreen: stabilize CI and reduce flaky tests for platform teams"
+  subjects:
+    {
+      a: "Platform CI flakiness? Quick fix for {{company}}",
+      b: "DevEx: faster green builds for {{company}}",
+    }
+
+version: 1
+defaults:
+  email:
+    subject_a_when_repo: "Sample PR on {{trial_repo}}?"
+    subject_b: "Red PRs → green (≤40 LOC)"
+    neutral_opener_tpl: "Quick idea to keep PRs green{{#company}} at {{company}}{{/company}} — ok if I try a tiny sample PR?"
+  gating:
+    recent_signal:
+      or:
+        - open_failing_prs: ">= 1"
+        - red_runs_30d: ">= 3"
+        - last_run_status: "== failure"
+    fit_min:
+      uses_actions: true
+  fields:
+    use_asset_opener_if_no_pain: true
+    prefer_repo_opener_if_strong_pain: true
+
+campaigns:
+  - key: c1_python_pr_rescue
+    name: "Python-GHA — PR Rescue"
+    icp:
+      stack: python
+      company_size: "15-800"
+      must:
+        uses_actions: true
+    triggers:
+      and:
+        - uses_actions: true
+        - recent_signal: true
+    offer: "Run AlwaysGreen and open a fix PR on {{trial_repo}}"
+    openers:
+      repo_pain: "{{ofp}} open PRs failing checks{{#rr}}, {{rr}} red runs in 30d{{/rr}} on {{trial_repo}} last week."
+      neutral_fallback: "{{defaults.email.neutral_opener_tpl}}"
+    subjects:
+      a_when_repo: "{{defaults.email.subject_a_when_repo}}"
+      b: "{{defaults.email.subject_b}}"
+    followups:
+      step2: "Short clip + how ≤40 LOC patches work"
+      step3: "OSS angle + safety (side branch, never main)"
+    metrics:
+      primary: "PR trial acceptances"
+      target_reply_rate: ">= 10%"
+
+  - key: c2_python_thought_leader
+    name: "Python-GHA — Thought Leader Demo"
+    icp: { stack: python, uses_actions: true }
+    triggers:
+      and:
+        - uses_actions: true
+        - asset_present: true
+    offer: "3‑min demo or CI health check"
+    openers:
+      asset: "{{asset_opener_line}}"
+      neutral_fallback: "Keeping PRs green is a chore — quick idea."
+    subjects:
+      a: "Loved your {{asset_src}} — quick idea"
+      b: "CI green on first try?"
+    metrics: { primary: "Demo acceptances" }
+
+  - key: c3_node_pr_rescue
+    name: "Node-GHA — PR Rescue"
+    icp: { stack: node, uses_actions: true }
+    triggers: { and: [{ uses_actions: true }, { recent_signal: true }] }
+    offer: "Run AlwaysGreen and open a fix PR"
+    subjects:
+      {
+        a_when_repo: "{{defaults.email.subject_a_when_repo}}",
+        b: "{{defaults.email.subject_b}}",
+      }
+
+  - key: c4_polyglot_monorepo
+    name: "Polyglot Monorepo — CI Pilot"
+    icp: { codeowners_present: true, uses_actions: true }
+    triggers:
+      {
+        and:
+          [
+            { uses_actions: true },
+            { or: [{ red_runs_30d: ">= 1" }, { flake_reruns: ">= 1" }] },
+          ],
+      }
+    offer: "Pilot on a safe side branch across 1–2 services"
+    subjects:
+      {
+        a: "CI pilot for {{org}}’s monorepo?",
+        b: "Cut flaky builds in big repos",
+      }
+
+  - key: c5_oss_patch
+    name: "OSS Maintainer — PR Contribution"
+    icp: { oss: true, uses_actions: true }
+    triggers:
+      {
+        and:
+          [
+            { uses_actions: true },
+            {
+              or:
+                [
+                  { open_failing_prs: ">= 1" },
+                  { last_run_status: "== failure" },
+                ],
+            },
+          ],
+      }
+    offer: "Free OSS PR to fix the failing build"
+    subjects:
+      {
+        a: "Patch for your failing CI build?",
+        b: "Making PRs green (OSS edition)",
+      }
+
+  - key: c6_devops_health_check
+    name: "DevOps Champion — CI Health Check"
+    icp:
+      {
+        roles: ["DevOps", "Platform", "CI"],
+        company_size: "50-2000",
+        uses_actions: true,
+      }
+    triggers: { and: [{ uses_actions: true }, { recent_activity: true }] }
+    offer: "15‑min demo or CI brainstorm"
+    subjects:
+      {
+        a: "Idea to keep {{company}}’s builds always green",
+        b: "Self‑healing CI demo?",
+      }
+
+  - key: c7_flake_buster
+    name: "Flaky Tests — Flake Buster"
+    icp: { uses_actions: true }
+    triggers: { and: [{ uses_actions: true }, { flake_reruns: ">= 1" }] }
+    offer: "Patch the flaky test + share a 1‑pager"
+    subjects:
+      {
+        a: "Auto‑fix for flaky tests in your CI?",
+        b: "Keep PRs green (even flaky tests)",
+      }
+
+  - key: c8_proactive_fit
+    name: "Proactive Fit — Keep It Green"
+    icp: { uses_actions: true, stack: python }
+    triggers:
+      {
+        and:
+          [
+            { uses_actions: true },
+            { recent_activity: true },
+            { not: { recent_signal: true } },
+          ],
+      }
+    offer: "Safety‑net; quick demo when useful"
+    subjects:
+      {
+        a: "Never see a red PR again?",
+        b: "Maintaining green builds @ {{company}}",
+      }
+
+  - key: c9_influencer_beta
+    name: "High‑Reach Influencer — Beta Invite"
+    icp: { min_followers: 1000, uses_actions: true }
+    triggers: { and: [{ uses_actions: true }, { reach: ">= 1000" }] }
+    offer: "Private beta invite; would value your feedback"
+    subjects:
+      {
+        a: "Invitation: AlwaysGreen beta for CI fixes",
+        b: "Quick question from an OSS CI builder",
+      }
+
+  - key: c10_jvm_dotnet_pr
+    name: "Java/.NET — PR Offer"
+    icp: { stack: ["java", "dotnet"], uses_actions: true }
+    triggers: { and: [{ uses_actions: true }, { recent_signal: true }] }
+    offer: "Run AlwaysGreen and open a small fix PR"
+    subjects:
+      {
+        a: "Fix for your {{workflow}} failure?",
+        b: "Green builds for your {{Language}} project",
+      }
+
+  - key: c11_platform_midmarket
+    name: "Mid‑Market SaaS — Platform Engineering (100–1k emp)"
+    icp:
+      uses_actions: true
+      company_size: "100-1000"
+      industries: ["Software & Internet", "SaaS"]
+      personas:
+        titles_contains:
+          - "Platform"
+          - "Developer Productivity"
+          - "DevEx"
+          - "Developer Experience"
+          - "Developer Effectiveness"
+          - "Developer Enablement"
+          - "SRE"
+          - "Build"
+          - "Release"
+          - "Engineering Manager"
+        seniority_levels:
+          ["Senior", "Staff", "Principal", "Manager", "Director"]
+      exclude:
+        title_or_company_contains:
+          - "Consultant"
+          - "Contractor"
+          - "Agency"
+          - "Services"
+          - "MSP"
+          - "VAR"
+          - "Staffing"
+          - "Recruiter"
+          - "Instructor"
+          - "Training"
+          - "Evangelist"
+          - "Advocate"
+          - "Partnerships"
+          - "Partner"
+    instantly:
+      one_lead_per_company: true
+      skip_already_owned: true
+    offer: "CI reliability + developer productivity demo for Platform Engineering"
+    subjects:
+      {
+        a: "Idea for {{company}}’s Platform Eng team",
+        b: "Boost build reliability for your platform",
+      }
