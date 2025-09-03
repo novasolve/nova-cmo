@@ -43,7 +43,7 @@
   <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🟢</text></svg>">
 </head>
-<body data-issue-repo="greenweek-ai/greenweek-site" data-agent="https://github.com/greenweek-ai/rescue-agent">
+<body data-issue-repo="alwaysgreenhq/alwaysgreen" data-agent="https://github.com/alwaysgreenhq/alwaysgreen">
   <div class="container">
     <header>
       <h1>GREEN WEEK: AI FIXING FAILING PULL REQUESTS</h1>
@@ -123,7 +123,7 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
     }
 
     (function initAgentLink(){
-      const href = document.body.dataset.agent || 'https://github.com/greenweek-ai/rescue-agent';
+      const href = document.body.dataset.agent || 'https://github.com/alwaysgreenhq/alwaysgreen';
       const a = document.getElementById('agentLink');
       if (a) a.href = href;
     })();
@@ -163,6 +163,135 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
       tick(); setInterval(tick, 60000);
     }
 
+    function formatTtg(hours){
+      if (hours == null || isNaN(hours)) return '—';
+      const h = Math.floor(Number(hours));
+      const m = Math.round((Number(hours) - h) * 60);
+      return `${h}h ${m}m`;
+    }
+
+    function formatTimeAgo(date){
+      if (!(date instanceof Date) || isNaN(date)) return '—';
+      const ms = Date.now() - date.getTime();
+      const mins = Math.floor(ms/60000);
+      if (mins < 1) return 'Just now';
+      if (mins < 60) return `${mins} min ago`;
+      const hrs = Math.floor(mins/60);
+      if (hrs < 24) return `${hrs} h ago`;
+      const days = Math.floor(hrs/24);
+      return `${days} d ago`;
+    }
+
+    function renderTable(items){
+      const tbody = qs('#prTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+      if (!Array.isArray(items) || !items.length) return;
+
+      const rank = (s) => s === 'GREEN' ? 0 : (s === 'PENDING' ? 1 : 2);
+      items.sort((a,b)=>{
+        const ra = rank(a.status), rb = rank(b.status);
+        if (ra !== rb) return ra - rb;
+        const ta = a.fixed_at ? Date.parse(a.fixed_at) : 0;
+        const tb = b.fixed_at ? Date.parse(b.fixed_at) : 0;
+        return tb - ta;
+      });
+
+      const frag = document.createDocumentFragment();
+      for (const pr of items){
+        const tr = document.createElement('tr');
+
+        const tdRepo = document.createElement('td');
+        const repoSpan = document.createElement('span');
+        repoSpan.className = 'repo-name';
+        repoSpan.textContent = `${pr.owner}/${pr.repo}`;
+        tdRepo.appendChild(repoSpan);
+        tr.appendChild(tdRepo);
+
+        const tdNum = document.createElement('td');
+        const numSpan = document.createElement('span');
+        numSpan.className = 'pr-number';
+        numSpan.textContent = `#${pr.pr_number}`;
+        tdNum.appendChild(numSpan);
+        tr.appendChild(tdNum);
+
+        const tdStatus = document.createElement('td');
+        const badge = document.createElement('span');
+        const status = pr.status || '—';
+        badge.className = 'status-badge ' + (status==='GREEN'?'status-green':status==='FAILED'?'status-failed':'status-pending');
+        badge.textContent = status;
+        tdStatus.appendChild(badge);
+        if (pr.merged) {
+          const merged = document.createElement('span');
+          merged.className = 'merged-indicator';
+          merged.textContent = 'MERGED';
+          tdStatus.appendChild(merged);
+        }
+        tr.appendChild(tdStatus);
+
+        const tdLoc = document.createElement('td');
+        const locSpan = document.createElement('span');
+        locSpan.className = 'loc-count';
+        locSpan.textContent = (Number.isFinite(pr.loc) ? pr.loc : (pr.loc ?? '—'));
+        tdLoc.appendChild(locSpan);
+        tr.appendChild(tdLoc);
+
+        const tdFiles = document.createElement('td');
+        tdFiles.textContent = Number.isFinite(pr.files) ? pr.files : (pr.files ?? '—');
+        tr.appendChild(tdFiles);
+
+        const tdTtg = document.createElement('td');
+        tdTtg.textContent = formatTtg(pr.ttg_hours);
+        tr.appendChild(tdTtg);
+
+        const tdFixed = document.createElement('td');
+        tdFixed.className = 'time-ago';
+        if (pr.fixed_at) {
+          tdFixed.dataset.fixedAt = pr.fixed_at;
+          tdFixed.textContent = formatTimeAgo(new Date(pr.fixed_at));
+        } else {
+          tdFixed.textContent = '—';
+        }
+        tr.appendChild(tdFixed);
+
+        const tdLinks = document.createElement('td');
+        const aOrig = document.createElement('a');
+        aOrig.className = 'pr-link';
+        aOrig.href = `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.pr_number}`;
+        aOrig.target = '_blank'; aOrig.rel = 'noopener noreferrer';
+        aOrig.textContent = 'Original';
+        tdLinks.appendChild(aOrig);
+        if (pr.fix_pr_number) {
+          tdLinks.appendChild(document.createTextNode(' | '));
+          const aFix = document.createElement('a');
+          aFix.className = 'pr-link';
+          aFix.href = `https://github.com/${pr.owner}/${pr.repo}/pull/${pr.fix_pr_number}`;
+          aFix.target = '_blank'; aFix.rel = 'noopener noreferrer';
+          aFix.textContent = 'Fix';
+          tdLinks.appendChild(aFix);
+        }
+        tr.appendChild(tdLinks);
+
+        frag.appendChild(tr);
+      }
+      tbody.appendChild(frag);
+    }
+
+    function updateRowTimeAgo(){
+      document.querySelectorAll('td.time-ago[data-fixed-at]').forEach(td=>{
+        td.textContent = formatTimeAgo(new Date(td.dataset.fixedAt));
+      });
+    }
+
+    function countLast24h(items){
+      const since = Date.now() - 24*60*60*1000;
+      let n = 0;
+      for (const pr of (items||[])){
+        if (pr.status === 'GREEN' && pr.fixed_at && Date.parse(pr.fixed_at) >= since) n++;
+      }
+      return n;
+    }
+
     async function refresh(){
       try{
         const [statsRes, prsRes] = await Promise.all([
@@ -183,13 +312,15 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
         qs('#successRate').textContent = `${rate}%`;
         qs('#medianLoc').textContent = Number(stats.median_loc ?? 0);
         qs('#medianTtg').textContent = `${Number(stats.median_ttg ?? 0)}h`;
-        qs('#today').textContent = Number(stats.rescued_today ?? 0);
+        qs('#today').textContent = Number(stats.rescued_today ?? countLast24h(items));
         qs('#mrr').textContent = `$${Number(stats.mrr ?? 0)}`;
         qs('#rescuedCountLink').textContent = rescued;
 
         const pct = Math.min(100, Math.round(100*rescued/goal));
         qs('#progressBar').style.width = pct + '%';
         qs('#progressText').textContent = `${rescued}/${goal} PRs RESCUED`;
+        renderTable(items);
+        updateRowTimeAgo();
       }catch(err){ console.error('Refresh failed:', err); }
     }
 
@@ -209,6 +340,7 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
     updateCountdown();
     refresh();
     setInterval(refresh, 30000);
+    setInterval(updateRowTimeAgo, 60000);
   </script>
 </body>
 </html>
