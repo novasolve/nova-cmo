@@ -1,0 +1,41 @@
+name: Build GreenWeek Stats
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'artifacts/rescue_ledger.jsonl'
+      - 'scripts/compile_greenweek_stats.py'
+      - 'docs/**'
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile stats
+        run: python scripts/compile_greenweek_stats.py
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
