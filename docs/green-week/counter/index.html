@@ -563,9 +563,12 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
 
         // Copy share link
         function copyShareLink() {
-            const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${document.getElementById('totalFixed').textContent}/100. Every fix ≤40 LOC. Watch live: ${window.location.href}`;
-            navigator.clipboard.writeText(text);
-            alert('Link copied');
+            const rescued = qs('#totalFixed').textContent || '0';
+            const url = (location.protocol === 'file:' || location.hostname === '' || location.hostname === 'localhost')
+              ? 'https://github.com/alwaysgreenhq/alwaysgreen'
+              : location.href;
+            const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${rescued}/100. Every fix ≤40 LOC. Watch live: ${url}`;
+            navigator.clipboard.writeText(text).then(() => alert('Link copied'));
         }
 
         // Update last refresh time

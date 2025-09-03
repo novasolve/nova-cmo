@@ -2,13 +2,13 @@ name: Build GreenWeek Stats
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
     paths:
-      - 'artifacts/rescue_ledger.jsonl'
-      - 'scripts/compile_greenweek_stats.py'
-      - 'docs/**'
+      - "artifacts/rescue_ledger.jsonl"
+      - "scripts/compile_greenweek_stats.py"
+      - "docs/**"
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
       - name: Compile stats
         run: python scripts/compile_greenweek_stats.py
       - name: Upload Pages artifact

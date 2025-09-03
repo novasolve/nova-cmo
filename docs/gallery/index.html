@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
   <title>Green Week | Gallery</title>
   <style>
     body{font-family:'SF Mono',Monaco,'Cascadia Code','Roboto Mono',Consolas,'Courier New',monospace;background:#0a0a0a;color:#e0e0e0;margin:0}
@@ -29,7 +29,7 @@
       </div>
       <div class="nav">
         <a class="btn" href="../">Counter</a>
-        <a class="btn" href="../stats.json" rel="noopener">Stats JSON</a>
+        <a class="btn" href="../stats.json" rel="noopener noreferrer">Stats JSON</a>
         <a class="btn" href="./truth/">Truth Page</a>
       </div>
     </header>
@@ -38,36 +38,40 @@
 
   <script>
     const grid = document.getElementById('grid');
-    const badge = (s) => s==='GREEN'?'green':(s==='FAILED'?'failed':'pending');
+    const badge = (s)=> s==='GREEN' ? 'green' : (s==='FAILED' ? 'failed' : 'pending');
 
-    async function load() {
-      try {
-        const res = await fetch('../prs.json?t='+Date.now(), { cache: 'no-store' });
-        if (!res.ok) throw new Error(res.status + ' ' + res.statusText);
+    async function load(){
+      grid.innerHTML = "<div class='meta'>Loading…</div>";
+      try{
+        const res = await fetch('../prs.json?t='+Date.now(), {cache:'no-store'});
+        if(!res.ok) throw new Error(`HTTP ${res.status}`);
         const items = await res.json();
-
-        items.sort((a,b)=>(b.fixed_at||'').localeCompare(a.fixed_at||''));
-
+        if(!Array.isArray(items) || items.length===0){
+          grid.innerHTML = "<div class='meta'>No rescues yet.</div>";
+          return;
+        }
+        items.sort((a,b)=> (b.fixed_at||'').localeCompare(a.fixed_at||''));
         grid.innerHTML = '';
-        for (const pr of items) {
+        for(const pr of items){
           const owner = pr.owner || '';
-          const repo  = pr.repo || '';
-
+          const repo  = pr.repo  || '';
           const card = document.createElement('div');
           card.className = 'card';
+          const ttg = (pr.ttg_hours ?? pr.ttg ?? null);
           card.innerHTML = `
             <div class="title">${owner}/${repo} <span class="meta">#${pr.pr_number}</span></div>
-            <div><span class="badge ${badge(pr.status)}">${pr.status || 'PENDING'}</span> ${pr.merged ? '<span class="meta">MERGED</span>' : ''}</div>
-            <div class="meta">LOC ${Number(pr.loc||0)} • Files ${Number(pr.files||0)} • TTG ${Number(pr.ttg_hours||0)}h</div>
-            <div class="meta">Fixed: ${pr.fixed_at ? new Date(pr.fixed_at).toLocaleString() : '—'}</div>
+            <div><span class="badge ${badge(pr.status)}">${pr.status||'PENDING'}</span> ${pr.merged?'<span class="meta">MERGED</span>':''}</div>
+            <div class="meta">LOC ${Number(pr.loc??0)} • Files ${Number(pr.files??0)} • TTG ${ttg!==null?Number(ttg)+'h':'—'}</div>
+            <div class="meta">Fixed: ${pr.fixed_at? new Date(pr.fixed_at).toLocaleString() : '—'}</div>
             <div style="margin-top:8px;">
-              <a href="https://github.com/${owner}/${repo}/pull/${pr.pr_number}" target="_blank" rel="noopener">Original</a>
-              ${pr.fix_pr_number ? ' | <a href="https://github.com/'+owner+'/'+repo+'/pull/'+pr.fix_pr_number+'" target="_blank" rel="noopener">Fix</a>' : ''}
+              <a href="https://github.com/${owner}/${repo}/pull/${pr.pr_number}" target="_blank" rel="noopener noreferrer">Original</a>
+              ${pr.fix_pr_number ? ' | <a href="https://github.com/'+owner+'/'+repo+'/pull/'+pr.fix_pr_number+'" target="_blank" rel="noopener noreferrer">Fix</a>' : ''}
             </div>`;
           grid.appendChild(card);
         }
-      } catch (err) {
-        grid.innerHTML = `<div class="meta">Failed to load <code>prs.json</code>: ${String(err).replace(/[<>&]/g,'')}</div>`;
+      }catch(e){
+        console.error(e);
+        grid.innerHTML = "<div class='meta'>Could not load gallery.</div>";
       }
     }
     load();

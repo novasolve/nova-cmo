@@ -1,0 +1,22 @@
+name: update-gallery
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/15 * * * *"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: python scripts/update_gallery.py
+      - name: Commit JSON
+        run: |
+          git config user.email "actions@users.noreply.github.com"
+          git config user.name "gh-actions"
+          git add docs/prs.json docs/stats.json || true
+          git commit -m "chore: refresh gallery data" || echo "no changes"
+          git push || true

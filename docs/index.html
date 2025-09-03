@@ -12,7 +12,8 @@
     h1{font-size:1.5rem;font-weight:400;color:#fff;margin-bottom:10px}
     .subtitle{color:#888;font-size:.9rem}
     .status-bar{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;margin-bottom:30px;padding:20px;background:#111;border:1px solid #222}
-    .stat{text-align:center}.stat-value{font-size:2rem;color:#00ff00;font-weight:700;font-variant-numeric:tabular-nums}
+    .stat{text-align:center}
+    .stat-value{font-size:2rem;color:#00ff00;font-weight:700;font-variant-numeric:tabular-nums}
     .stat-label{font-size:.75rem;color:#666;text-transform:uppercase;letter-spacing:.05em}
     .progress-bar{width:100%;height:40px;background:#111;border:1px solid #333;margin-bottom:30px;position:relative;overflow:hidden}
     .progress-fill{height:100%;background:linear-gradient(90deg,#00ff00,#00cc00);transition:width .3s ease;position:relative}
@@ -52,16 +53,16 @@
     <div class="live-indicator" aria-live="polite">LIVE TRACKING</div>
 
     <div class="progress-bar">
-      <div class="progress-fill" id="progressBar" style="width: 0%"></div>
+      <div class="progress-fill" id="progressBar" style="width:0%"></div>
       <div class="progress-text" id="progressText">0/100 PRs RESCUED</div>
     </div>
 
-    <div class="status-bar" id="statusBar">
+    <div class="status-bar">
       <div class="stat"><div class="stat-value" id="totalFixed">0</div><div class="stat-label">Fixed</div></div>
       <div class="stat"><div class="stat-value" id="mergedCount">0</div><div class="stat-label">Merged</div></div>
       <div class="stat"><div class="stat-value" id="successRate">0%</div><div class="stat-label">Success Rate</div></div>
-      <div class="stat"><div class="stat-value" id="medianLoc">0</div><div class="stat-label">Avg LOC</div></div>
-      <div class="stat"><div class="stat-value" id="medianTtg">0h</div><div class="stat-label">Avg TTG</div></div>
+      <div class="stat"><div class="stat-value" id="medianLoc">0</div><div class="stat-label">Median LOC</div></div>
+      <div class="stat"><div class="stat-value" id="medianTtg">0h</div><div class="stat-label">Median TTG</div></div>
       <div class="stat"><div class="stat-value" id="today">0</div><div class="stat-label">Today</div></div>
       <div class="stat"><div class="stat-value" id="timeLeft">—</div><div class="stat-label">Time Left</div></div>
       <div class="stat"><div class="stat-value" id="mrr">$0</div><div class="stat-label">MRR</div></div>
@@ -77,14 +78,13 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
       <thead>
         <tr><th>Repository</th><th>PR</th><th>Status</th><th>LOC</th><th>Files</th><th>Time to Green</th><th>Fixed</th><th>Links</th></tr>
       </thead>
-      <tbody id="prTableBody">
-      </tbody>
+      <tbody id="prTableBody"></tbody>
     </table>
 
     <div class="actions">
       <a href="./gallery/" class="btn">VIEW ALL <span id="rescuedCountLink">0</span> RESCUED PRS</a>
-      <a href="./stats.json" class="btn btn-secondary" rel="noopener">RAW DATA (JSON)</a>
-      <a href="https://github.com/greenweek-ai/rescue-agent" class="btn btn-secondary" target="_blank" rel="noopener">AGENT SOURCE</a>
+      <a href="./stats.json" class="btn btn-secondary" rel="noopener noreferrer">RAW DATA (JSON)</a>
+      <a href="https://github.com/greenweek-ai/rescue-agent" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">AGENT SOURCE</a>
       <button class="btn btn-secondary" type="button" onclick="copyShareLink()">SHARE</button>
     </div>
 
@@ -105,104 +105,104 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
   </div>
 
   <script>
-    const qs = (sel) => document.querySelector(sel);
+    const qs = (s) => document.querySelector(s);
     const bust = () => '?t=' + Date.now();
 
-    function issueRepoFromContext() {
+    function issueRepoFromContext(){
       const explicit = document.body.dataset.issueRepo;
       if (explicit) return explicit;
-      const host = location.hostname;
-      const parts = location.pathname.split('/').filter(Boolean);
-      const owner = host.split('.')[0];
-      const repo  = parts.length > 0 ? parts[0] : '';
-      return owner && repo ? `${owner}/${repo}` : '';
+      try {
+        const host = location.hostname;
+        if (host.endsWith('github.io')) {
+          const owner = host.split('.')[0];
+          const repo  = location.pathname.split('/').filter(Boolean)[0] || '';
+          if (owner && repo) return `${owner}/${repo}`;
+        }
+      } catch(e) {}
+      return '';
     }
 
-    function copyShareLink() {
-        const rescued = qs('#totalFixed').textContent || '0';
-        const url = (location.protocol === 'file:' || location.hostname === '' || location.hostname === 'localhost')
-          ? 'https://github.com/alwaysgreenhq/alwaysgreen'
-          : location.href;
-        const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${rescued}/100. Every fix ≤40 LOC. Watch live: ${url}`;
-        navigator.clipboard.writeText(text).then(() => alert('Link copied'));
+    function copyShareLink(){
+      const rescued = qs('#totalFixed').textContent || '0';
+      const url = (location.protocol === 'file:' || location.hostname === '' || location.hostname === 'localhost')
+        ? 'https://github.com/alwaysgreenhq/alwaysgreen'
+        : location.href;
+      const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${rescued}/100. Every fix ≤40 LOC. Watch live: ${url}`;
+      (navigator.clipboard?.writeText(text)
+        .then(()=>alert('Link copied'))
+        .catch(()=>{
+          const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); ta.remove(); alert('Link copied');
+        }));
     }
 
-    function updateLastRefreshTicker() {
+    function updateLastRefresh(){
       const start = new Date();
       const el = qs('#lastUpdate');
       const tick = () => {
-        const mins = Math.floor((new Date() - start) / 60000);
-        el.textContent = (mins === 0) ? 'Just now' : `${mins} min ago`;
+        const mins = Math.floor((new Date() - start)/60000);
+        el.textContent = mins===0 ? 'Just now' : `${mins} min ago`;
       };
-      tick();
-      setInterval(tick, 60000);
+      tick(); setInterval(tick, 60000);
     }
 
-    function updateCountdown() {
+    function updateCountdown(){
       const end = new Date('2025-02-04T09:00:00Z');
-      const now = new Date();
-      const diff = Math.max(0, end - now);
-      const days = Math.floor(diff / 86400000);
-      const hours = Math.floor((diff % 86400000) / 3600000);
-      qs('#timeLeft').textContent = `${days}d ${hours}h`;
+      const tick = () => {
+        const diff = Math.max(0, end - new Date());
+        const d = Math.floor(diff/86400000);
+        const h = Math.floor((diff%86400000)/3600000);
+        qs('#timeLeft').textContent = `${d}d ${h}h`;
+      };
+      tick(); setInterval(tick, 60000);
     }
 
-    async function refresh() {
-      try {
+    async function refresh(){
+      try{
         const [statsRes, prsRes] = await Promise.all([
-          fetch('./stats.json' + bust(), { cache: 'no-store' }),
-          fetch('./prs.json' + bust(),   { cache: 'no-store' }).catch(() => null)
+          fetch('./stats.json'+bust(), {cache:'no-store'}),
+          fetch('./prs.json'+bust(),   {cache:'no-store'}).catch(()=>null),
         ]);
-
         const stats = statsRes.ok ? await statsRes.json() : {};
         const items = prsRes && prsRes.ok ? await prsRes.json() : [];
 
         const goal     = Number(stats.goal ?? 100);
-        const rescued  = Number(stats.rescued_total ?? items.filter(i => i.status === 'GREEN').length ?? 0);
-        const mergedCt = Number(stats.merged_count  ?? items.filter(i => i.merged).length ?? 0);
-
-        const derivedRate = rescued ? Math.round((mergedCt / rescued) * 100) : 0;
-        const successPct  = Number.isFinite(stats.success_rate) ? Math.round(stats.success_rate) : derivedRate;
-
-        const medianLoc = Number(stats.median_loc ?? 0);
-        const medianTtg = Number(stats.median_ttg ?? 0);
-        const today     = Number(stats.rescued_today ?? 0);
-        const mrr       = Number(stats.mrr ?? 0);
+        const rescued  = Number(stats.rescued_total ?? items.filter(i=>i.status==='GREEN').length ?? 0);
+        const mergedCt = Number(stats.merged_count  ?? items.filter(i=>i.merged).length ?? 0);
+        const rate     = Number.isFinite(stats.success_rate) ? Math.round(stats.success_rate) :
+                         (rescued ? Math.round(100*mergedCt/rescued) : 0);
 
         qs('#totalFixed').textContent = rescued;
         qs('#mergedCount').textContent = mergedCt;
-        qs('#successRate').textContent = `${successPct}%`;
-        qs('#medianLoc').textContent   = medianLoc;
-        qs('#medianTtg').textContent   = `${medianTtg}h`;
-        qs('#today').textContent       = today;
-        qs('#mrr').textContent         = `$${mrr}`;
+        qs('#successRate').textContent = `${rate}%`;
+        qs('#medianLoc').textContent = Number(stats.median_loc ?? 0);
+        qs('#medianTtg').textContent = `${Number(stats.median_ttg ?? 0)}h`;
+        qs('#today').textContent = Number(stats.rescued_today ?? 0);
+        qs('#mrr').textContent = `$${Number(stats.mrr ?? 0)}`;
         qs('#rescuedCountLink').textContent = rescued;
 
-        const pct = Math.min(100, Math.round((rescued / goal) * 100));
+        const pct = Math.min(100, Math.round(100*rescued/goal));
         qs('#progressBar').style.width = pct + '%';
         qs('#progressText').textContent = `${rescued}/${goal} PRs RESCUED`;
-      } catch (err) {
-        console.error('Refresh failed:', err);
-      }
+      }catch(err){ console.error('Refresh failed:', err); }
     }
 
-    function submitPR(e) {
+    function submitPR(e){
       e.preventDefault();
       const raw = qs('#prUrl').value.trim();
       const m = raw.match(/github\.com\/([^\/]+)\/([^\/]+)\/pull\/(\d+)/);
-      if (!m) return alert('Invalid PR URL. Format: github.com/owner/repo/pull/123');
-      const issueRepo = issueRepoFromContext();
-      if (!issueRepo) return alert('Cannot detect issue repo. Set data-issue-repo on <body>.');
-      const issueUrl = `https://github.com/${issueRepo}/issues/new?title=${encodeURIComponent('Rescue request: PR ' + m[3])}&body=${encodeURIComponent('Please rescue this PR: ' + raw)}`;
-      window.open(issueUrl, '_blank', 'noopener');
-      qs('#prUrl').value = '';
+      if(!m) return alert('Invalid PR URL. Format: github.com/owner/repo/pull/123');
+      const repo = issueRepoFromContext();
+      if(!repo) return alert('Cannot detect issue repo. Set data-issue-repo on <body>.');
+      const issueUrl = `https://github.com/${repo}/issues/new?title=${encodeURIComponent('Rescue request: PR '+m[3])}&body=${encodeURIComponent('Please rescue this PR: '+raw)}`;
+      window.open(issueUrl,'_blank','noopener,noreferrer');
+      qs('#prUrl').value='';
     }
 
-    updateLastRefreshTicker();
+    updateLastRefresh();
     updateCountdown();
     refresh();
     setInterval(refresh, 30000);
-    setInterval(updateCountdown, 60000);
   </script>
 </body>
 </html>
