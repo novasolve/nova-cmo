@@ -20,7 +20,7 @@
     .btn:hover{background:#00ff00;color:#000}
   </style>
 </head>
-<body>
+<body data-issue-repo="greenweek-ai/greenweek-site">
   <div class="container">
     <header>
       <div>
@@ -40,12 +40,32 @@
     const grid = document.getElementById('grid');
     const badge = (s)=> s==='GREEN' ? 'green' : (s==='FAILED' ? 'failed' : 'pending');
 
+    function issueRepoFromContext(){
+      const explicit = document.body.dataset.issueRepo;
+      return explicit || '';
+    }
+
+    async function fetchWithFallback(relativePath){
+      // Try local relative first
+      try{
+        const res = await fetch(relativePath + '?t=' + Date.now(), {cache:'no-store'});
+        if(res.ok) return res.json();
+      }catch(e){ /* fall through */ }
+      // file:// fallback to raw GitHub if repo known
+      const repo = issueRepoFromContext();
+      if(location.protocol === 'file:' && repo){
+        const clean = relativePath.replace(/^(\.\/)+/, '').replace(/^(\.\.\/)+/, '');
+        const raw = `https://raw.githubusercontent.com/${repo}/main/docs/${clean}?t=` + Date.now();
+        const res2 = await fetch(raw, {cache:'no-store'});
+        if(res2.ok) return res2.json();
+      }
+      throw new Error('Unable to load ' + relativePath);
+    }
+
     async function load(){
       grid.innerHTML = "<div class='meta'>Loading…</div>";
       try{
-        const res = await fetch('../prs.json?t='+Date.now(), {cache:'no-store'});
-        if(!res.ok) throw new Error(`HTTP ${res.status}`);
-        const items = await res.json();
+        const items = await fetchWithFallback('../prs.json');
         if(!Array.isArray(items) || items.length===0){
           grid.innerHTML = "<div class='meta'>No rescues yet.</div>";
           return;
@@ -59,13 +79,13 @@
           card.className = 'card';
           const ttg = (pr.ttg_hours ?? pr.ttg ?? null);
           card.innerHTML = `
-            <div class="title">${owner}/${repo} <span class="meta">#${pr.pr_number}</span></div>
-            <div><span class="badge ${badge(pr.status)}">${pr.status||'PENDING'}</span> ${pr.merged?'<span class="meta">MERGED</span>':''}</div>
-            <div class="meta">LOC ${Number(pr.loc??0)} • Files ${Number(pr.files??0)} • TTG ${ttg!==null?Number(ttg)+'h':'—'}</div>
-            <div class="meta">Fixed: ${pr.fixed_at? new Date(pr.fixed_at).toLocaleString() : '—'}</div>
-            <div style="margin-top:8px;">
-              <a href="https://github.com/${owner}/${repo}/pull/${pr.pr_number}" target="_blank" rel="noopener noreferrer">Original</a>
-              ${pr.fix_pr_number ? ' | <a href="https://github.com/'+owner+'/'+repo+'/pull/'+pr.fix_pr_number+'" target="_blank" rel="noopener noreferrer">Fix</a>' : ''}
+            <div class=\"title\">${owner}/${repo} <span class=\"meta\">#${pr.pr_number}</span></div>
+            <div><span class=\"badge ${badge(pr.status)}\">${pr.status||'PENDING'}</span> ${pr.merged?'<span class=\"meta\">MERGED</span>':''}</div>
+            <div class=\"meta\">LOC ${Number(pr.loc??0)} • Files ${Number(pr.files??0)} • TTG ${ttg!==null?Number(ttg)+'h':'—'}</div>
+            <div class=\"meta\">Fixed: ${pr.fixed_at? new Date(pr.fixed_at).toLocaleString() : '—'}</div>
+            <div style=\"margin-top:8px;\">
+              <a href=\"https://github.com/${owner}/${repo}/pull/${pr.pr_number}\" target=\"_blank\" rel=\"noopener noreferrer\">Original</a>
+              ${pr.fix_pr_number ? ' | <a href=\"https://github.com/'+owner+'/'+repo+'/pull/'+pr.fix_pr_number+'\" target=\"_blank\" rel=\"noopener noreferrer\">Fix</a>' : ''}
             </div>`;
           grid.appendChild(card);
         }

@@ -43,7 +43,7 @@
   <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🟢</text></svg>">
 </head>
-<body data-issue-repo="greenweek-ai/greenweek-site">
+<body data-issue-repo="greenweek-ai/greenweek-site" data-agent="https://github.com/greenweek-ai/rescue-agent">
   <div class="container">
     <header>
       <h1>GREEN WEEK: AI FIXING FAILING PULL REQUESTS</h1>
@@ -84,8 +84,8 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
     <div class="actions">
       <a href="./gallery/" class="btn">VIEW ALL <span id="rescuedCountLink">0</span> RESCUED PRS</a>
       <a href="./stats.json" class="btn btn-secondary" rel="noopener noreferrer">RAW DATA (JSON)</a>
-      <a href="https://github.com/greenweek-ai/rescue-agent" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">AGENT SOURCE</a>
-      <button class="btn btn-secondary" type="button" onclick="copyShareLink()">SHARE</button>
+      <a id="agentLink" href="#" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">AGENT SOURCE</a>
+      <button class="btn btn-secondary" type="button" onclick="share()">SHARE</button>
     </div>
 
     <div class="metadata">
@@ -122,18 +122,24 @@ PRs/Day  ▁▁▃▅▇█████▅▃▁▁  Target: 15/day
       return '';
     }
 
-    function copyShareLink(){
-      const rescued = qs('#totalFixed').textContent || '0';
-      const url = (location.protocol === 'file:' || location.hostname === '' || location.hostname === 'localhost')
-        ? 'https://github.com/alwaysgreenhq/alwaysgreen'
-        : location.href;
-      const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${rescued}/100. Every fix ≤40 LOC. Watch live: ${url}`;
-      (navigator.clipboard?.writeText(text)
-        .then(()=>alert('Link copied'))
-        .catch(()=>{
-          const ta=document.createElement('textarea'); ta.value=text; document.body.appendChild(ta);
-          ta.select(); document.execCommand('copy'); ta.remove(); alert('Link copied');
-        }));
+    (function initAgentLink(){
+      const href = document.body.dataset.agent || 'https://github.com/greenweek-ai/rescue-agent';
+      const a = document.getElementById('agentLink');
+      if (a) a.href = href;
+    })();
+
+    async function share(){
+      const rescued = (document.querySelector('#totalFixed')?.textContent || '0');
+      const text = `Green Week: AI is fixing 100 failing PRs in 7 days. Currently at ${rescued}/100. Every fix ≤40 LOC.`;
+      const url  = location.protocol.startsWith('http') ? location.href : '';
+      if (navigator.share) {
+        try { await navigator.share({ title: 'Green Week — Live', text, url }); return; } catch (e) {}
+      }
+      try { await navigator.clipboard.writeText(url ? `${text} ${url}` : text); alert('Link copied'); return; } catch (e) {}
+      const ta = document.createElement('textarea');
+      ta.value = url ? `${text} ${url}` : text;
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+      alert('Link copied');
     }
 
     function updateLastRefresh(){
