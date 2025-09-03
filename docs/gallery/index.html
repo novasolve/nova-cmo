@@ -18,9 +18,16 @@
     .nav{display:flex;gap:12px}
     .btn{padding:8px 12px;background:transparent;color:#00ff00;border:1px solid #00ff00;font-size:.9rem}
     .btn:hover{background:#00ff00;color:#000}
+    .btn-cta{background:#00ff00;color:#000;border:1px solid #00ff00;font-weight:700}
+    .btn-cta:hover{background:#00e600;border-color:#00e600;color:#000}
+    .fab{position:fixed;right:24px;bottom:24px;z-index:9999}
+    .pulse{animation:pulse 2s infinite}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(0,255,0,.6)}70%{box-shadow:0 0 0 12px rgba(0,255,0,0)}100%{box-shadow:0 0 0 0 rgba(0,255,0,0)}}
+    .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#111;color:#00ff00;border:1px solid #00ff00;padding:8px 12px;z-index:10000;opacity:0;transition:opacity .2s}
+    .toast.show{opacity:1}
   </style>
 </head>
-<body data-issue-repo="greenweek-ai/greenweek-site">
+<body data-issue-repo="alwaysgreenhq/alwaysgreen" data-submit="https://github.com/alwaysgreenhq/alwaysgreen/issues/new?labels=rescue-request&title=Rescue+request" data-share-url="">
   <div class="container">
     <header>
       <div>
@@ -31,13 +38,20 @@
         <a class="btn" href="../">Counter</a>
         <a class="btn" href="../stats.json" rel="noopener noreferrer">Stats JSON</a>
         <a class="btn" href="./truth/">Truth Page</a>
+        <a id="submitTop" class="btn btn-cta" target="_blank" rel="noopener noreferrer">Submit PR</a>
+        <button id="shareBtn" class="btn" type="button" aria-label="Share this page">Share</button>
       </div>
     </header>
     <div id="grid" class="grid"></div>
   </div>
+  <a id="submitFab" class="btn btn-cta fab pulse" target="_blank" rel="noopener noreferrer">Submit PR</a>
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true" hidden>Link copied</div>
 
   <script>
     const grid = document.getElementById('grid');
+    // --- base path detector (supports / and /<repo>/)
+    const _parts = location.pathname.split('/').filter(Boolean);
+    const BASE = (_parts.length && _parts[0] !== 'gallery') ? `/${_parts[0]}/` : '/';
     const badge = (s)=> s==='GREEN' ? 'green' : (s==='FAILED' ? 'failed' : 'pending');
 
     function issueRepoFromContext(){
@@ -46,18 +60,15 @@
     }
 
     async function fetchWithFallback(relativePath){
-      // Try local relative first
-      try{
-        const res = await fetch(relativePath + '?t=' + Date.now(), {cache:'no-store'});
-        if(res.ok) return res.json();
-      }catch(e){ /* fall through */ }
-      // file:// fallback to raw GitHub if repo known
+      const bust = (u) => u + (u.includes('?') ? '&' : '?') + 't=' + Date.now();
+      const tryJson = async (u) => { try{ const r = await fetch(bust(u), {cache:'no-store'}); if(r.ok) return r.json(); }catch(_){} return null; };
+      let data = await tryJson(relativePath.startsWith('http') ? relativePath : (BASE + relativePath.replace(/^\.\/?/, '')));
+      if (data) return data;
       const repo = issueRepoFromContext();
-      if(location.protocol === 'file:' && repo){
-        const clean = relativePath.replace(/^(\.\/)+/, '').replace(/^(\.\.\/)+/, '');
-        const raw = `https://raw.githubusercontent.com/${repo}/main/docs/${clean}?t=` + Date.now();
-        const res2 = await fetch(raw, {cache:'no-store'});
-        if(res2.ok) return res2.json();
+      if (repo){
+        const clean = relativePath.replace(/^(\.\/|\.\.\/)+/g, '');
+        data = await tryJson(`https://raw.githubusercontent.com/${repo}/main/docs/${clean}`);
+        if (data) return data;
       }
       throw new Error('Unable to load ' + relativePath);
     }
@@ -65,7 +76,13 @@
     async function load(){
       grid.innerHTML = "<div class='meta'>Loading…</div>";
       try{
-        const items = await fetchWithFallback('../prs.json');
+        // Fix navs for base path
+        const toCounter = document.querySelector('.nav a[href="../"]');
+        if (toCounter) toCounter.href = BASE;
+        const toStats = document.querySelector('.nav a[href="../stats.json"]');
+        if (toStats) toStats.href = `${BASE}stats.json`;
+
+        const items = await fetchWithFallback('prs.json');
         if(!Array.isArray(items) || items.length===0){
           grid.innerHTML = "<div class='meta'>No rescues yet.</div>";
           return;
@@ -94,6 +111,33 @@
         grid.innerHTML = "<div class='meta'>Could not load gallery.</div>";
       }
     }
+
+    function showToast(msg){
+      const t = document.getElementById('toast');
+      t.textContent = msg; t.hidden = false; t.classList.add('show');
+      setTimeout(()=>{t.classList.remove('show'); t.hidden = true;}, 1500);
+    }
+
+    async function share(){
+      const canonical = document.body.dataset.shareUrl || (location.protocol.startsWith('http') ? location.href : '');
+      const text = 'Green Week — Gallery';
+      if (navigator.share){
+        try { await navigator.share({ title: 'Green Week — Gallery', text, url: canonical || undefined }); return; } catch(_) {}
+      }
+      try { await navigator.clipboard.writeText(canonical || text); showToast('Link copied'); return; } catch(_) {}
+      const ta = document.createElement('textarea'); ta.value = canonical || text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); showToast('Link copied');
+    }
+
+    (function initSubmitAndShare(){
+      const submitUrl = document.body.dataset.submit || `https://github.com/${issueRepoFromContext()}/issues/new`;
+      const top = document.getElementById('submitTop');
+      const fab = document.getElementById('submitFab');
+      if (top) top.href = submitUrl;
+      if (fab) fab.href = submitUrl;
+      const shareBtn = document.getElementById('shareBtn');
+      if (shareBtn) shareBtn.addEventListener('click', share);
+    })();
+
     load();
   </script>
 </body>
