@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Green Week | Gallery</title>
+    <style>
+        body { font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace; background:#0a0a0a; color:#e0e0e0; margin:0; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        a { color: #4dabf7; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        header { display:flex; align-items:center; justify-content:space-between; border-bottom:1px solid #333; padding-bottom: 16px; margin-bottom: 24px; }
+        .grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap:16px; }
+        .card { background:#111; border:1px solid #222; padding:16px; }
+        .title { font-weight:bold; color:#fff; margin-bottom:8px; }
+        .badge { display:inline-block; padding:2px 8px; font-size:12px; border-radius:3px; font-weight:bold; }
+        .green { background:#00ff00; color:#000; }
+        .pending { background:#ffaa00; color:#000; }
+        .failed { background:#ff4444; color:#fff; }
+        .meta { color:#888; font-size:12px; margin-top:8px; }
+        .nav { display:flex; gap:12px; }
+        .btn { padding:8px 12px; background:transparent; color:#00ff00; border:1px solid #00ff00; font-size: 0.9rem; }
+        .btn:hover { background:#00ff00; color:#000; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <div class="title">Green Week – Gallery</div>
+                <div class="meta">All rescued PRs</div>
+            </div>
+            <div class="nav">
+                <a class="btn" href="../counter/">Counter</a>
+                <a class="btn" href="../stats.json">Stats JSON</a>
+            </div>
+        </header>
+        <div id="grid" class="grid"></div>
+    </div>
+    <script>
+        async function load() {
+            const res = await fetch('../prs.json', { cache: 'no-store' });
+            const items = await res.json();
+            const grid = document.getElementById('grid');
+            grid.innerHTML = '';
+            for (const pr of items) {
+                const statusClass = pr.status === 'GREEN' ? 'green' : (pr.status === 'FAILED' ? 'failed' : 'pending');
+                const div = document.createElement('div');
+                div.className = 'card';
+                div.innerHTML = `
+                    <div class="title">${pr.owner}/${pr.repo} <span class="meta">#${pr.pr_number}</span></div>
+                    <div><span class="badge ${statusClass}">${pr.status}</span> ${pr.merged ? '<span class="meta">MERGED</span>' : ''}</div>
+                    <div class="meta">LOC ${pr.loc} • Files ${pr.files} • TTG ${pr.ttg_hours}h</div>
+                    <div class="meta">Fixed: ${pr.fixed_at ? new Date(pr.fixed_at).toLocaleString() : '—'}</div>
+                    <div style="margin-top:8px;">
+                        <a href="https://github.com/${pr.owner}/${pr.repo}/pull/${pr.pr_number}" target="_blank">Original</a>
+                        ${pr.fix_pr_number ? ' | <a href="https://github.com/' + pr.owner + '/' + pr.repo + '/pull/' + pr.fix_pr_number + '" target="_blank">Fix</a>' : ''}
+                    </div>
+                `;
+                grid.appendChild(div);
+            }
+        }
+        load();
+    </script>
+</body>
+</html>

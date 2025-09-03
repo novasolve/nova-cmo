@@ -3,6 +3,7 @@
 Use `daily.csv` to record Green Week metrics.
 
 Schema (headers):
+
 - date (YYYY-MM-DD)
 - prs_attempted
 - prs_rescued

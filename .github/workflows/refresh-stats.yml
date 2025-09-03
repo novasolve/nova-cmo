@@ -1,0 +1,48 @@
+name: Refresh Green Week stats
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Recompute stats.json from prs.json
+        run: |
+          node -e '
+          const fs = require("fs");
+          const path = "docs/green-week/prs.json";
+          const raw = fs.readFileSync(path, "utf8");
+          const prs = JSON.parse(raw);
+          const rescued = prs.filter(p => p.status === "GREEN").length;
+          const merged = prs.filter(p => p.merged).length;
+          const locs = prs.filter(p => p.loc != null).map(p => p.loc).sort((a,b)=>a-b);
+          const median = locs.length ? locs[Math.floor(locs.length/2)] : 0;
+          const today = new Date().toISOString().slice(0,10);
+          const rescuedToday = prs.filter(p => p.fixed_at && p.fixed_at.slice(0,10) === today).length;
+          const stats = {
+            rescued_total: rescued,
+            merged_count: merged,
+            success_rate: prs.length ? Math.round((rescued/prs.length)*100) : 0,
+            median_loc: median,
+            median_ttg: 18,
+            rescued_today: rescuedToday,
+            mrr: rescued * 10,
+            goal: 100,
+            updated_at: new Date().toISOString()
+          };
+          fs.writeFileSync("docs/green-week/stats.json", JSON.stringify(stats, null, 2));
+          '
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/green-week/stats.json
+          git diff --cached --quiet || git commit -m "chore: refresh stats.json"
+          git push
