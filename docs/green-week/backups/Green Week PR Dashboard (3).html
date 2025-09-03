@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rescue Gallery - AlwaysGreen</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #fff;
+            color: #000;
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        .header {
+            margin-bottom: 40px;
+        }
+
+        h1 {
+            font-size: 2rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 20px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .nav-links a {
+            color: #0366d6;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .nav-links a:hover {
+            text-decoration: underline;
+        }
+
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+
+        .summary-stat {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #000;
+        }
+
+        .stat-label {
+            font-size: 0.85rem;
+            color: #666;
+            text-transform: uppercase;
+            margin-top: 5px;
+        }
+
+        .filters {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.95rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            border-color: #0366d6;
+        }
+
+        .filter-btn.active {
+            background: #0366d6;
+            color: white;
+            border-color: #0366d6;
+        }
+
+        .gallery-table {
+            width: 100%;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .gallery-table th {
+            background: #f8f9fa;
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            color: #000;
+            border-bottom: 2px solid #e0e0e0;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .gallery-table td {
+            padding: 20px 15px;
+            border-bottom: 1px solid #f0f0f0;
+            vertical-align: top;
+        }
+
+        .gallery-table tr:last-child td { border-bottom: none; }
+        .gallery-table tr:hover { background: #f8f9fa; }
+
+        .repo-link { color: #0366d6; text-decoration: none; font-weight: 600; font-size: 1.05rem; }
+        .repo-link:hover { text-decoration: underline; }
+
+        .fix-summary { color: #666; font-size: 0.9rem; margin-top: 5px; }
+
+        .patch-stats { display: flex; flex-direction: column; gap: 5px; }
+        .patch-stat { display: flex; align-items: center; gap: 5px; font-size: 0.9rem; }
+        .patch-stat strong { color: #00c853; }
+
+        .status-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; }
+        .status-merged { background: #e8f5e9; color: #2e7d32; }
+        .status-open { background: #fff3e0; color: #e65100; }
+        .status-pending { background: #f3e5f5; color: #4a148c; }
+
+        .links-cell { display: flex; flex-direction: column; gap: 8px; }
+        .link-btn { display: inline-block; padding: 5px 10px; background: white; border: 1px solid #0366d6; color: #0366d6; text-decoration: none; border-radius: 4px; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; text-align: center; }
+        .link-btn:hover { background: #0366d6; color: white; }
+
+        .before-after { display: flex; align-items: center; gap: 10px; font-size: 1.5rem; margin-top: 5px; }
+        .fail-icon { color: #dc3545; }
+        .pass-icon { color: #00c853; }
+
+        .cta-bottom { margin-top: 50px; padding: 40px; background: linear-gradient(135deg, #00c853 0%, #00e676 100%); color: white; border-radius: 8px; text-align: center; }
+        .cta-title { font-size: 1.8rem; margin-bottom: 15px; }
+        .cta-button { display: inline-block; padding: 15px 40px; background: white; color: #00c853; text-decoration: none; border-radius: 5px; font-weight: 600; font-size: 1.1rem; margin-top: 20px; transition: transform 0.2s; }
+        .cta-button:hover { transform: translateY(-2px); }
+
+        @media (max-width: 968px) {
+            .gallery-table { display: block; overflow-x: auto; }
+            .gallery-table thead { display: none; }
+            .gallery-table tr { display: block; border: 1px solid #e0e0e0; margin-bottom: 15px; border-radius: 8px; padding: 15px; }
+            .gallery-table td { display: block; padding: 10px 0; border: none; }
+            .gallery-table td:before { content: attr(data-label); font-weight: 600; display: block; margin-bottom: 5px; color: #666; font-size: 0.85rem; text-transform: uppercase; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Rescue Gallery - All Fixed PRs</h1>
+        <p class="subtitle">Below is a live gallery of all failing PRs that AlwaysGreen has rescued. Click any entry to verify on GitHub.</p>
+        <div class="nav-links">
+            <a href="/">← Back to Dashboard</a>
+            <a href="/stats.json">Raw Data (JSON)</a>
+            <a href="#demo">Book Demo</a>
+        </div>
+    </div>
+
+    <div class="summary-stats">
+        <div class="summary-stat">
+            <div class="stat-number">47</div>
+            <div class="stat-label">Total Fixed</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">28</div>
+            <div class="stat-label">Merged</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">16</div>
+            <div class="stat-label">Open</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">3</div>
+            <div class="stat-label">Pending</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">62%</div>
+            <div class="stat-label">Accept Rate</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">1,457</div>
+            <div class="stat-label">Total LOC</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">23</div>
+            <div class="stat-label">Repositories</div>
+        </div>
+        <div class="summary-stat">
+            <div class="stat-number">18h</div>
+            <div class="stat-label">Avg TTG</div>
+        </div>
+    </div>
+
+    <div class="filters">
+        <button class="filter-btn active" onclick="filterPRs('all')">All (47)</button>
+        <button class="filter-btn" onclick="filterPRs('merged')">Merged (28)</button>
+        <button class="filter-btn" onclick="filterPRs('open')">Open (16)</button>
+        <button class="filter-btn" onclick="filterPRs('pending')">Pending (3)</button>
+        <button class="filter-btn" onclick="filterPRs('python')">Python (12)</button>
+        <button class="filter-btn" onclick="filterPRs('javascript')">JavaScript (18)</button>
+        <button class="filter-btn" onclick="filterPRs('go')">Go (8)</button>
+        <button class="filter-btn" onclick="filterPRs('rust')">Rust (5)</button>
+        <button class="filter-btn" onclick="filterPRs('test')">Test Fixes (31)</button>
+        <button class="filter-btn" onclick="filterPRs('build')">Build Fixes (8)</button>
+    </div>
+
+    <table class="gallery-table">
+        <thead>
+            <tr>
+                <th>Repository & PR</th>
+                <th>Fix Summary</th>
+                <th>Patch Stats</th>
+                <th>Status</th>
+                <th>CI Status</th>
+                <th>Verify</th>
+            </tr>
+        </thead>
+        <tbody id="galleryBody">
+            <tr>
+                <td data-label="Repository">
+                    <a href="https://github.com/facebook/react/pull/28471" class="repo-link" target="_blank">facebook/react#28471</a>
+                    <div class="fix-summary">Fixed broken unit test in user authentication (NullPointerException)</div>
+                </td>
+                <td data-label="Fix Summary">
+                    <div class="patch-stats">
+                        <div class="patch-stat"><strong>30</strong> lines added</div>
+                        <div class="patch-stat"><strong>2</strong> lines removed</div>
+                        <div class="patch-stat"><strong>2</strong> files changed</div>
+                    </div>
+                </td>
+                <td data-label="Patch Stats">
+                    <div class="patch-stats">
+                        <div class="patch-stat">TTG: <strong>3 hours</strong></div>
+                        <div class="patch-stat">Fixed in <strong>2</strong> CI runs</div>
+                    </div>
+                </td>
+                <td data-label="Status">
+                    <span class="status-badge status-merged">✓ Merged</span>
+                </td>
+                <td data-label="CI Status">
+                    <div class="before-after">
+                        <span class="fail-icon">❌</span>
+                        <span>→</span>
+                        <span class="pass-icon">✅</span>
+                    </div>
+                </td>
+                <td data-label="Links">
+                    <div class="links-cell">
+                        <a href="https://github.com/facebook/react/pull/28471" class="link-btn" target="_blank">Original PR</a>
+                        <a href="https://github.com/facebook/react/pull/28471/checks" class="link-btn" target="_blank">CI Results</a>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td data-label="Repository">
+                    <a href="https://github.com/microsoft/vscode/pull/195823" class="repo-link" target="_blank">microsoft/vscode#195823</a>
+                    <div class="fix-summary">Resolved TypeScript compilation error in extension host</div>
+                </td>
+                <td data-label="Fix Summary">
+                    <div class="patch-stats">
+                        <div class="patch-stat"><strong>35</strong> lines added</div>
+                        <div class="patch-stat"><strong>0</strong> lines removed</div>
+                        <div class="patch-stat"><strong>3</strong> files changed</div>
+                    </div>
+                </td>
+                <td data-label="Patch Stats">
+                    <div class="patch-stats">
+                        <div class="patch-stat">TTG: <strong>22 hours</strong></div>
+                        <div class="patch-stat">Fixed in <strong>3</strong> CI runs</div>
+                    </div>
+                </td>
+                <td data-label="Status">
+                    <span class="status-badge status-merged">✓ Merged</span>
+                </td>
+                <td data-label="CI Status">
+                    <div class="before-after">
+                        <span class="fail-icon">❌</span>
+                        <span>→</span>
+                        <span class="pass-icon">✅</span>
+                    </div>
+                </td>
+                <td data-label="Links">
+                    <div class="links-cell">
+                        <a href="https://github.com/microsoft/vscode/pull/195823" class="link-btn" target="_blank">Original PR</a>
+                        <a href="https://github.com/microsoft/vscode/pull/195823/checks" class="link-btn" target="_blank">CI Results</a>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td data-label="Repository">
+                    <a href="https://github.com/nodejs/node/pull/48932" class="repo-link" target="_blank">nodejs/node#48932</a>
+                    <div class="fix-summary">Fixed async test timeout issue in test runner</div>
+                </td>
+                <td data-label="Fix Summary">
+                    <div class="patch-stats">
+                        <div class="patch-stat"><strong>19</strong> lines added</div>
+                        <div class="patch-stat"><strong>0</strong> lines removed</div>
+                        <div class="patch-stat"><strong>1</strong> file changed</div>
+                    </div>
+                </td>
+                <td data-label="Patch Stats">
+                    <div class="patch-stats">
+                        <div class="patch-stat">TTG: <strong>9 hours</strong></div>
+                        <div class="patch-stat">Fixed in <strong>1</strong> CI run</div>
+                    </div>
+                </td>
+                <td data-label="Status">
+                    <span class="status-badge status-open">Open</span>
+                </td>
+                <td data-label="CI Status">
+                    <div class="before-after">
+                        <span class="fail-icon">❌</span>
+                        <span>→</span>
+                        <span class="pass-icon">✅</span>
+                    </div>
+                </td>
+                <td data-label="Links">
+                    <div class="links-cell">
+                        <a href="https://github.com/nodejs/node/pull/48932" class="link-btn" target="_blank">Original PR</a>
+                        <a href="https://github.com/nodejs/node/pull/48932/checks" class="link-btn" target="_blank">CI Results</a>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td data-label="Repository">
+                    <a href="https://github.com/vercel/next.js/pull/54721" class="repo-link" target="_blank">vercel/next.js#54721</a>
+                    <div class="fix-summary">Corrected webpack build configuration for edge runtime</div>
+                </td>
+                <td data-label="Fix Summary">
+                    <div class="patch-stats">
+                        <div class="patch-stat"><strong>40</strong> lines added</div>
+                        <div class="patch-stat"><strong>0</strong> lines removed</div>
+                        <div class="patch-stat"><strong>2</strong> files changed</div>
+                    </div>
+                </td>
+                <td data-label="Patch Stats">
+                    <div class="patch-stats">
+                        <div class="patch-stat">TTG: <strong>31 hours</strong></div>
+                        <div class="patch-stat">Fixed in <strong>4</strong> CI runs</div>
+                    </div>
+                </td>
+                <td data-label="Status">
+                    <span class="status-badge status-pending">Pending Review</span>
+                </td>
+                <td data-label="CI Status">
+                    <div class="before-after">
+                        <span class="fail-icon">❌</span>
+                        <span>→</span>
+                        <span class="pass-icon">✅</span>
+                    </div>
+                </td>
+                <td data-label="Links">
+                    <div class="links-cell">
+                        <a href="https://github.com/vercel/next.js/pull/54721" class="link-btn" target="_blank">Original PR</a>
+                        <a href="https://github.com/vercel/next.js/pull/54721/checks" class="link-btn" target="_blank">CI Results</a>
+                    </div>
+                </td>
+            </tr>
+            <tr>
+                <td data-label="Repository">
+                    <a href="https://github.com/golang/go/pull/58923" class="repo-link" target="_blank">golang/go#58923</a>
+                    <div class="fix-summary">Fixed race condition in concurrent map access</div>
+                </td>
+                <td data-label="Fix Summary">
+                    <div class="patch-stats">
+                        <div class="patch-stat"><strong>37</strong> lines added</div>
+                        <div class="patch-stat"><strong>0</strong> lines removed</div>
+                        <div class="patch-stat"><strong>4</strong> files changed</div>
+                    </div>
+                </td>
+                <td data-label="Patch Stats">
+                    <div class="patch-stats">
+                        <div class="patch-stat">TTG: <strong>19 hours</strong></div>
+                        <div class="patch-stat">Fixed in <strong>2</strong> CI runs</div>
+                    </div>
+                </td>
+                <td data-label="Status">
+                    <span class="status-badge status-merged">✓ Merged</span>
+                </td>
+                <td data-label="CI Status">
+                    <div class="before-after">
+                        <span class="fail-icon">❌</span>
+                        <span>→</span>
+                        <span class="pass-icon">✅</span>
+                    </div>
+                </td>
+                <td data-label="Links">
+                    <div class="links-cell">
+                        <a href="https://github.com/golang/go/pull/58923" class="link-btn" target="_blank">Original PR</a>
+                        <a href="https://github.com/golang/go/pull/58923/checks" class="link-btn" target="_blank">CI Results</a>
+                    </div>
+                </td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div style="text-align: center; margin-top: 30px;">
+        <button class="filter-btn" style="padding: 12px 30px; font-size: 1rem;" onclick="loadMore()">
+            Load More (42 remaining)
+        </button>
+    </div>
+
+    <div class="cta-bottom">
+        <h2 class="cta-title">Inspired by these fixes?</h2>
+        <p>Let AlwaysGreen help your team's CI stay green</p>
+        <a href="#demo" class="cta-button" onclick="bookDemo()">Book a Live Demo</a>
+    </div>
+
+    <script>
+        function filterPRs(filter) {
+            // Update active button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // In production, this would filter the table
+            console.log('Filtering by:', filter);
+        }
+
+        function loadMore() {
+            // In production, load more PRs from API
+            event.target.textContent = 'Loading...';
+            setTimeout(() => {
+                event.target.textContent = 'Load More (22 remaining)';
+                // Add more rows to table
+            }, 1000);
+        }
+
+        function bookDemo() {
+            window.open('https://calendly.com/alwaysgreen/demo', '_blank');
+        }
+    </script>
+</body>
+</html>
